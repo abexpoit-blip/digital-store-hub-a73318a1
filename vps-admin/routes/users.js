@@ -76,9 +76,36 @@ router.get('/:id', (req, res) => {
     .filter(d => d.status === 'approved')
     .reduce((a, b) => a + (b.amount || 0), 0);
 
+  // --- Manual balance (admin-given) history ---
+  let manualCredits = [];
+  let manualTotal = 0;
+  try {
+    manualCredits = db.prepare(
+      'SELECT * FROM manual_credits WHERE user_id = ? ORDER BY id DESC LIMIT 100'
+    ).all(userId);
+    manualCredits.forEach(m => { m._date = fmtDate(m.created_at); });
+    manualTotal = manualCredits.reduce((a, b) => a + (b.delta || 0), 0);
+  } catch (_) {}
+
+  // --- Replace request history (how many times this user asked) ---
+  let replaceHistory = [];
+  const replaceStats = { total: 0, pending: 0, collected: 0, rejected: 0 };
+  try {
+    replaceHistory = db.prepare(
+      'SELECT * FROM replace_requests WHERE user_id = ? ORDER BY id DESC LIMIT 100'
+    ).all(userId);
+    replaceHistory.forEach(r => { r._date = fmtDate(r.created_at); });
+    replaceStats.total = replaceHistory.length;
+    replaceHistory.forEach(r => {
+      const s = (r.status || 'pending').toLowerCase();
+      if (replaceStats[s] !== undefined) replaceStats[s] += 1;
+    });
+  } catch (_) {}
+
   res.render('user-detail', {
     user, sales, deposits, totalSpent, totalDeposited,
     deliveredBySale, unlinkedDeliveries,
+    manualCredits, manualTotal, replaceHistory, replaceStats,
     msg: req.query.msg || null
   });
 });
