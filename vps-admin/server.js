@@ -77,6 +77,7 @@ app.use('/deposits', requireLogin, require('./routes/deposits'));
 app.use('/stock', requireLogin, require('./routes/stock'));
 app.use('/replace', requireLogin, require('./routes/replace'));
 app.use('/orders', requireLogin, require('./routes/orders'));
+app.use('/credits', requireLogin, require('./routes/credits'));
 app.use('/audit', requireLogin, require('./routes/audit'));
 app.use('/status', requireLogin, require('./routes/status'));
 app.use('/polls', requireLogin, require('./routes/polls'));

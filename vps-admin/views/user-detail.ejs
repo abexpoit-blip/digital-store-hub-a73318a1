@@ -160,6 +160,67 @@
   </div>
 <% } %>
 
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+  <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+    <div class="px-4 py-3 border-b border-slate-800 text-sm font-semibold flex items-center justify-between">
+      <span>🎁 Manual Balance (Admin)</span>
+      <span class="text-xs <%= manualTotal >= 0 ? 'text-emerald-400' : 'text-rose-400' %>">
+        Net: <%= manualTotal > 0 ? '+' : '' %><%= manualTotal %>৳ · <%= manualCredits.length %> time(s)
+      </span>
+    </div>
+    <% if (manualCredits.length >= 3) { %>
+      <div class="px-4 py-2 bg-amber-950/40 text-amber-300 text-xs">⚠️ এই user <%= manualCredits.length %> বার manual balance পেয়েছে/নিয়েছে।</div>
+    <% } %>
+    <table class="w-full text-sm">
+      <thead class="text-slate-400"><tr>
+        <th class="text-left px-4 py-2">Amount</th><th class="text-left px-4 py-2">After</th>
+        <th class="text-left px-4 py-2">Reason</th><th class="text-left px-4 py-2">Time</th>
+      </tr></thead>
+      <tbody>
+        <% if (!manualCredits.length) { %><tr><td colspan="4" class="text-center text-slate-500 py-6">কোনো manual balance দেওয়া হয়নি।</td></tr><% } %>
+        <% manualCredits.forEach(function(m){ %>
+          <tr class="border-t border-slate-800">
+            <td class="px-4 py-2 font-bold <%= m.delta > 0 ? 'text-emerald-400' : 'text-rose-400' %>"><%= m.delta > 0 ? '+' : '' %><%= m.delta %>৳</td>
+            <td class="px-4 py-2 text-slate-300"><%= m.balance_after == null ? '-' : m.balance_after + '৳' %></td>
+            <td class="px-4 py-2 text-xs text-slate-300"><%= m.reason || '-' %></td>
+            <td class="px-4 py-2 text-xs text-slate-400"><%= m._date %></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+    <div class="px-4 py-3 border-b border-slate-800 text-sm font-semibold flex items-center justify-between">
+      <span>🔄 Replace History</span>
+      <span class="text-xs text-slate-400">
+        Total <%= replaceStats.total %> · ⏳<%= replaceStats.pending %> · ✅<%= replaceStats.collected %> · ❌<%= replaceStats.rejected %>
+      </span>
+    </div>
+    <% if (replaceStats.total >= 3) { %>
+      <div class="px-4 py-2 bg-amber-950/40 text-amber-300 text-xs">⚠️ এই user <%= replaceStats.total %> বার replace চেয়েছে।</div>
+    <% } %>
+    <table class="w-full text-sm">
+      <thead class="text-slate-400"><tr>
+        <th class="text-left px-4 py-2">#</th><th class="text-left px-4 py-2">Category</th>
+        <th class="text-left px-4 py-2">Status</th><th class="text-left px-4 py-2">Time</th>
+      </tr></thead>
+      <tbody>
+        <% if (!replaceHistory.length) { %><tr><td colspan="4" class="text-center text-slate-500 py-6">কোনো replace request নেই।</td></tr><% } %>
+        <% replaceHistory.forEach(function(r){ var st=(r.status||'pending').toLowerCase(); %>
+          <tr class="border-t border-slate-800">
+            <td class="px-4 py-2 font-mono text-slate-500">#<%= r.id %></td>
+            <td class="px-4 py-2"><%= r.category || '-' %></td>
+            <td class="px-4 py-2 text-xs <%= st === 'collected' ? 'text-emerald-400' : (st === 'rejected' ? 'text-rose-400' : 'text-amber-400') %>"><%= st %></td>
+            <td class="px-4 py-2 text-xs text-slate-400"><%= r._date %></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
 <form method="post" action="/users/<%= user.user_id %>/delete"
       onsubmit="return confirm('⚠️ এই user এবং তার সব sales/deposits/archive permanently মুছে যাবে। নিশ্চিত?');"
       class="bg-rose-950/30 border border-rose-900 p-5 rounded-xl mt-8">

@@ -1,0 +1,95 @@
+<%- include('partials/header', { title: 'Manual Credits', msg, currentPath }) %>
+
+<h1 class="text-2xl font-bold mb-1">🎁 Manual Balance Credits</h1>
+<p class="text-sm text-slate-400 mb-5">Admin এর দেওয়া/কাটা balance এর সম্পূর্ণ ট্র্যাকিং — কে কতবার নিয়েছে সব দেখা যাবে।</p>
+
+<form method="get" class="flex flex-wrap gap-2 mb-5">
+  <input name="q" value="<%= q %>" placeholder="Search username / user id"
+         class="bg-slate-900 border border-slate-800 rounded-md px-3 py-2 text-sm w-64" />
+  <select name="days" class="bg-slate-900 border border-slate-800 rounded-md px-3 py-2 text-sm">
+    <% [[0,'All time'],[1,'Last 24h'],[7,'Last 7 days'],[30,'Last 30 days']].forEach(function(o){ %>
+      <option value="<%= o[0] %>" <%= days === o[0] ? 'selected' : '' %>><%= o[1] %></option>
+    <% }) %>
+  </select>
+  <button class="bg-cyan-600 hover:bg-cyan-500 rounded-md px-4 py-2 text-sm font-semibold">Filter</button>
+  <a href="/credits" class="px-4 py-2 text-sm text-slate-400 hover:text-white">Reset</a>
+</form>
+
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+    <div class="text-xs text-slate-400">Entries</div>
+    <div class="text-xl font-bold mt-1"><%= stats.count %></div>
+  </div>
+  <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+    <div class="text-xs text-slate-400">Total Added</div>
+    <div class="text-xl font-bold mt-1 text-emerald-400">+<%= stats.added.toLocaleString() %>৳</div>
+  </div>
+  <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+    <div class="text-xs text-slate-400">Total Deducted</div>
+    <div class="text-xl font-bold mt-1 text-rose-400">-<%= stats.removed.toLocaleString() %>৳</div>
+  </div>
+  <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+    <div class="text-xs text-slate-400">Users Affected</div>
+    <div class="text-xl font-bold mt-1 text-cyan-400"><%= stats.users %></div>
+  </div>
+</div>
+
+<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
+  <div class="px-4 py-3 border-b border-slate-800 text-sm font-semibold">🔁 Repeat Takers (কে কতবার নিয়েছে)</div>
+  <table class="w-full text-sm">
+    <thead class="text-slate-400">
+      <tr><th class="text-left px-4 py-2">User</th><th class="text-left px-4 py-2">Times</th>
+      <th class="text-left px-4 py-2">Added</th><th class="text-left px-4 py-2">Deducted</th>
+      <th class="text-left px-4 py-2">Last</th></tr>
+    </thead>
+    <tbody>
+      <% if (!top.length) { %><tr><td colspan="5" class="text-center text-slate-500 py-6">No manual credits yet.</td></tr><% } %>
+      <% top.forEach(function(t){ %>
+        <tr class="border-t border-slate-800">
+          <td class="px-4 py-2">
+            <a class="text-cyan-400 hover:underline" href="/users/<%= t.user_id %>"><%= t.username || 'Unknown' %></a>
+            <span class="text-xs text-slate-500 font-mono block"><%= t.user_id %></span>
+          </td>
+          <td class="px-4 py-2 font-bold <%= t.times >= 3 ? 'text-amber-400' : '' %>">
+            <%= t.times %><%= t.times >= 3 ? ' ⚠️' : '' %>
+          </td>
+          <td class="px-4 py-2 text-emerald-400">+<%= (t.added||0).toLocaleString() %>৳</td>
+          <td class="px-4 py-2 text-rose-400">-<%= (t.removed||0).toLocaleString() %>৳</td>
+          <td class="px-4 py-2 text-xs text-slate-400"><%= t._last %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
+
+<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+  <div class="px-4 py-3 border-b border-slate-800 text-sm font-semibold">🧾 Full Log</div>
+  <table class="w-full text-sm">
+    <thead class="text-slate-400">
+      <tr><th class="text-left px-4 py-2">#</th><th class="text-left px-4 py-2">User</th>
+      <th class="text-left px-4 py-2">Amount</th><th class="text-left px-4 py-2">Balance After</th>
+      <th class="text-left px-4 py-2">Reason</th><th class="text-left px-4 py-2">By</th>
+      <th class="text-left px-4 py-2">Time</th></tr>
+    </thead>
+    <tbody>
+      <% if (!rows.length) { %><tr><td colspan="7" class="text-center text-slate-500 py-6">Empty.</td></tr><% } %>
+      <% rows.forEach(function(r){ %>
+        <tr class="border-t border-slate-800">
+          <td class="px-4 py-2 font-mono text-slate-500">#<%= r.id %></td>
+          <td class="px-4 py-2">
+            <a class="text-cyan-400 hover:underline" href="/users/<%= r.user_id %>"><%= r.username || r.user_id %></a>
+          </td>
+          <td class="px-4 py-2 font-bold <%= r.delta > 0 ? 'text-emerald-400' : 'text-rose-400' %>">
+            <%= r.delta > 0 ? '+' : '' %><%= r.delta %>৳
+          </td>
+          <td class="px-4 py-2 text-slate-300"><%= r.balance_after == null ? '-' : r.balance_after + '৳' %></td>
+          <td class="px-4 py-2 text-xs text-slate-300"><%= r.reason || '-' %></td>
+          <td class="px-4 py-2 text-xs text-slate-400"><%= r.admin_name || 'admin' %></td>
+          <td class="px-4 py-2 text-xs text-slate-400"><%= r._date %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
+
+<%- include('partials/footer') %>

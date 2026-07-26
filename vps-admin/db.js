@@ -22,6 +22,19 @@ db.exec(`
     collected_at INTEGER
   );
 
+  CREATE TABLE IF NOT EXISTS manual_credits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    username TEXT,
+    delta INTEGER NOT NULL,
+    balance_after INTEGER,
+    reason TEXT,
+    admin_name TEXT DEFAULT 'admin',
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_manual_credits_user ON manual_credits(user_id);
+  CREATE INDEX IF NOT EXISTS idx_manual_credits_time ON manual_credits(created_at);
+
   CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     actor TEXT NOT NULL,
