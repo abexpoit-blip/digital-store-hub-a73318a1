@@ -123,7 +123,13 @@ router.post('/:id/balance', (req, res) => {
   if (upd.changes === 0) {
     return res.redirect(`/users/${userId}?msg=` + encodeURIComponent('❌ User not found or insufficient balance'));
   }
-  const row = db.prepare('SELECT balance FROM users WHERE user_id = ?').get(userId);
+  const row = db.prepare('SELECT balance, username FROM users WHERE user_id = ?').get(userId);
+  try {
+    db.prepare(
+      `INSERT INTO manual_credits (user_id, username, delta, balance_after, reason, admin_name, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(userId, (row && row.username) || '', delta, row ? row.balance : null, reason, 'admin', Date.now());
+  } catch (e) { console.warn('[users] manual_credits log failed:', e.message); }
   logAudit('admin', 'balance_adjust',
     `user=${userId} delta=${delta} new=${row ? row.balance : '?'} reason="${reason}"`);
   res.redirect(`/users/${userId}?msg=` + encodeURIComponent(`Balance updated: ${delta > 0 ? '+' : ''}${delta} Tk`));
