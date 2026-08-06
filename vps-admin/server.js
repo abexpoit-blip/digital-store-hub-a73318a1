@@ -82,6 +82,7 @@ app.use('/audit', requireLogin, require('./routes/audit'));
 app.use('/status', requireLogin, require('./routes/status'));
 app.use('/polls', requireLogin, require('./routes/polls'));
 app.use('/nord', requireLogin, require('./routes/nord'));
+app.use('/vpn', requireLogin, require('./routes/vpn'));
 
 // 404
 app.use((req, res) => res.status(404).render('error', { message: 'Page not found', currentPath: req.originalUrl || '' }));
