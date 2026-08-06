@@ -1,0 +1,100 @@
+<%- include('partials/header', { title: 'VPN Prices', msg, currentPath }) %>
+
+<div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+  <h1 class="text-2xl font-bold">🛡 VPN Price Manager</h1>
+  <form method="post" action="/vpn/toggle" class="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2">
+    <span class="text-xs text-slate-400">VPN Service:</span>
+    <span class="px-2 py-1 rounded text-xs font-semibold <%= serviceOn ? 'bg-emerald-700/40 text-emerald-300' : 'bg-rose-700/40 text-rose-300' %>">
+      <%= serviceOn ? 'ON — চালু' : 'OFF — bot এ unavailable' %>
+    </span>
+    <input type="hidden" name="state" value="<%= serviceOn ? 'off' : 'on' %>"/>
+    <button class="text-xs px-3 py-1 rounded <%= serviceOn ? 'bg-rose-600 hover:bg-rose-500' : 'bg-emerald-600 hover:bg-emerald-500' %> text-white">
+      <%= serviceOn ? '⛔ Turn OFF' : '✅ Turn ON' %>
+    </button>
+  </form>
+</div>
+
+<p class="text-sm text-slate-400 mb-4">
+  এখানে price add/edit/delete করলে <b>সাথে সাথেই</b> Telegram bot এ update হবে (bot একই database থেকে price পড়ে)।
+  মোট <b><%= totalPkgs %></b> package configured।
+</p>
+
+<!-- Add / Update form -->
+<div class="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6">
+  <div class="text-sm font-semibold mb-3">➕ Add / Update package price</div>
+  <form method="post" action="/vpn/save" class="flex flex-wrap items-end gap-3">
+    <label class="text-xs text-slate-400">
+      VPN id
+      <input name="vpn_id" required placeholder="nord" list="brandlist"
+             class="mt-1 block w-40 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm"/>
+    </label>
+    <datalist id="brandlist">
+      <% brands.forEach(function(b){ %><option value="<%= b.vpn_id %>"></option><% }) %>
+    </datalist>
+    <label class="text-xs text-slate-400">
+      Package id
+      <input name="pkg_id" required placeholder="1m"
+             class="mt-1 block w-32 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm"/>
+    </label>
+    <label class="text-xs text-slate-400">
+      Price (৳)
+      <input name="price" type="number" min="0" max="1000000" required placeholder="150"
+             class="mt-1 block w-32 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm"/>
+    </label>
+    <button class="bg-cyan-600 hover:bg-cyan-500 px-4 py-2 rounded text-sm font-medium">Save</button>
+    <div class="text-xs text-slate-500">
+      একই vpn_id + pkg_id দিলে price <b>update</b> হবে, নতুন হলে <b>add</b> হবে।
+      pkg format: <code>7d</code> = 7 Days, <code>1m</code> = 1 Month, <code>1y</code> = 1 Year
+    </div>
+  </form>
+</div>
+
+<% if (!brands.length) { %>
+  <div class="text-slate-500 text-sm bg-slate-900 border border-slate-800 rounded-xl p-6 text-center">
+    কোনো VPN package নেই — উপরের form দিয়ে প্রথম package add করুন।
+  </div>
+<% } %>
+
+<% brands.forEach(function(b){ %>
+  <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+      <div class="font-semibold"><%= b.name %> <span class="text-xs text-slate-500 font-mono">(<%= b.vpn_id %>)</span></div>
+      <form method="post" action="/vpn/delete-brand"
+            onsubmit="return confirm('<%= b.name %> এর সব package delete করবেন?')">
+        <input type="hidden" name="vpn_id" value="<%= b.vpn_id %>"/>
+        <button class="text-xs text-rose-400 hover:text-rose-300">✕ Delete brand</button>
+      </form>
+    </div>
+    <table class="w-full text-sm">
+      <thead><tr><th>Package</th><th>ID</th><th>Price</th><th>Update</th><th>Delete</th></tr></thead>
+      <tbody>
+        <% b.items.forEach(function(it){ %>
+          <tr>
+            <td><%= it.pkg_label %></td>
+            <td class="font-mono text-xs text-slate-500"><%= it.pkg_id %></td>
+            <td class="text-emerald-400 font-semibold"><%= it.price %>৳</td>
+            <td>
+              <form method="post" action="/vpn/save" class="flex items-center gap-2">
+                <input type="hidden" name="vpn_id" value="<%= b.vpn_id %>"/>
+                <input type="hidden" name="pkg_id" value="<%= it.pkg_id %>"/>
+                <input name="price" type="number" min="0" max="1000000" value="<%= it.price %>"
+                       class="w-24 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs"/>
+                <button class="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded text-xs">Save</button>
+              </form>
+            </td>
+            <td>
+              <form method="post" action="/vpn/delete"
+                    onsubmit="return confirm('Delete <%= b.name %> · <%= it.pkg_label %>?')">
+                <input type="hidden" name="vpn_id" value="<%= b.vpn_id %>"/>
+                <input type="hidden" name="pkg_id" value="<%= it.pkg_id %>"/>
+                <button class="text-rose-400 hover:text-rose-300 text-xs">✕ Delete</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+<% }) %>
+
+<%- include('partials/footer') %>
