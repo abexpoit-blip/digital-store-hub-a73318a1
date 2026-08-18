@@ -50,12 +50,14 @@
             <div class="text-[10px] text-slate-500 font-mono">ID: <%= r.user_id %></div>
           </td>
           <td><span class="bg-slate-800 px-2 py-0.5 rounded text-xs"><%= r.category || '-' %></span></td>
-          <td class="font-mono text-xs text-slate-300 max-w-md break-all">
-            <details>
-              <summary class="cursor-pointer text-slate-400"><%= (r.old_data || '-').slice(0,60) %><%= (r.old_data||'').length>60?'...':'' %></summary>
-              <div class="mt-1 p-2 bg-slate-950 rounded text-[11px]"><%= r.old_data || '-' %></div>
-            </details>
+          <td class="font-mono text-xs text-slate-300 max-w-md break-all align-top">
+            <div class="text-slate-400"><%= (r.old_data || '-').split('\n')[0].slice(0,60) %><%= ((r.old_data||'').length>60 || (r.old_data||'').includes('\n'))?'...':'' %></div>
+            <button type="button" class="mt-1 text-[11px] text-cyan-400 hover:underline"
+              onclick='showFull(<%- JSON.stringify(String(r.id)) %>, <%- JSON.stringify(String(r.old_data || "-")) %>)'>
+              🔍 See full details
+            </button>
           </td>
+
           <td class="text-slate-400 text-xs max-w-xs"><%= r.reason || '-' %></td>
           <td class="text-slate-400 text-xs whitespace-nowrap"><%= new Date(r.created_at).toLocaleString('en-GB') %></td>
           <td class="text-slate-400 text-xs whitespace-nowrap"><%= r.collected_at ? new Date(r.collected_at).toLocaleString('en-GB') : '-' %></td>
