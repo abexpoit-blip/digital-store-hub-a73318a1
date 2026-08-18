@@ -56,7 +56,13 @@ async function verifyAndApprove(invoice_id, source = 'manual') {
     body: JSON.stringify({ invoice_id })
   });
   const vdata = await vr.json().catch(() => ({}));
-  console.log('[zinipay verify]', source, vr.status, invoice_id, JSON.stringify(vdata));
+  // Quiet logging: auto-reconcile-এ শুধু status লিখি (full JSON spam বন্ধ → CPU/disk বাঁচে)
+  if (source === 'auto-reconcile' && !isPaidStatus(vdata)) {
+    // silent — pending/failed invoice প্রতি cycle এ log করার দরকার নেই
+  } else {
+    console.log('[zinipay verify]', source, vr.status, invoice_id, JSON.stringify(vdata));
+  }
+
 
   const row = db.prepare(`SELECT * FROM payment_logs WHERE invoice_id = ?`).get(invoice_id);
   if (!row) {
