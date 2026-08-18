@@ -157,7 +157,7 @@ async function runReconcile() {
 
     const ms = Date.now() - started;
     // Only log when something happened (reduce noise drastically)
-    if (checked || recovered || stopped) {
+    if (checked || recovered) {
       console.log(`[reconcile] cycle#${_cycleIdx} ${ms}ms — checked=${checked} skipped=${skipped} recovered=${recovered} orphans=${orphans} stopped=${stopped}`);
     }
   } catch (e) {
