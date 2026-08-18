@@ -91,6 +91,11 @@ helper = '''def _dsend_document_sync(chat_id, filename, payload, caption):
 '''
 
 patched = src[:start] + helper + src[end:]
+patched = patched.replace(
+    'print("[delivery-v6] callback middleware active (direct upload)", flush=True)',
+    'print("[delivery-v8] callback middleware active (IPv4 direct upload)", flush=True)',
+    1,
+)
 if "class _IPv4HTTPSConnection" not in patched:
     print("❌ IPv4 helper generation failed; unchanged.")
     sys.exit(4)
