@@ -16,10 +16,16 @@ bak = f'{PATH}.bak-tgfix2-{int(time.time())}'
 shutil.copy2(PATH, bak)
 print('backup:', bak)
 
-# ---- 1) crash-causing session arg remove ----
+# ---- 1) crash-causing session arg/import remove ----
 before = src
-src = re.sub(r',\s*session\s*=\s*_TGSession\([^)]*\)', '', src)
-print('session-arg removed:', before != src)
+src = re.sub(r',?\s*session\s*=\s*_TGSession\s*\([^)]*\)\s*,?', '', src)
+src = re.sub(
+    r'^\s*from\s+aiogram\.client\.session\.aiohttp\s+import\s+AiohttpSession\s+as\s+_TGSession\s*$',
+    '', src, flags=re.M)
+if '_TGSession' in src:
+    print("❌ unresolved _TGSession reference remains — patch aborted")
+    sys.exit(1)
+print('legacy _TGSession removed:', before != src)
 
 # ---- 2) old broken V1 guard remove ----
 src = re.sub(
@@ -71,6 +77,10 @@ try:
     compile(src, PATH, 'exec')
 except SyntaxError as e:
     print('❌ SyntaxError — patch aborted, file unchanged:', e)
+    sys.exit(1)
+
+if re.search(r'Bot\s*\([^\n]*session\s*=', src):
+    print('❌ Bot session override remains — patch aborted')
     sys.exit(1)
 
 open(PATH, 'w', encoding='utf-8').write(src)
