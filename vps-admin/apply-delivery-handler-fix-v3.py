@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Register the delivery callback before polling and make archive reads async-safe."""
+"""Register the delivery callback before polling and harden file delivery.
+
+This patch intentionally tolerates older/newer archive-loading implementations.
+Handler registration and upload timeout fixes are still safe to apply when that
+optional optimisation cannot be matched exactly.
+"""
 import os
 import re
 import shutil
@@ -53,11 +58,17 @@ new = '''        try:
                 finally:
                     _cn.close()
             _rows = await _asyncio_dl.to_thread(_load_archive)'''
+archive_async = False
 if old in block:
     block = block.replace(old, new, 1)
-elif "_rows = await _asyncio_dl.to_thread(_load_archive)" not in block:
-    print("❌ Archive-load block differs; refusing an unsafe partial patch")
-    sys.exit(4)
+    archive_async = True
+elif "_rows = await _asyncio_dl.to_thread(_load_archive)" in block:
+    archive_async = True
+else:
+    # Store.py has evolved across deployments (_dbc(), different quoting, or
+    # an already-patched loader). This optimisation is optional; never block
+    # the handler-order and upload-timeout fixes because of a text mismatch.
+    print("⚠️ Archive loader differs; leaving its existing implementation unchanged")
 
 # Add a positive trace at callback entry. This distinguishes handler/Telegram
 # issues immediately without printing users' delivered credentials.
@@ -69,6 +80,17 @@ replacement = (
 )
 if needle in block:
     block = block.replace(needle, replacement, 1)
+
+# Telegram file uploads need a longer timeout than ordinary bot replies.
+# Bot.send_document consumes request_timeout locally; it is not sent to the
+# Telegram API as a form field. Keep this scoped to delivery files so normal
+# messages do not wait for several minutes on a broken connection.
+upload_needle = "        await c.message.answer_document(\n            BufferedInputFile(data, filename=fname),\n            caption=("
+upload_replacement = "        await c.message.answer_document(\n            BufferedInputFile(data, filename=fname),\n            request_timeout=180,\n            caption=("
+if upload_needle in block:
+    block = block.replace(upload_needle, upload_replacement, 1)
+elif "request_timeout=180" not in block:
+    print("⚠️ Upload call differs; delivery handler will use its existing timeout")
 
 patched = base[:insert_at] + block + base[insert_at:]
 if patched.find(marker) > patched.find("@dp.callback_query"):
@@ -86,5 +108,10 @@ shutil.copy2(path, backup)
 open(path, "w", encoding="utf-8").write(patched)
 print(f"✅ Backup: {backup}")
 print("✅ Delivery callback registered before polling/catch-all handlers")
-print("✅ Archive DB read moved off the bot event loop")
+if archive_async:
+    print("✅ Archive DB read moved off the bot event loop")
+else:
+    print("ℹ️ Archive DB loader preserved (version-safe mode)")
+if "request_timeout=180" in block:
+    print("✅ Delivery file upload timeout set to 180 seconds")
 print("✅ [delivery] click/send timing logs enabled")
