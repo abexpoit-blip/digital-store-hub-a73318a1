@@ -28,10 +28,17 @@ path = "/root/store.py"
 src = open(path, encoding="utf-8").read()
 
 if "# [DELIVERY_UPLOAD_FIX_V6]" not in src:
-    print("❌ Delivery V6+ block not found. Run apply-delivery-upload-v6.py first.")
+    print("❌ Delivery middleware block missing from /root/store.py.")
+    print("Run apply-delivery-upload-v6.py first, then run this installer again.")
     sys.exit(2)
 
-start = src.find("def _dsend_document_sync(chat_id, filename, payload, caption):")
+if "dp.callback_query.outer_middleware(_DfmtDeliveryMiddleware())" not in src:
+    print("❌ Delivery callback middleware is not registered; refusing an incomplete fix.")
+    sys.exit(2)
+
+sync_start = src.find("def _dsend_document_sync(chat_id, filename, payload, caption):")
+async_start = src.find("async def _dsend_document_async(chat_id, filename, payload, caption):")
+start = sync_start if sync_start >= 0 else async_start
 end = src.find("\n\nasync def _dstep", start)
 if start < 0 or end < 0:
     print("❌ Upload helper boundaries not found; unchanged.")
@@ -134,26 +141,38 @@ patched, n_calls = call_pattern.subn(
     ),
     patched,
 )
-if n_calls == 0:
+
+# Be idempotent: a previous V10 run may already have changed the call site.
+existing_async_calls = len(re.findall(
+    r"asyncio\.wait_for\(\s*_dsend_document_async\(", patched
+))
+if n_calls == 0 and existing_async_calls == 0:
     print("❌ Upload call site not found; unchanged.")
     sys.exit(4)
 
-for old in (
-    'print("[delivery-v9] callback middleware active (killable curl IPv4 upload)", flush=True)',
-    'print("[delivery-v8] callback middleware active (IPv4 direct upload)", flush=True)',
-    'print("[delivery-v6] callback middleware active (direct upload)", flush=True)',
-):
+# Replace every older delivery startup/log label, even if a previous patch used
+# slightly different wording. This also makes the requested grep trustworthy.
+patched, n_startup = re.subn(
+    r'print\("\[delivery-v(?:4|5|6|7|8|9|10)\] callback middleware active[^"\n]*"\s*,\s*flush=True\)',
+    'print("[delivery-v10] callback middleware active (async curl upload, no thread pool)", flush=True)',
+    patched,
+    count=1,
+)
+patched = re.sub(
+    r'print\(f"\[delivery-v(?:4|5|6|7|8|9|10)\] \{msg\}"\s*,\s*flush=True\)',
+    'print(f"[delivery-v10] {msg}", flush=True)',
+    patched,
+    count=1,
+)
+
+if n_startup == 0 and "[delivery-v10] callback middleware active" not in patched:
+    registration = "dp.callback_query.outer_middleware(_DfmtDeliveryMiddleware())"
     patched = patched.replace(
-        old,
-        'print("[delivery-v10] callback middleware active '
+        registration,
+        registration + '\nprint("[delivery-v10] callback middleware active '
         '(async curl upload, no thread pool)", flush=True)',
         1,
     )
-for old in (
-    'print(f"[delivery-v9] {msg}", flush=True)',
-    'print(f"[delivery-v6] {msg}", flush=True)',
-):
-    patched = patched.replace(old, 'print(f"[delivery-v10] {msg}", flush=True)', 1)
 
 if "_dsend_document_sync" in patched:
     print("⚠️ Old sync uploader still referenced somewhere:")
@@ -163,6 +182,18 @@ if "_dsend_document_sync" in patched:
     print("❌ Refusing partial patch.")
     sys.exit(5)
 
+required = (
+    "async def _dsend_document_async",
+    "create_subprocess_exec",
+    "dp.callback_query.outer_middleware(_DfmtDeliveryMiddleware())",
+    "[delivery-v10] callback middleware active",
+    "[delivery-v10] upload attempt",
+)
+missing = [item for item in required if item not in patched]
+if missing:
+    print("❌ V10 verification failed; unchanged. Missing:", ", ".join(missing))
+    sys.exit(5)
+
 try:
     compile(patched, path, "exec")
 except SyntaxError as exc:
@@ -170,7 +201,8 @@ except SyntaxError as exc:
     sys.exit(6)
 
 if patched == src:
-    print("ℹ️ V10 already applied; nothing to change.")
+    print("ℹ️ V10 already fully applied; nothing to change.")
+    print("✅ VERIFIED: middleware registered, async uploader active, V10 logs active")
     sys.exit(0)
 
 backup = f"{path}.bak-delivery-v10-{int(time.time())}"
@@ -178,3 +210,4 @@ shutil.copy2(path, backup)
 open(path, "w", encoding="utf-8").write(patched)
 print(f"✅ Backup: {backup}")
 print(f"✅ V10 applied: async curl upload (2 variants), call sites patched={n_calls}")
+print("✅ VERIFIED: middleware registered, async uploader active, V10 logs active")
