@@ -30,12 +30,19 @@ let _verifyFn      = null;
 let _cycleIdx      = 0;
 const _invState    = new Map(); // invoice_id -> { attempts, firstCycle, lastStatus }
 
+let _attached = false;
+
 function attach(verifyFn) {
+  if (_attached) { console.warn('[reconcile] already attached — duplicate attach ignored'); return; }
+  _attached = true;
   _verifyFn = verifyFn;
-  console.log('[reconcile] attached verifyAndApprove (optimized v2). interval=5m, max_attempts=40, lookback=48h');
+  // Safety clamp: interval কখনো 60s এর নিচে যাবে না (tight-loop / CPU spike গার্ড)
+  const interval = Math.max(60 * 1000, Number(INTERVAL_MS) || 5 * 60 * 1000);
+  console.log(`[reconcile] attached verifyAndApprove (v3). interval=${Math.round(interval / 1000)}s, max_attempts=${MAX_ATTEMPTS}, lookback=${LOOKBACK_HOURS}h`);
   setTimeout(runReconcile, 30 * 1000);
-  setInterval(runReconcile, INTERVAL_MS);
+  setInterval(runReconcile, interval);
 }
+
 
 async function runReconcile() {
   if (_reconciling) return; // silent skip — was log spam
