@@ -50,12 +50,14 @@
             <div class="text-[10px] text-slate-500 font-mono">ID: <%= r.user_id %></div>
           </td>
           <td><span class="bg-slate-800 px-2 py-0.5 rounded text-xs"><%= r.category || '-' %></span></td>
-          <td class="font-mono text-xs text-slate-300 max-w-md break-all">
-            <details>
-              <summary class="cursor-pointer text-slate-400"><%= (r.old_data || '-').slice(0,60) %><%= (r.old_data||'').length>60?'...':'' %></summary>
-              <div class="mt-1 p-2 bg-slate-950 rounded text-[11px]"><%= r.old_data || '-' %></div>
-            </details>
+          <td class="font-mono text-xs text-slate-300 max-w-md break-all align-top">
+            <div class="text-slate-400"><%= (r.old_data || '-').split('\n')[0].slice(0,60) %><%= ((r.old_data||'').length>60 || (r.old_data||'').includes('\n'))?'...':'' %></div>
+            <button type="button" class="mt-1 text-[11px] text-cyan-400 hover:underline"
+              onclick='showFull(<%- JSON.stringify(String(r.id)) %>, <%- JSON.stringify(String(r.old_data || "-")) %>)'>
+              🔍 See full details
+            </button>
           </td>
+
           <td class="text-slate-400 text-xs max-w-xs"><%= r.reason || '-' %></td>
           <td class="text-slate-400 text-xs whitespace-nowrap"><%= new Date(r.created_at).toLocaleString('en-GB') %></td>
           <td class="text-slate-400 text-xs whitespace-nowrap"><%= r.collected_at ? new Date(r.collected_at).toLocaleString('en-GB') : '-' %></td>
@@ -89,4 +91,37 @@
   <div>• পুরোনো duplicate থাকলে <b>🧹 Dedupe pending</b> বাটন চাপুন (oldest টা থাকবে, বাকিগুলো মুছবে)।</div>
 </div>
 
+<!-- Full details modal -->
+<div id="fullModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4">
+  <div class="w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+      <div class="text-sm font-semibold">Replace Request <span id="fullTitle" class="text-cyan-400 font-mono"></span></div>
+      <div class="flex gap-2">
+        <button onclick="copyFull()" class="bg-slate-800 hover:bg-slate-700 px-3 py-1 rounded text-xs">📋 Copy</button>
+        <button onclick="hideFull()" class="bg-rose-700 hover:bg-rose-600 px-3 py-1 rounded text-xs">✕ Close</button>
+      </div>
+    </div>
+    <pre id="fullBody" class="p-4 max-h-[65vh] overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-slate-200 bg-slate-950"></pre>
+  </div>
+</div>
+<script>
+  function showFull(id, data) {
+    document.getElementById('fullTitle').textContent = '#' + id;
+    document.getElementById('fullBody').textContent = data;
+    var m = document.getElementById('fullModal');
+    m.classList.remove('hidden'); m.classList.add('flex');
+  }
+  function hideFull() {
+    var m = document.getElementById('fullModal');
+    m.classList.add('hidden'); m.classList.remove('flex');
+  }
+  function copyFull() {
+    var t = document.getElementById('fullBody').textContent;
+    navigator.clipboard.writeText(t).then(function(){ alert('Copied ✅'); });
+  }
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') hideFull(); });
+  document.getElementById('fullModal').addEventListener('click', function(e){ if (e.target === this) hideFull(); });
+</script>
+
 <%- include('partials/footer') %>
+
