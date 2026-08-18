@@ -68,8 +68,19 @@ async function runReconcile() {
         state = { attempts: 0, firstCycle: _cycleIdx, lastStatus: null };
         _invState.set(row.invoice_id, state);
       }
-      if (state.attempts >= MAX_ATTEMPTS) { stopped++; continue; }
+      if (state.attempts >= MAX_ATTEMPTS) {
+        // ~5 ঘণ্টা try করেও paid হয়নি → failed মার্ক করে scan থেকে বাদ (CPU spam বন্ধ)
+        try {
+          db.prepare(
+            `UPDATE payment_logs SET status='failed'
+              WHERE req_id=? AND method='zinipay' AND status='pending'`
+          ).run(row.req_id);
+        } catch (_) {}
+        _invState.delete(row.invoice_id);
+        stopped++; continue;
+      }
       if (!shouldCheck(state, _cycleIdx))  { skipped++; continue; }
+
 
       state.attempts++;
       checked++;
