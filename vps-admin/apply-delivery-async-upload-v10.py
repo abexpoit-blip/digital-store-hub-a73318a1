@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""V10: send delivery files through a真 async curl subprocess (no thread pool).
+"""V10: send delivery files through a real async curl subprocess (no thread pool).
 
 Why the file still never arrived on V7-V9:
 
