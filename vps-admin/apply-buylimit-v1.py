@@ -23,6 +23,38 @@ import os, sys, re, time, shutil, py_compile
 STORE_PY = "store.py"
 MARKER   = "# [BUYLIMIT_V1]"
 
+
+def _resolve_store_py():
+    """Find store.py even when the script is launched from /root/digital-store-hub."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_dir = os.path.dirname(script_dir)
+    candidates = []
+
+    explicit = os.environ.get("STORE_PY") or os.environ.get("STORE_PATH")
+    if explicit:
+        candidates.append(explicit)
+
+    # Most VPS installs keep the bot at /root/store.py, while this helper lives
+    # inside /root/digital-store-hub/vps-admin/.
+    candidates.extend([
+        os.path.abspath("store.py"),
+        os.path.join(repo_dir, "store.py"),
+        os.path.join(os.path.dirname(repo_dir), "store.py"),
+        "/root/store.py",
+    ])
+
+    seen = set()
+    for path in candidates:
+        if not path:
+            continue
+        path = os.path.abspath(os.path.expanduser(path))
+        if path in seen:
+            continue
+        seen.add(path)
+        if os.path.exists(path):
+            return path
+    return None
+
 HELPER = '''
 # [BUYLIMIT_V1] ---- 10 pcs / 10 min limit (শুধু FB 1000xx) ----
 BUYLIMIT_MAX    = 10
