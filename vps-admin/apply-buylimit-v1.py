@@ -68,15 +68,25 @@ def _bl_limited(cat):
     except Exception:
         return False
 
+def _bl_db_path():
+    _p = globals().get("DB_FILE") or globals().get("DB_PATH") or globals().get("DB")
+    if isinstance(_p, str) and _p.strip():
+        return _p
+    import os as _os
+    for _cand in ("/root/store.db", _os.path.join(_os.path.dirname(__file__), "store.db"), "store.db"):
+        try:
+            if _os.path.exists(_cand):
+                return _cand
+        except Exception:
+            pass
+    return "/root/store.db"
+
 def _bl_conn():
     try:
         return _dbc()
     except Exception:
         import sqlite3 as _s
-        _p = globals().get("DB_FILE") or globals().get("DB_PATH") or globals().get("DB") or "store.db"
-        if not isinstance(_p, str):
-            _p = "store.db"
-        c = _s.connect(_p, timeout=15)
+        c = _s.connect(_bl_db_path(), timeout=15)
         try:
             c.execute("PRAGMA busy_timeout=15000")
         except Exception:
