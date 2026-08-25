@@ -24,9 +24,17 @@ STORE_PY = "store.py"
 MARKER   = "# [BUYLIMIT_V1]"
 
 HELPER = '''
-# [BUYLIMIT_V1] ---- 10 pcs / 10 min per-user purchase limit ----
+# [BUYLIMIT_V1] ---- 10 pcs / 10 min limit (শুধু FB 1000xx) ----
 BUYLIMIT_MAX    = 10
 BUYLIMIT_WINDOW = 600  # seconds
+# শুধু এই category গুলোতে limit; fb61 / tempid / অন্যসব unlimited
+BUYLIMIT_CATS   = {"fb1000", "fb1000xx", "1000xx"}
+
+def _bl_limited(cat):
+    try:
+        return str(cat or "").strip().lower() in BUYLIMIT_CATS
+    except Exception:
+        return False
 
 def _bl_conn():
     try:
@@ -73,8 +81,10 @@ def _bl_fmt_left(secs):
     secs = max(0, int(secs))
     return f"{secs // 60} মিনিট {secs % 60} সেকেন্ড"
 
-def _bl_allow(uid, qty=1):
-    """(ok, used, left_secs) — limit ছাড়ালে ok=False"""
+def _bl_allow(uid, qty=1, cat=None):
+    """(ok, used, left_secs) — limit ছাড়ালে ok=False; non-limited category হলে সবসময় ok"""
+    if not _bl_limited(cat):
+        return True, 0, 0
     used, left = _bl_state(uid)
     try: qty = max(1, int(qty))
     except Exception: qty = 1
@@ -84,8 +94,10 @@ def _bl_allow(uid, qty=1):
         return False, used, left
     return True, used, left
 
-def _bl_commit(uid, qty=1):
+def _bl_commit(uid, qty=1, cat=None):
     """কেনার পরে count বাড়ায়; ফেরত দেয় (used, left_secs)"""
+    if not _bl_limited(cat):
+        return 0, 0
     import time as _t
     now = int(_t.time())
     try: qty = max(1, int(qty))
@@ -115,8 +127,8 @@ def _bl_block_text(used, left):
         "⛔ **কেনার লিমিট শেষ**\\n\\n"
         f"🧾 আপনি এই ১০ মিনিটে **{used}/{BUYLIMIT_MAX} pcs** নিয়ে ফেলেছেন।\\n"
         f"⏳ আবার নিতে পারবেন: **{_bl_fmt_left(left)}** পরে\\n\\n"
-        f"ℹ️ নিয়ম: প্রতি **১০ মিনিটে সর্বোচ্চ {BUYLIMIT_MAX} pcs**। "
-        "সময় শেষ হলেই আবার পুরো লিমিট চালু হবে।"
+        f"ℹ️ নিয়ম: **FB 1000xx** এর জন্য প্রতি **১০ মিনিটে সর্বোচ্চ {BUYLIMIT_MAX} pcs**। "
+        "FB 61 ও Temp ID unlimited। সময় শেষ হলেই আবার পুরো লিমিট চালু হবে।"
     )
 
 def _bl_ok_text(used, left):
