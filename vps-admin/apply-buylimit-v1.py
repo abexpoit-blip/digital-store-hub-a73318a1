@@ -61,12 +61,70 @@ BUYLIMIT_MAX    = 10
 BUYLIMIT_WINDOW = 600  # seconds
 # শুধু এই category গুলোতে limit; fb61 / tempid / অন্যসব unlimited
 BUYLIMIT_CATS   = {"fb1000", "fb1000xx", "1000xx"}
+# web panel (config table) থেকে on/off + value override — 5s cache
+_BL_CFG_CACHE = {"t": 0, "v": {}}
+
+def _bl_cfg():
+    """config table থেকে buylimit_* key গুলো পড়ে (web panel controlled)"""
+    import time as _t
+    now = _t.time()
+    if now - _BL_CFG_CACHE["t"] < 5:
+        return _BL_CFG_CACHE["v"]
+    vals = {}
+    conn = None
+    try:
+        conn = _bl_conn()
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
+        for k, v in cur.execute(
+            "SELECT key, value FROM config WHERE key IN "
+            "('buylimit_enabled','buylimit_max','buylimit_window_min','buylimit_cats')"
+        ).fetchall():
+            vals[str(k)] = str(v)
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try: conn.close()
+            except Exception: pass
+    _BL_CFG_CACHE["t"] = now
+    _BL_CFG_CACHE["v"] = vals
+    return vals
+
+def _bl_enabled():
+    v = str(_bl_cfg().get("buylimit_enabled", "on")).strip().lower()
+    return v not in ("0", "off", "false", "no", "disabled", "closed")
+
+def _bl_max():
+    try:
+        n = int(str(_bl_cfg().get("buylimit_max", BUYLIMIT_MAX)).strip())
+        return n if 1 <= n <= 100000 else BUYLIMIT_MAX
+    except Exception:
+        return BUYLIMIT_MAX
+
+def _bl_window():
+    try:
+        n = int(str(_bl_cfg().get("buylimit_window_min", BUYLIMIT_WINDOW // 60)).strip())
+        return n * 60 if 1 <= n <= 1440 else BUYLIMIT_WINDOW
+    except Exception:
+        return BUYLIMIT_WINDOW
+
+def _bl_cats():
+    raw = str(_bl_cfg().get("buylimit_cats", "")).strip()
+    if not raw:
+        return BUYLIMIT_CATS
+    s = {c.strip().lower() for c in raw.replace("\\n", ",").split(",") if c.strip()}
+    return s or BUYLIMIT_CATS
 
 def _bl_limited(cat):
     try:
-        return str(cat or "").strip().lower() in BUYLIMIT_CATS
+        if not _bl_enabled():
+            return False
+        return str(cat or "").strip().lower() in _bl_cats()
     except Exception:
         return False
+
 
 def _bl_db_path():
     _p = globals().get("DB_FILE") or globals().get("DB_PATH") or globals().get("DB")
@@ -115,9 +173,9 @@ def _bl_state(uid):
     if not row:
         return 0, 0
     ws, cnt = int(row[0] or 0), int(row[1] or 0)
-    if ws <= 0 or now - ws >= BUYLIMIT_WINDOW:
+    if ws <= 0 or now - ws >= _bl_window():
         return 0, 0
-    return cnt, BUYLIMIT_WINDOW - (now - ws)
+    return cnt, _bl_window() - (now - ws)
 
 def _bl_fmt_left(secs):
     secs = max(0, int(secs))
@@ -134,7 +192,7 @@ def _bl_allow(uid, qty=1, cat=None):
     if not _bl_limited(cat):
         return True, 0, 0, qty
     used, left = _bl_state(uid)
-    remain = max(0, BUYLIMIT_MAX - used)
+    remain = max(0, _bl_max() - used)
     if qty <= remain:
         return True, used, left, qty
     return False, used, left, remain
@@ -152,7 +210,7 @@ def _bl_commit(uid, qty=1, cat=None):
         cur = conn.cursor()
         _bl_init(cur)
         row = cur.execute("SELECT window_start, count FROM buy_limit WHERE user_id=?", (uid,)).fetchone()
-        if row and int(row[0] or 0) > 0 and now - int(row[0]) < BUYLIMIT_WINDOW:
+        if row and int(row[0] or 0) > 0 and now - int(row[0]) < _bl_window():
             ws, cnt = int(row[0]), int(row[1] or 0) + qty
             cur.execute("UPDATE buy_limit SET count=? WHERE user_id=?", (cnt, uid))
         else:
@@ -165,39 +223,39 @@ def _bl_commit(uid, qty=1, cat=None):
     finally:
         try: conn.close()
         except Exception: pass
-    return cnt, max(0, BUYLIMIT_WINDOW - (now - ws))
+    return cnt, max(0, _bl_window() - (now - ws))
 
 def _bl_block_text(used, left, want=None, allowed=0):
     used = max(0, int(used or 0))
-    remain = max(0, BUYLIMIT_MAX - used)
+    remain = max(0, _bl_max() - used)
     if remain > 0:
         head = (
             "⚠️ **লিমিটের বেশি চাওয়া হয়েছে**\\n\\n"
-            f"🧾 এই ১০ মিনিটে ব্যবহার: **{used}/{BUYLIMIT_MAX} pcs**\\n"
+            f"🧾 এই উইন্ডোতে ব্যবহার: **{used}/{_bl_max()} pcs**\\n"
             f"✅ এখন সর্বোচ্চ নিতে পারবেন: **{remain} pcs**\\n"
             f"⏳ পুরো লিমিট রিসেট হবে: **{_bl_fmt_left(left)}** পরে\\n\\n"
         )
     else:
         head = (
             "⛔ **কেনার লিমিট শেষ**\\n\\n"
-            f"🧾 আপনি এই ১০ মিনিটে **{used}/{BUYLIMIT_MAX} pcs** নিয়ে ফেলেছেন।\\n"
+            f"🧾 আপনি এই উইন্ডোতে **{used}/{_bl_max()} pcs** নিয়ে ফেলেছেন।\\n"
             f"⏳ আবার নিতে পারবেন: **{_bl_fmt_left(left)}** পরে\\n\\n"
         )
     return head + (
-        f"ℹ️ নিয়ম: **FB 1000xx** এর জন্য প্রতি **১০ মিনিটে সর্বোচ্চ {BUYLIMIT_MAX} pcs** "
+        f"ℹ️ নিয়ম: **FB 1000xx** এর জন্য প্রতি **{_bl_window()//60} মিনিটে সর্বোচ্চ {_bl_max()} pcs** "
         "(কম কম করে নিলেও যোগ হয়ে হিসাব হবে)। FB 61 ও Temp ID unlimited।"
     )
 
 def _bl_ok_text(used, left):
     used = max(0, int(used or 0))
-    remain = max(0, BUYLIMIT_MAX - used)
+    remain = max(0, _bl_max() - used)
     if remain <= 0:
         return (
-            f"⏱ **লিমিট পূর্ণ:** এই উইন্ডোতে **{used}/{BUYLIMIT_MAX} pcs** শেষ\\n"
-            f"🔄 নতুন {BUYLIMIT_MAX} pcs লিমিট চালু হবে **{_bl_fmt_left(left)}** পরে"
+            f"⏱ **লিমিট পূর্ণ:** এই উইন্ডোতে **{used}/{_bl_max()} pcs** শেষ\\n"
+            f"🔄 নতুন {_bl_max()} pcs লিমিট চালু হবে **{_bl_fmt_left(left)}** পরে"
         )
     return (
-        f"⏱ **লিমিট আপডেট:** এই উইন্ডোতে **{used}/{BUYLIMIT_MAX} pcs** ব্যবহার হয়েছে "
+        f"⏱ **লিমিট আপডেট:** এই উইন্ডোতে **{used}/{_bl_max()} pcs** ব্যবহার হয়েছে "
         f"(বাকি **{remain} pcs**)\\n"
         f"🔄 রিসেট হবে **{_bl_fmt_left(left)}** পরে"
     )
