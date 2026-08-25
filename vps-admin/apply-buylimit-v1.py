@@ -24,9 +24,17 @@ STORE_PY = "store.py"
 MARKER   = "# [BUYLIMIT_V1]"
 
 HELPER = '''
-# [BUYLIMIT_V1] ---- 10 pcs / 10 min per-user purchase limit ----
+# [BUYLIMIT_V1] ---- 10 pcs / 10 min limit (শুধু FB 1000xx) ----
 BUYLIMIT_MAX    = 10
 BUYLIMIT_WINDOW = 600  # seconds
+# শুধু এই category গুলোতে limit; fb61 / tempid / অন্যসব unlimited
+BUYLIMIT_CATS   = {"fb1000", "fb1000xx", "1000xx"}
+
+def _bl_limited(cat):
+    try:
+        return str(cat or "").strip().lower() in BUYLIMIT_CATS
+    except Exception:
+        return False
 
 def _bl_conn():
     try:
