@@ -61,12 +61,70 @@ BUYLIMIT_MAX    = 10
 BUYLIMIT_WINDOW = 600  # seconds
 # শুধু এই category গুলোতে limit; fb61 / tempid / অন্যসব unlimited
 BUYLIMIT_CATS   = {"fb1000", "fb1000xx", "1000xx"}
+# web panel (config table) থেকে on/off + value override — 5s cache
+_BL_CFG_CACHE = {"t": 0, "v": {}}
+
+def _bl_cfg():
+    """config table থেকে buylimit_* key গুলো পড়ে (web panel controlled)"""
+    import time as _t
+    now = _t.time()
+    if now - _BL_CFG_CACHE["t"] < 5:
+        return _BL_CFG_CACHE["v"]
+    vals = {}
+    conn = None
+    try:
+        conn = _bl_conn()
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
+        for k, v in cur.execute(
+            "SELECT key, value FROM config WHERE key IN "
+            "('buylimit_enabled','buylimit_max','buylimit_window_min','buylimit_cats')"
+        ).fetchall():
+            vals[str(k)] = str(v)
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try: conn.close()
+            except Exception: pass
+    _BL_CFG_CACHE["t"] = now
+    _BL_CFG_CACHE["v"] = vals
+    return vals
+
+def _bl_enabled():
+    v = str(_bl_cfg().get("buylimit_enabled", "on")).strip().lower()
+    return v not in ("0", "off", "false", "no", "disabled", "closed")
+
+def _bl_max():
+    try:
+        n = int(str(_bl_cfg().get("buylimit_max", BUYLIMIT_MAX)).strip())
+        return n if 1 <= n <= 100000 else BUYLIMIT_MAX
+    except Exception:
+        return BUYLIMIT_MAX
+
+def _bl_window():
+    try:
+        n = int(str(_bl_cfg().get("buylimit_window_min", BUYLIMIT_WINDOW // 60)).strip())
+        return n * 60 if 1 <= n <= 1440 else BUYLIMIT_WINDOW
+    except Exception:
+        return BUYLIMIT_WINDOW
+
+def _bl_cats():
+    raw = str(_bl_cfg().get("buylimit_cats", "")).strip()
+    if not raw:
+        return BUYLIMIT_CATS
+    s = {c.strip().lower() for c in raw.replace("\\n", ",").split(",") if c.strip()}
+    return s or BUYLIMIT_CATS
 
 def _bl_limited(cat):
     try:
-        return str(cat or "").strip().lower() in BUYLIMIT_CATS
+        if not _bl_enabled():
+            return False
+        return str(cat or "").strip().lower() in _bl_cats()
     except Exception:
         return False
+
 
 def _bl_db_path():
     _p = globals().get("DB_FILE") or globals().get("DB_PATH") or globals().get("DB")
