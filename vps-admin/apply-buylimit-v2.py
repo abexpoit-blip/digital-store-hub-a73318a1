@@ -20,12 +20,76 @@
    cp /root/store.py.backup-buylimit2-<ts> /root/store.py && pm2 restart nexus-bot
 =====================================================================
 """
-import os, re, sys, time, shutil, py_compile, importlib.util
+import os, re, sys, time, shutil, py_compile, importlib.util, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 V1 = os.path.join(HERE, "apply-buylimit-v1.py")
 MARKER = "# [BUYLIMIT_V1]"
 HOOK_MARK = "# [BUYLIMIT_HOOK]"
+HELPER_START = "# [BUYLIMIT_V1] ---- 10 pcs / 10 min limit"
+HELPER_END = "# [BUYLIMIT_V1] ---- end helper ----"
+
+
+def _replace_helper(src, helper):
+    start = src.find(HELPER_START)
+    if start < 0:
+        last = 0
+        for m2 in re.finditer(r"^(?:import|from)\s+\S+.*$", src, re.M):
+            last = m2.end()
+        if not last:
+            die("import block পাওয়া যায়নি।")
+        return src[:last] + "\n" + helper + src[last:]
+    end = src.find(HELPER_END, start)
+    if end < 0:
+        die("পুরনো BUYLIMIT helper block অসম্পূর্ণ — backup restore করে আবার চালান।")
+    line_end = src.find("\n", end)
+    if line_end < 0:
+        line_end = len(src)
+    else:
+        line_end += 1
+    return src[:start] + helper.strip("\n") + "\n" + src[line_end:]
+
+
+def _detect_db_path(src, store_py):
+    candidates = []
+    for name in ("DB_FILE", "DB_PATH", "DB"):
+        m = re.search(r"^\s*%s\s*=\s*['\"]([^'\"]+)['\"]" % name, src, re.M)
+        if m:
+            val = os.path.expanduser(m.group(1))
+            if os.path.isabs(val):
+                candidates.append(val)
+            else:
+                candidates.append(os.path.join(os.path.dirname(store_py), val))
+                candidates.append(os.path.abspath(val))
+    candidates.extend([
+        "/root/store.db",
+        os.path.join(os.path.dirname(store_py), "store.db"),
+        os.path.abspath("store.db"),
+    ])
+    seen = set()
+    for path in candidates:
+        path = os.path.abspath(path)
+        if path in seen:
+            continue
+        seen.add(path)
+        if os.path.exists(path):
+            return path
+    return "/root/store.db"
+
+
+def _ensure_db_table(src, store_py):
+    db_path = _detect_db_path(src, store_py)
+    conn = sqlite3.connect(db_path, timeout=15)
+    try:
+        conn.execute("PRAGMA busy_timeout=15000")
+        conn.execute("""CREATE TABLE IF NOT EXISTS buy_limit (
+            user_id INTEGER PRIMARY KEY,
+            window_start INTEGER NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0)""")
+        conn.commit()
+    finally:
+        conn.close()
+    print(f"✅ DB table ready: {db_path} -> buy_limit")
 
 
 def die(m):
@@ -142,13 +206,7 @@ def main():
 
     src2 = src[:s] + new_body + src[e:]
 
-    if MARKER not in src2:
-        last = 0
-        for m2 in re.finditer(r"^(?:import|from)\s+\S+.*$", src2, re.M):
-            last = m2.end()
-        if not last:
-            die("import block পাওয়া যায়নি।")
-        src2 = src2[:last] + "\n" + v1.HELPER + src2[last:]
+    src2 = _replace_helper(src2, v1.HELPER)
 
     backup = f"{store_py}.backup-buylimit2-{int(time.time())}"
     shutil.copy2(store_py, backup)
@@ -160,7 +218,8 @@ def main():
         shutil.copy2(backup, store_py)
         die(f"Syntax error — revert করা হলো: {ex}")
 
-    print("✅ BUYLIMIT v2 hook installed (FB 1000xx: 10 pcs / 10 min, fb61+tempid unlimited)")
+    _ensure_db_table(src2, store_py)
+    print("✅ BUYLIMIT v2 hook installed/upgraded (FB 1000xx: 10 pcs / 10 min, fb61+tempid unlimited)")
     print("➡️ এরপর: pm2 restart nexus-bot")
 
 
