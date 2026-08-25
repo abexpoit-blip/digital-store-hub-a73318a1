@@ -86,10 +86,15 @@ def _ensure_db_table(src, store_py):
             user_id INTEGER PRIMARY KEY,
             window_start INTEGER NOT NULL,
             count INTEGER NOT NULL DEFAULT 0)""")
+        conn.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('buylimit_enabled','on')")
+        conn.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('buylimit_max','10')")
+        conn.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('buylimit_window_min','10')")
+        conn.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('buylimit_cats','fb1000, fb1000xx, 1000xx')")
         conn.commit()
     finally:
         conn.close()
-    print(f"✅ DB table ready: {db_path} -> buy_limit")
+    print(f"✅ DB table ready: {db_path} -> buy_limit (+config defaults)")
 
 
 def die(m):
