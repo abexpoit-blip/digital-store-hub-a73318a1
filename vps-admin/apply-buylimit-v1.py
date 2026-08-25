@@ -127,8 +127,8 @@ def _bl_block_text(used, left):
         "⛔ **কেনার লিমিট শেষ**\\n\\n"
         f"🧾 আপনি এই ১০ মিনিটে **{used}/{BUYLIMIT_MAX} pcs** নিয়ে ফেলেছেন।\\n"
         f"⏳ আবার নিতে পারবেন: **{_bl_fmt_left(left)}** পরে\\n\\n"
-        f"ℹ️ নিয়ম: প্রতি **১০ মিনিটে সর্বোচ্চ {BUYLIMIT_MAX} pcs**। "
-        "সময় শেষ হলেই আবার পুরো লিমিট চালু হবে।"
+        f"ℹ️ নিয়ম: **FB 1000xx** এর জন্য প্রতি **১০ মিনিটে সর্বোচ্চ {BUYLIMIT_MAX} pcs**। "
+        "FB 61 ও Temp ID unlimited। সময় শেষ হলেই আবার পুরো লিমিট চালু হবে।"
     )
 
 def _bl_ok_text(used, left):
