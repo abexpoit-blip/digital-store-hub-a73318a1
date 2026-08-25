@@ -82,20 +82,23 @@ def _bl_fmt_left(secs):
     return f"{secs // 60} মিনিট {secs % 60} সেকেন্ড"
 
 def _bl_allow(uid, qty=1, cat=None):
-    """(ok, used, left_secs) — limit ছাড়ালে ok=False; non-limited category হলে সবসময় ok"""
-    if not _bl_limited(cat):
-        return True, 0, 0
-    used, left = _bl_state(uid)
+    """(ok, used, left_secs, allowed) — per-pcs cumulative counting.
+    • qty <= বাকি pcs  -> ok=True, allowed=qty
+    • qty > বাকি pcs   -> ok=False, allowed=বাকি pcs (0 হলে পুরো block)
+    • non-limited category (fb61/tempid) -> সবসময় ok, allowed=qty
+    """
     try: qty = max(1, int(qty))
     except Exception: qty = 1
-    if used + qty > BUYLIMIT_MAX:
-        if left <= 0:
-            left = BUYLIMIT_WINDOW
-        return False, used, left
-    return True, used, left
+    if not _bl_limited(cat):
+        return True, 0, 0, qty
+    used, left = _bl_state(uid)
+    remain = max(0, BUYLIMIT_MAX - used)
+    if qty <= remain:
+        return True, used, left, qty
+    return False, used, left, remain
 
 def _bl_commit(uid, qty=1, cat=None):
-    """কেনার পরে count বাড়ায়; ফেরত দেয় (used, left_secs)"""
+    """কেনার পরে count বাড়ায় (যত pcs কিনেছে ততই); ফেরত দেয় (used, left_secs)"""
     if not _bl_limited(cat):
         return 0, 0
     import time as _t
@@ -122,20 +125,39 @@ def _bl_commit(uid, qty=1, cat=None):
         except Exception: pass
     return cnt, max(0, BUYLIMIT_WINDOW - (now - ws))
 
-def _bl_block_text(used, left):
-    return (
-        "⛔ **কেনার লিমিট শেষ**\\n\\n"
-        f"🧾 আপনি এই ১০ মিনিটে **{used}/{BUYLIMIT_MAX} pcs** নিয়ে ফেলেছেন।\\n"
-        f"⏳ আবার নিতে পারবেন: **{_bl_fmt_left(left)}** পরে\\n\\n"
-        f"ℹ️ নিয়ম: **FB 1000xx** এর জন্য প্রতি **১০ মিনিটে সর্বোচ্চ {BUYLIMIT_MAX} pcs**। "
-        "FB 61 ও Temp ID unlimited। সময় শেষ হলেই আবার পুরো লিমিট চালু হবে।"
+def _bl_block_text(used, left, want=None, allowed=0):
+    used = max(0, int(used or 0))
+    remain = max(0, BUYLIMIT_MAX - used)
+    if remain > 0:
+        head = (
+            "⚠️ **লিমিটের বেশি চাওয়া হয়েছে**\\n\\n"
+            f"🧾 এই ১০ মিনিটে ব্যবহার: **{used}/{BUYLIMIT_MAX} pcs**\\n"
+            f"✅ এখন সর্বোচ্চ নিতে পারবেন: **{remain} pcs**\\n"
+            f"⏳ পুরো লিমিট রিসেট হবে: **{_bl_fmt_left(left)}** পরে\\n\\n"
+        )
+    else:
+        head = (
+            "⛔ **কেনার লিমিট শেষ**\\n\\n"
+            f"🧾 আপনি এই ১০ মিনিটে **{used}/{BUYLIMIT_MAX} pcs** নিয়ে ফেলেছেন।\\n"
+            f"⏳ আবার নিতে পারবেন: **{_bl_fmt_left(left)}** পরে\\n\\n"
+        )
+    return head + (
+        f"ℹ️ নিয়ম: **FB 1000xx** এর জন্য প্রতি **১০ মিনিটে সর্বোচ্চ {BUYLIMIT_MAX} pcs** "
+        "(কম কম করে নিলেও যোগ হয়ে হিসাব হবে)। FB 61 ও Temp ID unlimited।"
     )
 
 def _bl_ok_text(used, left):
+    used = max(0, int(used or 0))
+    remain = max(0, BUYLIMIT_MAX - used)
+    if remain <= 0:
+        return (
+            f"⏱ **লিমিট পূর্ণ:** এই উইন্ডোতে **{used}/{BUYLIMIT_MAX} pcs** শেষ\\n"
+            f"🔄 নতুন {BUYLIMIT_MAX} pcs লিমিট চালু হবে **{_bl_fmt_left(left)}** পরে"
+        )
     return (
         f"⏱ **লিমিট আপডেট:** এই উইন্ডোতে **{used}/{BUYLIMIT_MAX} pcs** ব্যবহার হয়েছে "
-        f"(বাকি **{max(0, BUYLIMIT_MAX - used)} pcs**)\\n"
-        f"🔄 নতুন ১০ pcs লিমিট চালু হবে **{_bl_fmt_left(left)}** পরে"
+        f"(বাকি **{remain} pcs**)\\n"
+        f"🔄 রিসেট হবে **{_bl_fmt_left(left)}** পরে"
     )
 # [BUYLIMIT_V1] ---- end helper ----
 '''
