@@ -217,9 +217,11 @@ def inspect(src):
 
 
 def main():
-    if not os.path.exists(STORE_PY):
-        die(f"{STORE_PY} এই folder এ নাই। `cd /root` করে চালান।")
-    src = open(STORE_PY, encoding="utf-8").read()
+    store_py = _resolve_store_py()
+    if not store_py:
+        die("store.py খুঁজে পাওয়া যায়নি। `STORE_PY=/root/store.py python3 vps-admin/apply-buylimit-v1.py --inspect` দিয়ে চালান।")
+    print(f"ℹ️ Target store.py: {store_py}")
+    src = open(store_py, encoding="utf-8").read()
 
     if "--inspect" in sys.argv:
         inspect(src)
@@ -244,15 +246,15 @@ def main():
     if not hits:
         die("balance deduction line পাওয়া যায়নি — `--inspect` চালিয়ে আউটপুট পাঠান।")
 
-    backup = f"{STORE_PY}.backup-buylimit-{int(time.time())}"
-    shutil.copy2(STORE_PY, backup)
+    backup = f"{store_py}.backup-buylimit-{int(time.time())}"
+    shutil.copy2(store_py, backup)
     print(f"✅ Backup: {backup}")
 
-    open(STORE_PY, "w", encoding="utf-8").write(src)
+    open(store_py, "w", encoding="utf-8").write(src)
     try:
-        py_compile.compile(STORE_PY, doraise=True)
+        py_compile.compile(store_py, doraise=True)
     except py_compile.PyCompileError as e:
-        shutil.copy2(backup, STORE_PY)
+        shutil.copy2(backup, store_py)
         die(f"Syntax error — revert করা হলো: {e}")
 
     print("✅ BUYLIMIT helper installed (10 pcs / 10 min)")
