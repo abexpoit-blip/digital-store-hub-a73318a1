@@ -81,8 +81,10 @@ def _bl_fmt_left(secs):
     secs = max(0, int(secs))
     return f"{secs // 60} মিনিট {secs % 60} সেকেন্ড"
 
-def _bl_allow(uid, qty=1):
-    """(ok, used, left_secs) — limit ছাড়ালে ok=False"""
+def _bl_allow(uid, qty=1, cat=None):
+    """(ok, used, left_secs) — limit ছাড়ালে ok=False; non-limited category হলে সবসময় ok"""
+    if not _bl_limited(cat):
+        return True, 0, 0
     used, left = _bl_state(uid)
     try: qty = max(1, int(qty))
     except Exception: qty = 1
@@ -92,8 +94,10 @@ def _bl_allow(uid, qty=1):
         return False, used, left
     return True, used, left
 
-def _bl_commit(uid, qty=1):
+def _bl_commit(uid, qty=1, cat=None):
     """কেনার পরে count বাড়ায়; ফেরত দেয় (used, left_secs)"""
+    if not _bl_limited(cat):
+        return 0, 0
     import time as _t
     now = int(_t.time())
     try: qty = max(1, int(qty))
