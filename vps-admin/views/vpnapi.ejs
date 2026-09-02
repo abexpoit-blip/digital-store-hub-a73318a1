@@ -1,0 +1,101 @@
+<%- include('partials/header', { title: 'VPN Provider API', msg, currentPath }) %>
+
+<div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+  <h1 class="text-2xl font-bold">🔌 VPN Provider API</h1>
+  <div class="flex items-center gap-2">
+    <div class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs">
+      Provider balance:
+      <% if (balance !== null) { %>
+        <span class="text-emerald-400 font-semibold"><%= balance %></span>
+      <% } else { %>
+        <span class="text-rose-400"><%= balanceErr || 'API key নেই' %></span>
+      <% } %>
+    </div>
+    <form method="post" action="/vpnapi/sync">
+      <button class="bg-cyan-600 hover:bg-cyan-500 px-4 py-2 rounded text-sm font-medium">🔄 Sync packages</button>
+    </form>
+  </div>
+</div>
+
+<p class="text-sm text-slate-400 mb-4">
+  এই পেজ শুধু provider এর <b>brand / package / days / availability</b> sync করে —
+  <b class="text-amber-400">selling price এখানে change হয় না</b>, price থাকবে <a href="/vpn" class="text-cyan-400 underline">💵 VPN Prices</a> পেজে।
+  <% if (lastSync) { %>
+    <br/>শেষ sync: <span class="text-slate-300"><%= new Date(lastSync * 1000).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' }) %></span> (Dhaka)
+  <% } %>
+</p>
+
+<!-- API settings -->
+<div class="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6">
+  <div class="text-sm font-semibold mb-3">⚙️ API Settings</div>
+  <form method="post" action="/vpnapi/settings" class="flex flex-wrap items-end gap-3">
+    <label class="text-xs text-slate-400">
+      API URL
+      <input name="api_url" value="<%= apiUrl %>"
+             class="mt-1 block w-96 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm"/>
+    </label>
+    <label class="text-xs text-slate-400">
+      API Key <%= keySet ? '(সেট আছে: ' + keyMask + ')' : '(সেট করা নেই)' %>
+      <input name="api_key" type="password" placeholder="<%= keySet ? 'change করতে নতুন key দিন' : 'TTECH_...' %>"
+             class="mt-1 block w-80 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-sm"/>
+    </label>
+    <button class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded text-sm">Save</button>
+  </form>
+</div>
+
+<!-- Services table -->
+<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-4">
+  <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+    <div class="font-semibold">Provider packages <span class="text-xs text-slate-500">(<%= services.length %>)</span></div>
+    <form method="post" action="/vpnapi/import"
+          onsubmit="return confirm('এগুলো আমাদের VPN Packages এ যোগ করবেন? (price 0 থাকবে, পরে /vpn এ বসাবেন)')">
+      <button class="text-xs bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded">➕ আমাদের VPN Packages এ যোগ করো</button>
+    </form>
+  </div>
+  <table class="w-full text-sm">
+    <thead>
+      <tr>
+        <th>Code</th><th>Brand</th><th>Category</th><th>Days</th><th>Our pkg id</th>
+        <th>Provider rate</th><th>Qty</th><th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (!services.length) { %>
+        <tr><td colspan="8" class="text-center text-slate-500 py-6">
+          কোনো data নেই — উপরে <b>🔄 Sync packages</b> চাপুন।
+        </td></tr>
+      <% } %>
+      <% services.forEach(function(s){ %>
+        <tr class="<%= s.available ? '' : 'opacity-50' %>">
+          <td class="font-mono text-xs text-slate-400"><%= s.service %></td>
+          <td class="font-semibold"><%= s.name %></td>
+          <td class="text-slate-300"><%= s.category || '—' %></td>
+          <td><%= s.days != null ? s.days + ' days' : '—' %></td>
+          <td class="font-mono text-xs text-cyan-400"><%= s.vpn_id %>/<%= s.pkg_id || '—' %></td>
+          <td class="text-slate-300">
+            <%= s.rate %>৳
+            <% if (s.discount_percent) { %>
+              <span class="text-xs text-slate-500 line-through"><%= s.original_rate %>৳</span>
+              <span class="text-xs text-emerald-400">-<%= s.discount_percent %>%</span>
+            <% } %>
+          </td>
+          <td class="text-xs text-slate-400"><%= s.min_qty %>–<%= s.max_qty %></td>
+          <td>
+            <% if (s.available) { %>
+              <span class="text-xs px-2 py-1 rounded bg-emerald-900/40 text-emerald-300">Available</span>
+            <% } else { %>
+              <span class="text-xs px-2 py-1 rounded bg-rose-900/40 text-rose-300">Unavailable</span>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
+
+<div class="text-xs text-slate-500">
+  ℹ️ Provider rate = ওদের কাছ থেকে কেনার দাম (আমাদের cost)। আমাদের বিক্রয় মূল্য আলাদা —
+  <a href="/vpn" class="text-cyan-400 underline">/vpn</a> পেজ থেকে সেট করুন।
+</div>
+
+<%- include('partials/footer') %>
