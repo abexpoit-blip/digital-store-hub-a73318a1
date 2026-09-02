@@ -85,6 +85,7 @@ app.use('/nord', requireLogin, require('./routes/nord'));
 app.use('/vpn', requireLogin, require('./routes/vpn'));
 app.use('/vpnapi', requireLogin, require('./routes/vpnapi'));
 app.use('/buylimit', requireLogin, require('./routes/buylimit'));
+app.use('/maintenance', requireLogin, require('./routes/maintenance'));
 
 
 // 404
