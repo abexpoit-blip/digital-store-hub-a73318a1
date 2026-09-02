@@ -1,0 +1,130 @@
+<%- include('partials/header', { title: 'Maintenance', msg, currentPath }) %>
+
+<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+  <h1 class="text-2xl font-bold">🛠 Maintenance Manager</h1>
+  <span class="px-3 py-1 rounded-full text-xs font-semibold <%= maintenanceOn ? 'bg-amber-600/30 text-amber-300 border border-amber-700' : 'bg-emerald-700/30 text-emerald-300 border border-emerald-800' %>">
+    <%= maintenanceOn ? '🛠 MAINTENANCE ON — user রা message পাচ্ছে' : '✅ LIVE — সব স্বাভাবিক' %>
+  </span>
+</div>
+
+<!-- Master switch -->
+<div class="bg-slate-900 border <%= maintenanceOn ? 'border-amber-700' : 'border-slate-800' %> rounded-xl p-4 mb-6">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <div class="text-sm font-semibold mb-1">Master Maintenance Switch</div>
+      <div class="text-xs text-slate-400">
+        ON করলে সাধারণ user বটে কিছু করতে গেলেই নিচের message দেখবে। <b>Admin রা স্বাভাবিক ব্যবহার করতে পারবে</b> (test করার জন্য)।
+        <% if (maintenanceOn && since) { %>
+          <br/>শুরু হয়েছে: <b><%= new Date(since*1000).toLocaleString('en-GB') %></b>
+        <% } %>
+      </div>
+    </div>
+    <form method="post" action="/maintenance/toggle">
+      <input type="hidden" name="state" value="<%= maintenanceOn ? 'off' : 'on' %>"/>
+      <button class="px-4 py-2 rounded text-sm font-semibold text-white <%= maintenanceOn ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-amber-600 hover:bg-amber-500' %>">
+        <%= maintenanceOn ? '✅ Turn OFF (bot live করো)' : '🛠 Turn ON (maintenance)' %>
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Message editor -->
+<div class="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6">
+  <div class="text-sm font-semibold mb-2">📝 Maintenance message (user যা দেখবে)</div>
+  <form method="post" action="/maintenance/message">
+    <textarea name="message" rows="6" maxlength="2000"
+      class="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm font-mono"><%= message %></textarea>
+    <div class="flex items-center gap-2 mt-3">
+      <button class="bg-cyan-600 hover:bg-cyan-500 px-4 py-2 rounded text-sm font-medium">Save message</button>
+      <button form="resetmsg" class="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded text-xs">Default এ ফেরাও</button>
+      <span class="text-xs text-slate-500">সেভ করলে সাথে সাথেই bot এ apply হবে (restart লাগবে না)।</span>
+    </div>
+  </form>
+  <form id="resetmsg" method="post" action="/maintenance/message/reset"></form>
+</div>
+
+<!-- Service toggles -->
+<div class="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-6">
+  <div class="text-sm font-semibold mb-3">🎛 Service-wise ON/OFF (আলাদা আলাদা বন্ধ করা যাবে)</div>
+  <div class="grid gap-3 md:grid-cols-2">
+    <% toggles.forEach(function(t){ %>
+      <div class="flex items-center justify-between gap-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+        <div>
+          <div class="text-sm font-medium"><%= t.label %></div>
+          <div class="text-[11px] text-slate-500"><%= t.help %></div>
+        </div>
+        <form method="post" action="/maintenance/service" class="flex items-center gap-2">
+          <input type="hidden" name="key" value="<%= t.key %>"/>
+          <input type="hidden" name="state" value="<%= t.on ? 'off' : 'on' %>"/>
+          <span class="px-2 py-1 rounded text-[11px] font-semibold <%= t.on ? 'bg-emerald-700/40 text-emerald-300' : 'bg-rose-700/40 text-rose-300' %>">
+            <%= t.on ? 'ON' : 'OFF' %>
+          </span>
+          <button class="text-xs px-3 py-1 rounded text-white <%= t.on ? 'bg-rose-600 hover:bg-rose-500' : 'bg-emerald-600 hover:bg-emerald-500' %>">
+            <%= t.on ? 'বন্ধ করো' : 'চালু করো' %>
+          </button>
+        </form>
+      </div>
+    <% }) %>
+  </div>
+</div>
+
+<!-- Process health -->
+<div class="grid gap-6 md:grid-cols-2 mb-6">
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <div class="text-sm font-semibold mb-3">🖥 Process health (pm2)</div>
+    <table class="w-full text-xs">
+      <thead class="text-slate-500">
+        <tr><th class="text-left py-1">Name</th><th>Status</th><th>CPU</th><th>RAM</th><th>Uptime</th><th>Restarts</th></tr>
+      </thead>
+      <tbody>
+        <% procs.forEach(function(p){ %>
+          <tr class="border-t border-slate-800 text-center">
+            <td class="text-left py-1.5 font-mono"><%= p.name %></td>
+            <td>
+              <span class="px-2 py-0.5 rounded <%= p.found && p.status === 'online' ? 'bg-emerald-700/40 text-emerald-300' : 'bg-rose-700/40 text-rose-300' %>">
+                <%= p.found ? p.status : 'not found' %>
+              </span>
+            </td>
+            <td><%= p.found ? p.cpu + '%' : '—' %></td>
+            <td><%= p.found ? p.mem : '—' %></td>
+            <td><%= p.found ? p.uptimeText : '—' %></td>
+            <td><%= p.found ? p.restarts : '—' %></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+    <div class="flex gap-2 mt-3">
+      <form method="post" action="/maintenance/restart">
+        <input type="hidden" name="target" value="bot"/>
+        <button class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-xs">🔁 Restart <%= botPm2 %></button>
+      </form>
+      <form method="post" action="/maintenance/restart">
+        <input type="hidden" name="target" value="admin"/>
+        <button class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-xs">🔁 Restart <%= adminPm2 %></button>
+      </form>
+    </div>
+  </div>
+
+  <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <div class="text-sm font-semibold mb-3">🗄 Database health</div>
+    <div class="text-xs space-y-1.5 font-mono text-slate-300">
+      <div>path: <span class="text-slate-400"><%= dbInfo.path %></span></div>
+      <div>size: <b><%= dbInfo.size %></b></div>
+      <div>WAL file: <b><%= dbInfo.wal %></b></div>
+      <div>journal mode: <b><%= dbInfo.journal %></b></div>
+    </div>
+    <div class="flex gap-2 mt-3">
+      <form method="post" action="/maintenance/checkpoint">
+        <button class="bg-cyan-700 hover:bg-cyan-600 px-3 py-1.5 rounded text-xs">🧹 WAL checkpoint (ফাইল ছোট করো)</button>
+      </form>
+      <form method="post" action="/maintenance/optimize">
+        <button class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-xs">⚡ Optimize</button>
+      </form>
+    </div>
+    <div class="text-[11px] text-slate-500 mt-2">
+      WAL ফাইল বড় হলে বট slow/hang করে — মাঝে মাঝে checkpoint চাপুন।
+    </div>
+  </div>
+</div>
+
+<%- include('partials/footer') %>
