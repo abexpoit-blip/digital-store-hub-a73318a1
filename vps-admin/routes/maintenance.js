@@ -98,7 +98,7 @@ router.get('/', async (req, res, next) => {
     };
 
     res.render('maintenance', {
-      maintenanceOn: maintenanceOn || (maintOn && on === 'on'),
+      maintenanceOn,
       message: cfgGet('maintenance_msg', DEFAULT_MSG),
       since: parseInt(cfgGet('maintenance_since', '0'), 10) || 0,
       toggles, procs, dbInfo,
