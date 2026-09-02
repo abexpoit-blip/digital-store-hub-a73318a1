@@ -80,8 +80,7 @@ function fmtUptime(sec) {
 
 router.get('/', async (req, res, next) => {
   try {
-    const maintOn = isOn(cfgGet('maintenance_mode', 'off')) && cfgGet('maintenance_mode', 'off') !== 'off';
-    const on = String(cfgGet('maintenance_mode', 'off')).toLowerCase();
+    const on = String(cfgGet('maintenance_mode', 'off')).trim().toLowerCase();
     const maintenanceOn = ['1', 'on', 'true', 'yes'].includes(on);
 
     const toggles = SERVICE_TOGGLES.map(([key, label, help]) => ({
