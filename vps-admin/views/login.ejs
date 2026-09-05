@@ -2,22 +2,118 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Login — Basictrick Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Sign In — BASICTRICK Enterprise</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          sky: {
+            50: '#f0f9ff',
+            100: '#e0f2fe',
+            200: '#bae6fd',
+            300: '#7dd3fc',
+            400: '#38bdf8',
+            500: '#0ea5e9',
+            600: '#0284c7',
+            700: '#0369a1',
+            800: '#075985',
+            900: '#0c4a6e',
+            950: '#082f49',
+          }
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body {
+    font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    background-color: #f0f7ff;
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(14, 165, 233, 0.15) 0px, transparent 45%),
+      radial-gradient(at 100% 0%, rgba(56, 189, 248, 0.12) 0px, transparent 40%),
+      radial-gradient(at 50% 100%, rgba(186, 230, 253, 0.35) 0px, transparent 60%),
+      linear-gradient(to right, rgba(14, 165, 233, 0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(14, 165, 233, 0.03) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+  }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+</style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center">
-  <form method="post" action="/login" class="bg-slate-900 border border-slate-800 rounded-2xl p-8 w-full max-w-sm shadow-2xl">
-    <div class="text-center mb-6">
-      <div class="text-cyan-400 text-2xl font-bold">★ BASICTRICK</div>
-      <div class="text-slate-400 text-sm mt-1">Admin Panel Login</div>
+<body class="text-slate-800 min-h-screen flex items-center justify-center p-4 selection:bg-sky-500 selection:text-white">
+  <div class="w-full max-w-md">
+    <!-- Login Card -->
+    <div class="bg-white border border-sky-200 rounded-3xl p-8 sm:p-10 shadow-xl shadow-sky-100/70 relative overflow-hidden">
+      <!-- Top Decorative Sky Glow -->
+      <div class="absolute -right-12 -top-12 w-36 h-36 bg-sky-100 rounded-full blur-2xl pointer-events-none"></div>
+      <div class="absolute -left-12 -bottom-12 w-36 h-36 bg-cyan-100/60 rounded-full blur-2xl pointer-events-none"></div>
+
+      <!-- Brand Header -->
+      <div class="text-center mb-8 relative z-10">
+        <div class="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-gradient-to-tr from-sky-600 via-sky-500 to-cyan-400 text-white shadow-lg shadow-sky-500/30 mb-4">
+          <svg class="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div class="flex items-center justify-center gap-2">
+          <h1 class="text-2xl font-extrabold tracking-tight text-slate-900">
+            <span class="bg-gradient-to-r from-sky-600 to-blue-700 bg-clip-text text-transparent">BASICTRICK</span>
+          </h1>
+          <span class="text-[10px] bg-sky-100 text-sky-700 border border-sky-300 font-mono px-2 py-0.5 rounded-full font-bold shadow-xs">
+            ENTERPRISE
+          </span>
+        </div>
+        <p class="text-xs text-slate-500 mt-1.5 font-medium">
+          Management & Telemetry Authentication
+        </p>
+      </div>
+
+      <% if (error) { %>
+        <div class="bg-rose-50 border border-rose-200 text-rose-700 text-xs p-3.5 rounded-2xl mb-5 font-semibold flex items-center gap-2 shadow-xs">
+          <span>⚠️</span>
+          <span><%= error %></span>
+        </div>
+      <% } %>
+
+      <!-- Form -->
+      <form method="post" action="/login" class="space-y-4 relative z-10">
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider font-mono">
+              Master Password
+            </label>
+            <span class="text-[10px] text-sky-600 font-semibold font-mono flex items-center gap-1">
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> SSL Secured
+            </span>
+          </div>
+          <div class="relative">
+            <input type="password" name="password" required autofocus placeholder="Enter administrative password..."
+                   class="w-full bg-slate-50 border border-slate-200 focus:border-sky-500 focus:bg-white rounded-xl px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none transition font-mono shadow-xs"/>
+          </div>
+        </div>
+
+        <button type="submit"
+                class="w-full bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-bold py-3.5 rounded-xl transition shadow-md shadow-sky-500/25 flex items-center justify-center gap-2 text-sm">
+          <span>Sign In to Dashboard</span>
+          <span>→</span>
+        </button>
+      </form>
+
+      <!-- Security Guarantee Footer -->
+      <div class="mt-8 pt-6 border-t border-sky-100 text-center relative z-10">
+        <div class="text-[11px] text-slate-400 font-mono flex items-center justify-center gap-2">
+          <span>🛡️ BASICTRICK Engine</span>
+          <span>•</span>
+          <span>v10.07 PRO</span>
+        </div>
+      </div>
     </div>
-    <% if (error) { %>
-      <div class="bg-rose-900/40 border border-rose-700 text-rose-200 text-sm p-3 rounded mb-4"><%= error %></div>
-    <% } %>
-    <label class="block text-sm text-slate-400 mb-2">Master Password</label>
-    <input type="password" name="password" required autofocus
-           class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 mb-4 focus:outline-none focus:border-cyan-500"/>
-    <button class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2 rounded">Sign In</button>
-  </form>
+  </div>
 </body>
 </html>
