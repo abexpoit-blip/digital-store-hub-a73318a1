@@ -29,6 +29,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import FSInputFile
 from poll_handler import register_poll_handlers
 from dotenv import load_dotenv
+load_dotenv()
 
 # ===== ZiniPay Auto-Deposit Helper (added by patch) =====
 import requests as _zp_requests
@@ -185,7 +186,9 @@ def is_bot_online():
         return True
     return False
 
-# --- BOT STATUS HELPER ---
+# --- BOT STATUS & MAINTENANCE HELPERS ---
+_OFF_VALS = ('0', 'off', 'false', 'no', 'closed', 'disabled')
+
 def get_bot_status():
     conn = _dbc()
     res = conn.execute("SELECT value FROM config WHERE key='bot_status'").fetchone()
@@ -197,6 +200,49 @@ def set_bot_status(status):
     conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('bot_status', ?)", (status,))
     conn.commit()
     conn.close()
+
+def is_maintenance_mode() -> bool:
+    try:
+        conn = _dbc()
+        row = conn.execute("SELECT value FROM config WHERE key='maintenance_mode'").fetchone()
+        conn.close()
+        if not row or row[0] is None:
+            return False
+        val = str(row[0]).strip().lower()
+        return val in ('1', 'on', 'true', 'yes', 'enabled')
+    except Exception:
+        return False
+
+def get_maintenance_msg() -> str:
+    def_msg = (
+        "🛠️ **সিস্টেম রক্ষণাবেক্ষণ চলছে**\n\n"
+        "আমরা সিস্টেমের কিছু জরুরি উন্নয়নমূলক কাজ করছি।\n"
+        "অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।\n\n"
+        "🔐 আপনার ব্যালেন্স ও পূর্বের অর্ডার সম্পূর্ণ নিরাপদ আছে।\n"
+        "🙏 ধৈর্য ধারণের জন্য ধন্যবাদ!"
+    )
+    try:
+        conn = _dbc()
+        row = conn.execute("SELECT value FROM config WHERE key='maintenance_msg'").fetchone()
+        conn.close()
+        if row and row[0] and str(row[0]).strip():
+            return str(row[0]).strip()
+    except Exception:
+        pass
+    return def_msg
+
+def is_service_enabled(service_key: str) -> bool:
+    """Check if a specific service (buy_service_enabled, deposit_service_enabled, etc.) is active."""
+    try:
+        conn = _dbc()
+        row = conn.execute("SELECT value FROM config WHERE key=?", (service_key,)).fetchone()
+        conn.close()
+        if not row or row[0] is None:
+            return True
+        val = str(row[0]).strip().lower()
+        return val not in _OFF_VALS
+    except Exception:
+        return True
 
 # --- DATABASE SETUP ---
 def init_db():
@@ -550,11 +596,16 @@ def _parse_delivery_line(line):
 
 def _fmt_txt_sync(items, lbl, qty):
     lines = [f"=== {lbl} × {qty} ==="]
-    for idx, (_sid, raw) in enumerate(items, 1):
-        parts = (raw or "").split(' ', 2)
-        uid = parts[0] if parts else ""
-        pw  = parts[1] if len(parts) > 1 else ""
-        ck  = " ".join(parts[2:]) if len(parts) > 2 else ""
+    for idx, item in enumerate(items or [], 1):
+        if isinstance(item, (tuple, list)):
+            raw = item[-1] if item else ""
+        else:
+            raw = str(item or "")
+        text = str(raw or "").strip()
+        parts = text.split(None, 2)
+        uid = parts[0] if len(parts) >= 1 else ""
+        pw  = parts[1] if len(parts) >= 2 else ""
+        ck  = parts[2] if len(parts) >= 3 else ""
         lines.append(f"\n--- #{idx} ---\nUID: {uid}\nPASS: {pw}\nCOOKIES: {ck}")
     return ("\n".join(lines)).encode("utf-8")
 
@@ -1429,6 +1480,10 @@ async def admin_set_vpn_price(message: types.Message, command: CommandObject, st
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     
+    # MAINTENANCE MODE CHECK
+    if is_maintenance_mode() and not is_admin(message.from_user.id):
+        return await message.answer(get_maintenance_msg(), parse_mode="Markdown")
+
     # USER OPEN/CLOSE CHECK
     conn = _dbc()
     exists = conn.execute("SELECT 1 FROM users WHERE user_id=?", (message.from_user.id,)).fetchone()
@@ -1444,12 +1499,23 @@ async def cmd_start(message: types.Message, state: FSMContext):
 async def back_home(c: types.CallbackQuery, state: FSMContext):
     await state.clear()
     await c.answer()
+    
+    # MAINTENANCE MODE CHECK
+    if is_maintenance_mode() and not is_admin(c.from_user.id):
+        return await c.message.answer(get_maintenance_msg(), parse_mode="Markdown")
+
     await c.message.delete()
     await show_dashboard_ui(c.from_user.id, c.from_user.first_name, bot, c.message.chat.id)
 
 @dp.callback_query(F.data == "catalog")
 async def show_cat(c: types.CallbackQuery):
     await c.answer()
+    if not is_service_enabled("buy_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer(
+            "🛒 **আইডি ক্রয় সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
+            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
+            parse_mode="Markdown"
+        )
     conn = _dbc()
     f6 = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb61'").fetchone()[0]
     f1 = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb1000'").fetchone()[0]
@@ -1470,6 +1536,12 @@ async def show_cat(c: types.CallbackQuery):
 @dp.callback_query(F.data == "bm_catalog")
 async def show_bm_cat(c: types.CallbackQuery):
     await c.answer()
+    if not is_service_enabled("buy_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer(
+            "🛒 **আইডি/বিএম ক্রয় সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
+            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
+            parse_mode="Markdown"
+        )
     conn = _dbc()
     ig = conn.execute("SELECT COUNT(*) FROM stock WHERE category='bmig'").fetchone()[0]
     fb = conn.execute("SELECT COUNT(*) FROM stock WHERE category='bmfb'").fetchone()[0]
@@ -1485,6 +1557,12 @@ async def show_bm_cat(c: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("buy_"))
 async def buy_qty_start(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
+    if not is_service_enabled("buy_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer(
+            "🛒 **আইডি ক্রয় সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
+            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
+            parse_mode="Markdown"
+        )
     cat = c.data.split("_")[1]
     await state.update_data(cat=cat)
     await c.message.answer(f"🔢 আপনি কতটি নিতে চান? সংখ্যাটি লিখুন (যেমন: 1):")
@@ -1625,6 +1703,12 @@ async def process_buy(m: types.Message, state: FSMContext):
 @dp.callback_query(F.data == "deposit")
 async def dep_start(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
+    if not is_service_enabled("deposit_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer(
+            "💰 **ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
+            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
+            parse_mode="Markdown"
+        )
     kb = InlineKeyboardBuilder()
     kb.row(types.InlineKeyboardButton(text="⚡ Auto Payment (bKash / Nagad)", callback_data="dep_auto"))
     kb.row(types.InlineKeyboardButton(text="💎 Binance USDT", callback_data="dep_binance"))
@@ -1649,6 +1733,12 @@ async def dep_start(c: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "dep_auto")
 async def dep_auto_start(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
+    if not is_service_enabled("deposit_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer(
+            "💰 **ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
+            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
+            parse_mode="Markdown"
+        )
     await c.message.answer(
         "⚡ *Auto Payment*\n\n"
         "💰 কত টাকা ডিপোজিট করবেন? \n"
@@ -1662,6 +1752,12 @@ async def dep_auto_start(c: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "dep_binance")
 async def dep_binance_start(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
+    if not is_service_enabled("deposit_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer(
+            "💰 **ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
+            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
+            parse_mode="Markdown"
+        )
     await c.message.answer(
         "💎 *Binance USDT Deposit*\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
@@ -1853,6 +1949,12 @@ async def admin_pay_action(c: types.CallbackQuery):
 @dp.callback_query(F.data == "vpn_catalog")
 async def show_vpn_catalog(c: types.CallbackQuery):
     await c.answer()
+    if not is_service_enabled("vpn_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer(
+            "🛡️ **ভিপিএন সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
+            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
+            parse_mode="Markdown"
+        )
     
     conn = _dbc()
     brands = conn.execute("SELECT DISTINCT v.vpn_id, v.vpn_name FROM vpn_brands v JOIN vpn_packages p ON v.vpn_id = p.vpn_id").fetchall()
@@ -2458,6 +2560,13 @@ async def support_menu(c: types.CallbackQuery):
 async def support_replace_start(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
     await state.clear()
+    
+    if not is_service_enabled("replace_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer(
+            "🔄 **রিপ্লেস রিকোয়েস্ট সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
+            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন অথবা সরাসরি এডমিনের সাথে যোগাযোগ করুন।",
+            parse_mode="Markdown"
+        )
     
     conn = _dbc()
     user_sales = conn.execute("""
