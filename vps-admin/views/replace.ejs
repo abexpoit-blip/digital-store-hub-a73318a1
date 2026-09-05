@@ -49,22 +49,36 @@
   </a>
 </div>
 
-<!-- Search Bar -->
-<form class="mb-6 flex gap-2">
-  <input type="hidden" name="status" value="<%= status %>"/>
-  <div class="relative flex-1 max-w-lg">
+<form id="bulkActionForm" method="post" action="/replace/bulk/delete-selected">
+<!-- Bulk Action Toolbar & Search Bar -->
+<div class="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+  <!-- Search -->
+  <div class="flex gap-2 flex-1 max-w-lg">
+    <input type="hidden" name="status" value="<%= status %>"/>
     <input name="q" value="<%= q %>" placeholder="Search by User ID, @username, or Account data..."
       class="w-full bg-slate-900/90 border border-slate-700/80 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl px-4 py-2.5 text-sm placeholder-slate-500 text-slate-200 outline-none transition"/>
+    <button type="submit" form="searchForm" class="bg-cyan-600 hover:bg-cyan-500 text-white font-medium px-4 py-2 rounded-xl text-xs transition shadow-lg shadow-cyan-600/20">
+      Search
+    </button>
+    <% if (q) { %>
+      <a href="/replace?status=<%= status %>" class="px-3 py-2 text-xs text-slate-400 hover:text-white flex items-center">
+        Clear
+      </a>
+    <% } %>
   </div>
-  <button class="bg-cyan-600 hover:bg-cyan-500 text-white font-medium px-5 py-2.5 rounded-xl text-sm transition shadow-lg shadow-cyan-600/20">
-    Search
-  </button>
-  <% if (q) { %>
-    <a href="/replace?status=<%= status %>" class="px-4 py-2.5 text-sm text-slate-400 hover:text-white flex items-center">
-      Clear
-    </a>
-  <% } %>
-</form>
+
+  <!-- Bulk Selection Actions -->
+  <div class="flex items-center gap-2">
+    <button type="button" id="btnDeleteSelected" onclick="submitDeleteSelected()"
+            class="hidden bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-lg shadow-rose-600/30 items-center gap-1.5 transition">
+      <span>🗑️</span> Delete Selected (<span id="selectedCount">0</span>)
+    </button>
+    <button type="button" onclick="confirmClearAll('<%= status %>')"
+            class="bg-rose-950/40 border border-rose-600/30 hover:bg-rose-900/40 text-rose-300 font-semibold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 transition">
+      <span>💥</span> Clear All <%= status.toUpperCase() %>
+    </button>
+  </div>
+</div>
 
 <!-- Table Container -->
 <div class="bg-slate-900/70 backdrop-blur-md border border-slate-800/90 rounded-2xl overflow-hidden shadow-2xl">
@@ -72,7 +86,11 @@
   <table class="w-full text-sm">
     <thead>
       <tr class="border-b border-slate-800 bg-slate-950/60 text-slate-400 font-mono text-[11px] tracking-wider uppercase">
-        <th class="py-3.5 px-4">ID</th>
+        <th class="py-3.5 px-4 w-10 text-center">
+          <input type="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll(this)"
+                 class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-cyan-600 focus:ring-0 cursor-pointer"/>
+        </th>
+        <th class="py-3.5 px-3">ID</th>
         <th class="py-3.5 px-4">User</th>
         <th class="py-3.5 px-4">Category</th>
         <th class="py-3.5 px-4">Broken Accounts (Old Data)</th>
@@ -89,7 +107,7 @@
     <tbody class="divide-y divide-slate-800/60">
       <% if (!rows.length) { %>
         <tr>
-          <td colspan="7" class="text-center text-slate-500 py-12">
+          <td colspan="8" class="text-center text-slate-500 py-12">
             <div class="text-3xl mb-2">📭</div>
             <div>এই ক্যাটাগরিতে কোনো রিকোয়েস্ট পাওয়া যায়নি।</div>
           </td>
@@ -97,7 +115,11 @@
       <% } %>
       <% rows.forEach(function(r){ %>
         <tr class="hover:bg-slate-800/40 transition">
-          <td class="py-3 px-4 font-mono text-slate-500 font-bold">#<%= r.id %></td>
+          <td class="py-3 px-4 text-center">
+            <input type="checkbox" name="selected_ids" value="<%= r.id %>" onclick="updateSelectedCount()"
+                   class="row-checkbox w-4 h-4 rounded bg-slate-900 border-slate-700 text-cyan-600 focus:ring-0 cursor-pointer"/>
+          </td>
+          <td class="py-3 px-3 font-mono text-slate-500 font-bold">#<%= r.id %></td>
           <td class="py-3 px-4">
             <a href="/users/<%= r.user_id %>" class="text-cyan-400 hover:underline font-semibold block">
               <%= r.username || 'User' %>
@@ -152,22 +174,17 @@
                       onclick="openResolveModal(<%= r.id %>, '<%= r.user_id %>', '<%- (r.username || 'User').replace(/'/g, '') %>')">
                 🔄 Give Replace
               </button>
-              <form method="post" action="/replace/<%= r.id %>/collect" class="inline">
-                <button class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-xl text-xs transition">
-                  Mark Collect
-                </button>
-              </form>
+              <button type="button" onclick="submitCollect(<%= r.id %>)" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-xl text-xs transition">
+                Mark Collect
+              </button>
               <button type="button" class="bg-rose-500/20 border border-rose-500/30 hover:bg-rose-500/30 text-rose-300 px-2.5 py-1.5 rounded-xl text-xs transition"
                       onclick="openRejectModal(<%= r.id %>)">
                 🚫 Reject
               </button>
             <% } %>
-            <form method="post" action="/replace/<%= r.id %>/delete" class="inline"
-                  onsubmit="return confirm('Permanently delete record?');">
-              <button class="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg text-xs transition" title="Delete">
-                🗑️
-              </button>
-            </form>
+            <button type="button" onclick="submitDeleteSingle(<%= r.id %>)" class="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg text-xs transition" title="Delete">
+              🗑️
+            </button>
           </td>
         </tr>
       <% }) %>
@@ -175,6 +192,17 @@
   </table>
   </div>
 </div>
+</form>
+
+<!-- Dedicated Hidden Forms for Single Actions (Prevents nested form issues) -->
+<form id="searchForm" method="get" action="/replace" class="hidden">
+  <input type="hidden" name="status" value="<%= status %>"/>
+  <input type="hidden" name="q" id="searchQVal" value="<%= q %>"/>
+</form>
+<form id="singleActionForm" method="post" class="hidden"></form>
+<form id="clearAllForm" method="post" action="/replace/bulk/clear-all" class="hidden">
+  <input type="hidden" name="status" id="clearAllStatus" value="<%= status %>"/>
+</form>
 
 <!-- ================= MODAL 1: GIVE REPLACE (FILE OR TEXT) ================= -->
 <div id="resolveModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -269,6 +297,52 @@
 </div>
 
 <script>
+  function toggleSelectAll(master) {
+    var boxes = document.querySelectorAll('.row-checkbox');
+    boxes.forEach(function(b){ b.checked = master.checked; });
+    updateSelectedCount();
+  }
+
+  function updateSelectedCount() {
+    var checked = document.querySelectorAll('.row-checkbox:checked');
+    var count = checked.length;
+    document.getElementById('selectedCount').textContent = count;
+    var btn = document.getElementById('btnDeleteSelected');
+    if (count > 0) {
+      btn.classList.remove('hidden');
+      btn.classList.add('flex');
+    } else {
+      btn.classList.add('hidden');
+      btn.classList.remove('flex');
+    }
+  }
+
+  function submitDeleteSelected() {
+    var checked = document.querySelectorAll('.row-checkbox:checked');
+    if (!checked.length) return alert('কোনো রিকোয়েস্ট সিলেক্ট করা হয়নি!');
+    if (!confirm('সিলেক্ট করা ' + checked.length + ' টি রিকোয়েস্ট পার্মানেন্টলি ডিলিট করতে চান?')) return;
+    document.getElementById('bulkActionForm').submit();
+  }
+
+  function confirmClearAll(status) {
+    if (!confirm('সতর্কতা: ' + status.toUpperCase() + ' স্ট্যাটাসের সব রিকোয়েস্ট মুছে ফেলা হবে। নিশ্চিত?')) return;
+    document.getElementById('clearAllStatus').value = status;
+    document.getElementById('clearAllForm').submit();
+  }
+
+  function submitCollect(id) {
+    var f = document.getElementById('singleActionForm');
+    f.action = '/replace/' + id + '/collect';
+    f.submit();
+  }
+
+  function submitDeleteSingle(id) {
+    if (!confirm('Permanently delete record #' + id + '?')) return;
+    var f = document.getElementById('singleActionForm');
+    f.action = '/replace/' + id + '/delete';
+    f.submit();
+  }
+
   function openResolveModal(id, uid, uname) {
     document.getElementById('resModalId').textContent = '#' + id;
     document.getElementById('resModalUser').textContent = uname + ' (' + uid + ')';

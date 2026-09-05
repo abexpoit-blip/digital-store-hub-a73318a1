@@ -211,6 +211,35 @@ router.post('/:id/delete', (req, res) => {
   res.redirect('/replace?msg=' + encodeURIComponent('🗑️ Deleted'));
 });
 
+// Bulk: delete selected IDs
+router.post('/bulk/delete-selected', (req, res) => {
+  let ids = req.body.selected_ids;
+  if (!ids) {
+    return res.redirect('/replace?msg=' + encodeURIComponent('⚠️ কোনো রিকোয়েস্ট সিলেক্ট করা হয়নি!'));
+  }
+  if (!Array.isArray(ids)) {
+    ids = [ids];
+  }
+  const cleanIds = ids.map((id) => parseInt(id, 10)).filter((n) => !isNaN(n) && n > 0);
+  if (!cleanIds.length) {
+    return res.redirect('/replace?msg=' + encodeURIComponent('⚠️ সঠিক কোনো রিকোয়েস্ট সিলেক্ট করা হয়নি!'));
+  }
+
+  const placeholders = cleanIds.map(() => '?').join(',');
+  const r = db.prepare(`DELETE FROM replace_requests WHERE id IN (${placeholders})`).run(...cleanIds);
+  logAudit('admin', 'replace_bulk_delete_selected', `count=${r.changes} ids=${cleanIds.join(',')}`);
+
+  res.redirect('/replace?msg=' + encodeURIComponent(`🗑️ ${r.changes} টি সিলেক্টেড রিপ্লেস রিকোয়েস্ট সফলভাবে ডিলিট করা হয়েছে!`));
+});
+
+// Bulk: delete all in current status (or all old pending)
+router.post('/bulk/clear-all', (req, res) => {
+  const status = req.body.status || 'pending';
+  const r = db.prepare('DELETE FROM replace_requests WHERE status = ?').run(status);
+  logAudit('admin', 'replace_bulk_clear_all', `status=${status} count=${r.changes}`);
+  res.redirect(`/replace?status=${status}&msg=` + encodeURIComponent(`🗑️ ${status} স্ট্যাটাসের সব (${r.changes} টি) রিকোয়েস্ট ডিলিট করা হয়েছে!`));
+});
+
 // Bulk: delete all collected
 router.post('/bulk/delete-collected', (req, res) => {
   const r = db.prepare("DELETE FROM replace_requests WHERE status='collected'").run();

@@ -2758,14 +2758,23 @@ async def process_replace_request(m: types.Message, state: FSMContext):
             _errors.append(f"  • Line {_i}: COOKIES format ভুল (কোনো `=` নেই, যেমন `datr=...; c_user=...`)")
 
     if _errors:
-        _err_txt = "\n".join(_errors[:10])
-        _more = f"\n  ... আরো {len(_errors)-10}টা error" if len(_errors) > 10 else ""
+        _err_txt = "\n".join(_errors[:8])
+        _more = f"\n  ... আরো {len(_errors)-8} টি ত্রুটি" if len(_errors) > 8 else ""
         return await m.answer(
-            f"❌ **Format Error** ({len(_errors)}টা issue পেলাম):\n\n"
+            f"⚠️ **আইডি ফরম্যাট সঠিক নয়! ({len(_errors)}টি লাইনে ত্রুটি)**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
             f"{_err_txt}{_more}\n\n"
-            f"✅ সঠিক format:\n"
+            f"📌 **সঠিক ফরম্যাট দেওয়ার নিয়ম:**\n"
+            f"প্রতিটি লাইনে ৩টি অংশ স্পেস (space) দিয়ে আলাদা করে থাকতে হবে:\n"
             f"`UID PASSWORD COOKIES`\n\n"
-            f"প্রতি লাইনে একটা ID দিয়ে আবার পাঠান, অথবা /cancel দিন।"
+            f"💡 **নমুনা উদাহরণ (Example):**\n"
+            f"```text\n"
+            f"61593898545651 Saida@25 datr=3O2NaVk3u2E1lRsGtMNRU48O; c_user=61593898545651; xs=42%3A...\n"
+            f"100029977223779 Juwel@3 datr=FAgZakFSQz1hOc15ekkIJlh9; c_user=100029977223779; xs=28%3A...\n"
+            f"```\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"✍️ অনুগ্রহ করে ফরম্যাট ঠিক করে পুনরায় টেক্সট আকারে মেসেজ পাঠান অথবা বাতিল করতে /cancel লিখুন।",
+            parse_mode="Markdown"
         )
 
     # Re-verify time expiration in state
