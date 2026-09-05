@@ -1,136 +1,138 @@
 <%- include('partials/header', { title: 'Enterprise Dashboard', msg, currentPath }) %>
 
 <!-- Executive Welcome & Telemetry Header Banner -->
-<div class="commercial-card rounded-2xl p-6 mb-6 relative overflow-hidden border border-sky-400/30">
+<div class="commercial-card rounded-2xl p-6 mb-6 relative overflow-hidden bg-white border border-sky-200 shadow-md shadow-sky-100/60">
   <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 relative z-10">
     <div class="space-y-1.5">
       <div class="flex flex-wrap items-center gap-3">
-        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-400/40 shadow-sm flex items-center gap-1.5">
-          <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-sky-50 text-sky-700 border border-sky-200 shadow-xs flex items-center gap-1.5">
+          <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
           REALTIME ENGINE V10.07
         </span>
-        <span class="text-xs font-mono text-sky-300/80 bg-sky-950/60 border border-sky-800/50 px-2.5 py-0.5 rounded-full">
-          Total Orders: <strong class="text-white font-bold"><%= typeof totalOrders !== 'undefined' ? totalOrders.toLocaleString() : '...' %></strong>
+        <span class="text-xs font-mono text-sky-800 bg-sky-50 border border-sky-200 px-2.5 py-0.5 rounded-full font-semibold">
+          Total Orders: <strong class="text-sky-900 font-black"><%= typeof totalOrders !== 'undefined' ? totalOrders.toLocaleString() : '...' %></strong>
         </span>
       </div>
-      <h1 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2">
-        <span class="bg-gradient-to-r from-sky-300 via-sky-100 to-cyan-300 bg-clip-text text-transparent">Enterprise Control Center</span>
+      <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+        <span>Enterprise Control Center</span>
+        <span class="text-sky-500 font-normal">|</span>
+        <span class="bg-gradient-to-r from-sky-600 to-blue-600 bg-clip-text text-transparent">Sky Blue Hub</span>
       </h1>
-      <p class="text-xs text-sky-200/70 max-w-2xl leading-relaxed">
+      <p class="text-xs text-slate-500 max-w-2xl leading-relaxed">
         Autonomous digital dispatch hub, real-time ZiniPay settlement gateway & warranty replacement validation desk.
       </p>
     </div>
 
     <!-- Right Controls: Bot Switcher & Quick Launch -->
     <div class="flex flex-wrap items-center gap-3 shrink-0">
-      <form method="post" action="/bot-status" class="flex items-center gap-2.5 bg-slate-950/90 border border-sky-500/40 px-3 py-1.5 rounded-xl shadow-lg shadow-sky-500/10">
+      <form method="post" action="/bot-status" class="flex items-center gap-2.5 bg-white border border-sky-200 px-3 py-1.5 rounded-xl shadow-xs">
         <div class="text-left">
-          <div class="text-[10px] uppercase font-mono tracking-wider text-sky-400/70">Bot Core</div>
+          <div class="text-[10px] uppercase font-mono tracking-wider text-slate-400 font-bold">Bot Core</div>
           <div class="flex items-center gap-1.5">
-            <span class="h-2 w-2 rounded-full <%= botStatus === 'open' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400' %>"></span>
-            <span class="text-xs font-mono font-extrabold <%= botStatus === 'open' ? 'text-emerald-400' : 'text-rose-400' %>"><%= botStatus.toUpperCase() %></span>
+            <span class="h-2 w-2 rounded-full <%= botStatus === 'open' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500' %>"></span>
+            <span class="text-xs font-mono font-extrabold <%= botStatus === 'open' ? 'text-emerald-600' : 'text-rose-600' %>"><%= botStatus.toUpperCase() %></span>
           </div>
         </div>
         <input type="hidden" name="status" value="<%= botStatus === 'open' ? 'closed' : 'open' %>"/>
-        <button class="px-3 py-1.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs rounded-lg transition shadow-md shadow-sky-500/30">
+        <button class="px-3 py-1.5 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-bold text-xs rounded-lg transition shadow-sm shadow-sky-500/25">
           Switch
         </button>
       </form>
 
-      <a href="/stock" class="px-3.5 py-2.5 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 font-bold text-xs rounded-xl border border-sky-400/30 transition flex items-center gap-1.5">
+      <a href="/stock" class="px-3.5 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold text-xs rounded-xl border border-sky-200 transition flex items-center gap-1.5 shadow-xs">
         <span>+ Add Stock</span>
       </a>
-      <a href="/notice" class="px-3.5 py-2.5 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 font-bold text-xs rounded-xl border border-sky-400/30 transition flex items-center gap-1.5">
+      <a href="/notice" class="px-3.5 py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold text-xs rounded-xl border border-sky-200 transition flex items-center gap-1.5 shadow-xs">
         <span>📢 Broadcast</span>
       </a>
     </div>
   </div>
 
   <!-- Decorative Sky Mesh -->
-  <div class="absolute -right-16 -top-16 w-64 h-64 bg-sky-500/15 rounded-full blur-3xl pointer-events-none"></div>
-  <div class="absolute -left-16 -bottom-16 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
+  <div class="absolute -right-16 -top-16 w-64 h-64 bg-sky-100/60 rounded-full blur-3xl pointer-events-none"></div>
+  <div class="absolute -left-16 -bottom-16 w-64 h-64 bg-cyan-100/50 rounded-full blur-3xl pointer-events-none"></div>
 </div>
 
-<!-- Primary Metric KPI Cards (Sky Blue Commercial Aesthetic) -->
+<!-- Primary Metric KPI Cards (Light Sky-Blue Commercial Aesthetic) -->
 <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
   <!-- Users Metric -->
-  <div class="commercial-card p-5 rounded-2xl relative overflow-hidden group hover:border-sky-400/60 transition">
+  <div class="commercial-card p-5 rounded-2xl relative overflow-hidden group hover:border-sky-400 transition bg-white border border-sky-200 shadow-sm">
     <div class="flex items-center justify-between">
-      <span class="text-[11px] font-bold text-sky-300/80 uppercase tracking-widest font-mono">Registered Users</span>
-      <div class="h-9 w-9 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-400/30 flex items-center justify-center text-base shadow-md shadow-sky-500/20 group-hover:scale-110 transition">
+      <span class="text-[11px] font-bold text-slate-500 uppercase tracking-widest font-mono">Registered Users</span>
+      <div class="h-9 w-9 rounded-xl bg-sky-50 text-sky-600 border border-sky-200 flex items-center justify-center text-base shadow-xs group-hover:scale-110 transition">
         👥
       </div>
     </div>
-    <div class="text-3xl font-black text-white mt-3 tracking-tight flex items-baseline gap-2">
+    <div class="text-3xl font-black text-slate-900 mt-3 tracking-tight flex items-baseline gap-2">
       <span><%= totalUsers.toLocaleString() %></span>
-      <span class="text-xs font-mono text-sky-400/80 font-normal">accounts</span>
+      <span class="text-xs font-mono text-slate-400 font-normal">accounts</span>
     </div>
-    <div class="mt-3 flex items-center justify-between text-[11px] border-t border-sky-950/80 pt-2.5">
-      <span class="text-emerald-400 font-semibold flex items-center gap-1">
-        <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+    <div class="mt-3 flex items-center justify-between text-[11px] border-t border-sky-100 pt-2.5">
+      <span class="text-emerald-600 font-semibold flex items-center gap-1">
+        <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
         <%= totalUsers - bannedUsers %> Active
       </span>
-      <span class="text-rose-400 font-medium"><%= bannedUsers %> Banned</span>
+      <span class="text-rose-500 font-medium"><%= bannedUsers %> Banned</span>
     </div>
-    <div class="h-1 w-full bg-gradient-to-r from-sky-500 to-blue-600 absolute bottom-0 left-0"></div>
+    <div class="h-1 w-full bg-gradient-to-r from-sky-400 to-sky-600 absolute bottom-0 left-0"></div>
   </div>
 
   <!-- User Wallet Balance Float -->
-  <div class="commercial-card p-5 rounded-2xl relative overflow-hidden group hover:border-emerald-400/60 transition">
+  <div class="commercial-card p-5 rounded-2xl relative overflow-hidden group hover:border-emerald-400 transition bg-white border border-sky-200 shadow-sm">
     <div class="flex items-center justify-between">
-      <span class="text-[11px] font-bold text-emerald-300/80 uppercase tracking-widest font-mono">Customer Float</span>
-      <div class="h-9 w-9 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-400/30 flex items-center justify-center text-base shadow-md shadow-emerald-500/20 group-hover:scale-110 transition">
+      <span class="text-[11px] font-bold text-slate-500 uppercase tracking-widest font-mono">Customer Float</span>
+      <div class="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center text-base shadow-xs group-hover:scale-110 transition">
         💰
       </div>
     </div>
-    <div class="text-3xl font-black text-emerald-400 mt-3 tracking-tight flex items-baseline gap-1">
+    <div class="text-3xl font-black text-emerald-600 mt-3 tracking-tight flex items-baseline gap-1">
       <span><%= totalBalance.toLocaleString() %></span>
-      <span class="text-lg font-bold text-emerald-500">৳</span>
+      <span class="text-lg font-bold text-emerald-700">৳</span>
     </div>
-    <div class="mt-3 flex items-center justify-between text-[11px] border-t border-sky-950/80 pt-2.5">
-      <span class="text-sky-300/80 font-medium">User Wallet Deposits</span>
-      <span class="text-emerald-400/90 font-mono font-bold">Liquid</span>
+    <div class="mt-3 flex items-center justify-between text-[11px] border-t border-sky-100 pt-2.5">
+      <span class="text-slate-600 font-medium">User Wallet Deposits</span>
+      <span class="text-emerald-700 font-mono font-bold">Liquid</span>
     </div>
-    <div class="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-600 absolute bottom-0 left-0"></div>
+    <div class="h-1 w-full bg-gradient-to-r from-emerald-400 to-teal-500 absolute bottom-0 left-0"></div>
   </div>
 
   <!-- Today's Deposits Volume -->
-  <div class="commercial-card p-5 rounded-2xl relative overflow-hidden group hover:border-cyan-400/60 transition">
+  <div class="commercial-card p-5 rounded-2xl relative overflow-hidden group hover:border-cyan-400 transition bg-white border border-sky-200 shadow-sm">
     <div class="flex items-center justify-between">
-      <span class="text-[11px] font-bold text-cyan-300/80 uppercase tracking-widest font-mono">Today's Inflow</span>
-      <div class="h-9 w-9 rounded-xl bg-cyan-500/20 text-cyan-400 border border-cyan-400/30 flex items-center justify-center text-base shadow-md shadow-cyan-500/20 group-hover:scale-110 transition">
+      <span class="text-[11px] font-bold text-slate-500 uppercase tracking-widest font-mono">Today's Inflow</span>
+      <div class="h-9 w-9 rounded-xl bg-cyan-50 text-cyan-600 border border-cyan-200 flex items-center justify-center text-base shadow-xs group-hover:scale-110 transition">
         ⚡
       </div>
     </div>
-    <div class="text-3xl font-black text-cyan-300 mt-3 tracking-tight flex items-baseline gap-1">
+    <div class="text-3xl font-black text-cyan-600 mt-3 tracking-tight flex items-baseline gap-1">
       <span><%= todayDeposits.s.toLocaleString() %></span>
-      <span class="text-lg font-bold text-cyan-400">৳</span>
+      <span class="text-lg font-bold text-cyan-700">৳</span>
     </div>
-    <div class="mt-3 flex items-center justify-between text-[11px] border-t border-sky-950/80 pt-2.5">
-      <span class="text-sky-300/80 font-medium"><%= todayDeposits.c %> auto settlements</span>
-      <span class="text-cyan-300 font-mono font-bold">24H Velocity</span>
+    <div class="mt-3 flex items-center justify-between text-[11px] border-t border-sky-100 pt-2.5">
+      <span class="text-slate-600 font-medium"><%= todayDeposits.c %> auto settlements</span>
+      <span class="text-cyan-700 font-mono font-bold">24H Velocity</span>
     </div>
-    <div class="h-1 w-full bg-gradient-to-r from-cyan-400 to-sky-600 absolute bottom-0 left-0"></div>
+    <div class="h-1 w-full bg-gradient-to-r from-cyan-400 to-sky-500 absolute bottom-0 left-0"></div>
   </div>
 
   <!-- Total Approved Lifetime Volume -->
-  <div class="commercial-card p-5 rounded-2xl relative overflow-hidden group hover:border-amber-400/60 transition">
+  <div class="commercial-card p-5 rounded-2xl relative overflow-hidden group hover:border-amber-400 transition bg-white border border-sky-200 shadow-sm">
     <div class="flex items-center justify-between">
-      <span class="text-[11px] font-bold text-amber-300/80 uppercase tracking-widest font-mono">Lifetime Volume</span>
-      <div class="h-9 w-9 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-400/30 flex items-center justify-center text-base shadow-md shadow-amber-500/20 group-hover:scale-110 transition">
+      <span class="text-[11px] font-bold text-slate-500 uppercase tracking-widest font-mono">Lifetime Volume</span>
+      <div class="h-9 w-9 rounded-xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center text-base shadow-xs group-hover:scale-110 transition">
         💎
       </div>
     </div>
-    <div class="text-3xl font-black text-amber-300 mt-3 tracking-tight flex items-baseline gap-1">
+    <div class="text-3xl font-black text-amber-600 mt-3 tracking-tight flex items-baseline gap-1">
       <span><%= totalApproved.toLocaleString() %></span>
-      <span class="text-lg font-bold text-amber-400">৳</span>
+      <span class="text-lg font-bold text-amber-700">৳</span>
     </div>
-    <div class="mt-3 flex items-center justify-between text-[11px] border-t border-sky-950/80 pt-2.5">
-      <span class="text-amber-400 font-medium flex items-center gap-1.5">
-        <span class="h-1.5 w-1.5 rounded-full <%= pendingPayments > 0 ? 'bg-amber-400 animate-ping' : 'bg-emerald-400' %>"></span>
+    <div class="mt-3 flex items-center justify-between text-[11px] border-t border-sky-100 pt-2.5">
+      <span class="text-amber-700 font-medium flex items-center gap-1.5">
+        <span class="h-1.5 w-1.5 rounded-full <%= pendingPayments > 0 ? 'bg-amber-500 animate-ping' : 'bg-emerald-500' %>"></span>
         <%= pendingPayments %> Pending Review
       </span>
-      <a href="/deposits" class="text-sky-400 hover:text-sky-300 font-bold transition">Audit →</a>
+      <a href="/deposits" class="text-sky-600 hover:text-sky-700 font-bold transition">Audit →</a>
     </div>
     <div class="h-1 w-full bg-gradient-to-r from-amber-400 to-orange-500 absolute bottom-0 left-0"></div>
   </div>
@@ -139,35 +141,35 @@
 <!-- Operational Triple Grid Matrix -->
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-6">
   <!-- 1. Stock Inventory Breakdown & Health -->
-  <div class="commercial-card p-5 rounded-2xl flex flex-col justify-between">
+  <div class="commercial-card p-5 rounded-2xl flex flex-col justify-between bg-white border border-sky-200 shadow-sm">
     <div>
-      <div class="flex items-center justify-between pb-3 border-b border-sky-950/80 mb-3">
-        <div class="text-sm font-bold text-white flex items-center gap-2">
-          <span class="text-sky-400">📦</span>
+      <div class="flex items-center justify-between pb-3 border-b border-sky-100 mb-3">
+        <div class="text-sm font-bold text-slate-900 flex items-center gap-2">
+          <span class="text-sky-600">📦</span>
           <span>Inventory Matrix</span>
         </div>
-        <span class="text-xs font-mono font-bold bg-sky-950/90 text-sky-300 px-2.5 py-1 rounded-lg border border-sky-700/50 shadow-sm">
+        <span class="text-xs font-mono font-bold bg-sky-50 text-sky-700 px-2.5 py-1 rounded-lg border border-sky-200 shadow-xs">
           Total: <%= totalStock %> pcs
         </span>
       </div>
       
       <div class="space-y-3 max-h-64 overflow-y-auto pr-1">
         <% if (!stockByCategory.length) { %>
-          <div class="text-slate-500 text-xs py-8 text-center">No inventory found in database.</div>
+          <div class="text-slate-400 text-xs py-8 text-center">No inventory found in database.</div>
         <% } else { %>
           <% stockByCategory.forEach(function(s){ 
              var isLow = s.c < 5;
              var isMedium = s.c >= 5 && s.c < 15;
           %>
-            <div class="p-2.5 rounded-xl bg-slate-950/70 border border-sky-950/60 hover:border-sky-800/40 transition">
+            <div class="p-2.5 rounded-xl bg-sky-50/50 border border-sky-100/80 hover:border-sky-300 transition">
               <div class="flex justify-between items-center text-xs mb-1.5">
-                <span class="text-slate-200 font-bold"><%= s.category %></span>
-                <span class="font-mono font-extrabold <%= isLow ? 'text-rose-400' : isMedium ? 'text-amber-400' : 'text-sky-300' %>">
+                <span class="text-slate-800 font-bold"><%= s.category %></span>
+                <span class="font-mono font-extrabold <%= isLow ? 'text-rose-600' : isMedium ? 'text-amber-600' : 'text-sky-700' %>">
                   <%= s.c %> pcs
                 </span>
               </div>
-              <div class="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
-                <div class="h-full rounded-full <%= isLow ? 'bg-rose-500' : isMedium ? 'bg-amber-400' : 'bg-gradient-to-r from-sky-400 to-blue-500' %>" 
+              <div class="w-full bg-slate-200/70 h-1.5 rounded-full overflow-hidden">
+                <div class="h-full rounded-full <%= isLow ? 'bg-rose-500' : isMedium ? 'bg-amber-500' : 'bg-gradient-to-r from-sky-400 to-sky-600' %>" 
                      style="width: <%= Math.min(100, Math.max(10, (s.c / (totalStock || 1)) * 100)) %>%;"></div>
               </div>
             </div>
@@ -176,50 +178,50 @@
       </div>
     </div>
 
-    <div class="pt-4 border-t border-sky-950/80 mt-4 flex items-center justify-between">
-      <a href="/stock/check-uid" class="text-xs text-sky-400 hover:text-sky-300 font-semibold transition">🔍 Check UID</a>
-      <a href="/stock" class="text-xs text-sky-400 hover:text-sky-300 font-bold transition flex items-center gap-1">
+    <div class="pt-4 border-t border-sky-100 mt-4 flex items-center justify-between">
+      <a href="/stock/check-uid" class="text-xs text-sky-600 hover:text-sky-700 font-bold transition">🔍 Check UID</a>
+      <a href="/stock" class="text-xs text-sky-600 hover:text-sky-700 font-bold transition flex items-center gap-1">
         Upload Stock <span>→</span>
       </a>
     </div>
   </div>
 
   <!-- 2. Warranty Replacement Command Center -->
-  <div class="commercial-card p-5 rounded-2xl flex flex-col justify-between">
+  <div class="commercial-card p-5 rounded-2xl flex flex-col justify-between bg-white border border-sky-200 shadow-sm">
     <div>
-      <div class="flex items-center justify-between pb-3 border-b border-sky-950/80 mb-3">
-        <div class="text-sm font-bold text-white flex items-center gap-2">
-          <span class="text-sky-400">🔄</span>
+      <div class="flex items-center justify-between pb-3 border-b border-sky-100 mb-3">
+        <div class="text-sm font-bold text-slate-900 flex items-center gap-2">
+          <span class="text-sky-600">🔄</span>
           <span>Warranty Claims Hub</span>
         </div>
-        <span class="h-2.5 w-2.5 rounded-full <%= pendingReplaces > 0 ? 'bg-amber-400 animate-ping' : 'bg-emerald-400' %>"></span>
+        <span class="h-2.5 w-2.5 rounded-full <%= pendingReplaces > 0 ? 'bg-amber-500 animate-ping' : 'bg-emerald-500' %>"></span>
       </div>
 
-      <div class="p-4 rounded-xl bg-slate-950/80 border border-sky-950/80 my-3">
+      <div class="p-4 rounded-xl bg-amber-50/70 border border-amber-200 my-3">
         <div class="flex items-baseline gap-2">
-          <div class="text-4xl font-black text-amber-400 tracking-tight"><%= pendingReplaces %></div>
-          <div class="text-xs font-mono font-bold text-sky-300 uppercase tracking-wider">Claims Pending</div>
+          <div class="text-4xl font-black text-amber-600 tracking-tight"><%= pendingReplaces %></div>
+          <div class="text-xs font-mono font-bold text-amber-800 uppercase tracking-wider">Claims Pending</div>
         </div>
-        <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+        <p class="text-xs text-slate-600 mt-2 leading-relaxed">
           Customer replacement claims awaiting inspection. Auto-formatted format validator and 1-click delivery enabled.
         </p>
       </div>
 
-      <div class="space-y-2 text-xs text-sky-300/80">
+      <div class="space-y-2 text-xs text-slate-600 font-medium">
         <div class="flex items-center gap-2">
-          <span class="text-emerald-400">✓</span> <span>Automatic Time-Window Expiry Guard</span>
+          <span class="text-emerald-500 font-bold">✓</span> <span>Automatic Time-Window Expiry Guard</span>
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-sky-400">✓</span> <span>Direct UID Replacement & Telegram Ping</span>
+          <span class="text-sky-500 font-bold">✓</span> <span>Direct UID Replacement & Telegram Ping</span>
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-cyan-400">✓</span> <span>Select & Multi-Delete Controls</span>
+          <span class="text-cyan-500 font-bold">✓</span> <span>Select & Multi-Delete Controls</span>
         </div>
       </div>
     </div>
 
-    <div class="pt-4 border-t border-sky-950/80 mt-4">
-      <a href="/replace" class="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs transition shadow-lg shadow-sky-500/30 border border-sky-300/30">
+    <div class="pt-4 border-t border-sky-100 mt-4">
+      <a href="/replace" class="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-bold text-xs transition shadow-md shadow-sky-500/25">
         <span>Open Replace Resolution Desk</span>
         <span>→</span>
       </a>
@@ -227,29 +229,29 @@
   </div>
 
   <!-- 3. Security, Master Pass & System Controls -->
-  <div class="commercial-card p-5 rounded-2xl flex flex-col justify-between">
+  <div class="commercial-card p-5 rounded-2xl flex flex-col justify-between bg-white border border-sky-200 shadow-sm">
     <div>
-      <div class="pb-3 border-b border-sky-950/80 mb-3">
-        <div class="text-sm font-bold text-white flex items-center gap-2">
-          <span class="text-sky-400">🔐</span>
+      <div class="pb-3 border-b border-sky-100 mb-3">
+        <div class="text-sm font-bold text-slate-900 flex items-center gap-2">
+          <span class="text-sky-600">🔐</span>
           <span>Access Key & Session Security</span>
         </div>
-        <div class="text-[11px] text-sky-300/70">Encrypted master authentication key</div>
+        <div class="text-[11px] text-slate-500">Encrypted master authentication key</div>
       </div>
 
       <form method="post" action="/change-password" class="space-y-2.5 mb-4">
-        <input type="password" name="current" placeholder="Current administrative password" required class="w-full bg-slate-950/90 border border-sky-900/60 focus:border-sky-400 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 outline-none transition"/>
-        <input type="password" name="next" placeholder="New master password (min 6 chars)" required minlength="6" class="w-full bg-slate-950/90 border border-sky-900/60 focus:border-sky-400 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 outline-none transition"/>
-        <button class="w-full bg-sky-950 hover:bg-sky-900 text-sky-300 font-bold text-xs py-2 rounded-xl transition border border-sky-800/60 shadow-sm">
+        <input type="password" name="current" placeholder="Current administrative password" required class="w-full bg-slate-50 border border-slate-200 focus:border-sky-500 focus:bg-white rounded-xl px-3.5 py-2 text-xs text-slate-800 placeholder-slate-400 outline-none transition"/>
+        <input type="password" name="next" placeholder="New master password (min 6 chars)" required minlength="6" class="w-full bg-slate-50 border border-slate-200 focus:border-sky-500 focus:bg-white rounded-xl px-3.5 py-2 text-xs text-slate-800 placeholder-slate-400 outline-none transition"/>
+        <button class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2 rounded-xl transition shadow-xs">
           Update Master Pass
         </button>
       </form>
 
-      <div class="pt-3 border-t border-sky-950/80 grid grid-cols-2 gap-2">
-        <a href="/maintenance" class="px-2.5 py-2 rounded-xl bg-slate-950 hover:bg-sky-950 text-[11px] font-semibold text-sky-300 text-center border border-sky-950 hover:border-sky-800/50 transition">
+      <div class="pt-3 border-t border-sky-100 grid grid-cols-2 gap-2">
+        <a href="/maintenance" class="px-2.5 py-2 rounded-xl bg-sky-50 hover:bg-sky-100 text-[11px] font-bold text-sky-700 text-center border border-sky-200 transition">
           🛠 Maintenance
         </a>
-        <a href="/audit" class="px-2.5 py-2 rounded-xl bg-slate-950 hover:bg-sky-950 text-[11px] font-semibold text-sky-300 text-center border border-sky-950 hover:border-sky-800/50 transition">
+        <a href="/audit" class="px-2.5 py-2 rounded-xl bg-sky-50 hover:bg-sky-100 text-[11px] font-bold text-sky-700 text-center border border-sky-200 transition">
           📜 Audit Logs
         </a>
       </div>
@@ -258,14 +260,14 @@
 </div>
 
 <!-- Live Dispatched Orders Stream Table Card -->
-<div class="commercial-card rounded-2xl overflow-hidden mb-6">
-  <div class="px-6 py-4 border-b border-sky-950/80 flex flex-wrap items-center justify-between gap-3 bg-sky-950/30">
+<div class="commercial-card rounded-2xl overflow-hidden mb-6 bg-white border border-sky-200 shadow-sm">
+  <div class="px-6 py-4 border-b border-sky-100 flex flex-wrap items-center justify-between gap-3 bg-sky-50/60">
     <div class="flex items-center gap-2.5">
-      <div class="h-3 w-3 rounded-full bg-sky-400 animate-ping"></div>
-      <div class="text-sm font-bold text-white tracking-wide">Live Dispatched Orders Stream</div>
-      <span class="text-[10px] font-mono bg-sky-500/20 text-sky-300 border border-sky-500/30 px-2 py-0.5 rounded-full font-bold">Latest 10</span>
+      <div class="h-3 w-3 rounded-full bg-sky-500 animate-ping"></div>
+      <div class="text-sm font-bold text-slate-900 tracking-wide">Live Dispatched Orders Stream</div>
+      <span class="text-[10px] font-mono bg-sky-100 text-sky-700 border border-sky-200 px-2 py-0.5 rounded-full font-bold">Latest 10</span>
     </div>
-    <a href="/orders" class="text-xs text-sky-400 hover:text-sky-300 font-bold transition flex items-center gap-1">
+    <a href="/orders" class="text-xs text-sky-600 hover:text-sky-700 font-bold transition flex items-center gap-1">
       Open Full Orders History (25 / Page) <span>→</span>
     </a>
   </div>
@@ -273,7 +275,7 @@
   <div class="overflow-x-auto">
     <table class="w-full text-xs">
       <thead>
-        <tr class="border-b border-sky-950/80 bg-slate-950/80 text-sky-300 font-mono text-[11px] tracking-wider uppercase">
+        <tr class="border-b border-sky-100 bg-sky-50/90 text-sky-800 font-mono text-[11px] tracking-wider uppercase font-bold">
           <th class="py-3.5 px-4">Order ID</th>
           <th class="py-3.5 px-4">Customer</th>
           <th class="py-3.5 px-4">Category</th>
@@ -282,29 +284,29 @@
           <th class="py-3.5 px-4">Dispatched At</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-sky-950/60">
+      <tbody class="divide-y divide-sky-100">
         <% if (!recentSales.length) { %>
-          <tr><td colspan="6" class="text-center text-slate-500 py-10">No orders recorded in live stream yet.</td></tr>
+          <tr><td colspan="6" class="text-center text-slate-400 py-10">No orders recorded in live stream yet.</td></tr>
         <% } %>
         <% recentSales.forEach(function(s){ %>
-          <tr class="hover:bg-sky-500/10 transition">
-            <td class="py-3 px-4 font-mono text-sky-400 font-bold">#<%= s.id %></td>
+          <tr class="hover:bg-sky-50/50 transition">
+            <td class="py-3 px-4 font-mono text-sky-600 font-bold">#<%= s.id %></td>
             <td class="py-3 px-4">
-              <a href="/users/<%= s.user_id %>" class="text-slate-200 hover:text-sky-300 font-semibold transition flex items-center gap-2">
-                <span class="h-6 w-6 rounded-full bg-sky-900/60 text-sky-300 border border-sky-700/50 flex items-center justify-center font-bold text-[10px]">
+              <a href="/users/<%= s.user_id %>" class="text-slate-800 hover:text-sky-600 font-semibold transition flex items-center gap-2">
+                <span class="h-6 w-6 rounded-full bg-sky-100 text-sky-700 border border-sky-200 flex items-center justify-center font-bold text-[10px]">
                   <%= (s.username ? s.username[0] : 'U').toUpperCase() %>
                 </span>
                 <span><%= s.username || ('User ' + s.user_id) %></span>
               </a>
             </td>
             <td class="py-3 px-4">
-              <span class="px-2.5 py-1 rounded-lg font-mono text-[11px] font-semibold bg-sky-950/80 text-sky-300 border border-sky-600/40 shadow-sm">
+              <span class="px-2.5 py-1 rounded-lg font-mono text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-200 shadow-xs">
                 <%= s.category %>
               </span>
             </td>
-            <td class="py-3 px-4 text-center font-mono text-white font-bold"><%= s.qty %></td>
-            <td class="py-3 px-4 text-emerald-400 font-mono font-extrabold text-sm"><%= s.total %>৳</td>
-            <td class="py-3 px-4 text-sky-300/70 text-[11px] font-mono"><%= s.date %> <%= s.time || '' %></td>
+            <td class="py-3 px-4 text-center font-mono text-slate-800 font-bold"><%= s.qty %></td>
+            <td class="py-3 px-4 text-emerald-600 font-mono font-extrabold text-sm"><%= s.total %>৳</td>
+            <td class="py-3 px-4 text-slate-500 text-[11px] font-mono"><%= s.date %> <%= s.time || '' %></td>
           </tr>
         <% }) %>
       </tbody>
