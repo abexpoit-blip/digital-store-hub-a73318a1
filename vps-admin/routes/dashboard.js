@@ -35,13 +35,15 @@ router.get('/', (req, res) => {
     'SELECT * FROM sales ORDER BY id DESC LIMIT 8'
   ).all();
 
+  const totalOrders = db.prepare('SELECT COUNT(*) AS c FROM sales').get().c;
+
   const botStatus = db.prepare("SELECT value FROM config WHERE key='bot_status'").get();
 
   res.render('dashboard', {
     totalUsers, bannedUsers, totalBalance,
     todayDeposits, totalApproved, pendingPayments,
     stockByCategory, totalStock,
-    pendingReplaces, recentSales,
+    pendingReplaces, recentSales, totalOrders,
     botStatus: botStatus ? botStatus.value : 'unknown',
     msg: req.query.msg || null
   });

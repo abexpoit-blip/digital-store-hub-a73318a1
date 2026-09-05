@@ -8,131 +8,259 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          sky: {
+            50: '#f0f9ff',
+            100: '#e0f2fe',
+            200: '#bae6fd',
+            300: '#7dd3fc',
+            400: '#38bdf8',
+            500: '#0ea5e9',
+            600: '#0284c7',
+            700: '#0369a1',
+            800: '#075985',
+            900: '#0c4a6e',
+            950: '#082f49',
+          }
+        }
+      }
+    }
+  }
+</script>
 <style>
   :root {
     --sky-primary: #0ea5e9;
-    --sky-glow: rgba(14, 165, 233, 0.35);
-    --sky-subtle: rgba(14, 165, 233, 0.08);
+    --sky-glow: rgba(14, 165, 233, 0.4);
+    --sky-subtle: rgba(14, 165, 233, 0.12);
   }
   body {
     font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
-    background-color: #030712;
+    background-color: #070e1e;
     background-image: 
-      radial-gradient(at 0% 0%, rgba(14, 165, 233, 0.15) 0px, transparent 45%),
-      radial-gradient(at 100% 0%, rgba(56, 189, 248, 0.1) 0px, transparent 40%),
-      radial-gradient(at 50% 100%, rgba(2, 132, 199, 0.08) 0px, transparent 60%);
+      radial-gradient(at 5% 5%, rgba(14, 165, 233, 0.22) 0px, transparent 48%),
+      radial-gradient(at 95% 10%, rgba(56, 189, 248, 0.18) 0px, transparent 42%),
+      radial-gradient(at 50% 95%, rgba(2, 132, 199, 0.16) 0px, transparent 55%),
+      radial-gradient(at 85% 85%, rgba(14, 165, 233, 0.12) 0px, transparent 45%),
+      linear-gradient(to right, rgba(56, 189, 248, 0.02) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(56, 189, 248, 0.02) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 36px 36px, 36px 36px;
     background-attachment: fixed;
   }
   .font-mono { font-family: 'JetBrains Mono', monospace; }
   
-  /* Commercial Sky Blue Active State */
+  /* Ultra-Premium Sky Blue Active State */
   .nav-link.active {
-    background: linear-gradient(135deg, rgba(14, 165, 233, 0.22) 0%, rgba(2, 132, 199, 0.12) 100%);
+    background: linear-gradient(90deg, rgba(14, 165, 233, 0.28) 0%, rgba(2, 132, 199, 0.12) 100%);
     color: #38bdf8;
-    border-left: 3px solid #38bdf8;
-    box-shadow: inset 0 0 15px rgba(14, 165, 233, 0.15), 0 4px 12px rgba(14, 165, 233, 0.1);
+    border-left: 3.5px solid #38bdf8;
+    box-shadow: inset 0 0 20px rgba(14, 165, 233, 0.18), 0 4px 14px rgba(14, 165, 233, 0.15);
     font-weight: 700;
   }
   .nav-link.active svg, .nav-link.active span:first-child {
-    filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.6));
+    filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.7));
   }
   
-  /* Glass card commercial styling */
+  /* Glass card commercial styling with Sky Blue highlights */
   .commercial-card {
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.75) 0%, rgba(8, 15, 30, 0.85) 100%);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(56, 189, 248, 0.15);
-    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6), 0 0 20px -5px rgba(14, 165, 233, 0.06);
+    background: linear-gradient(135deg, rgba(11, 25, 48, 0.75) 0%, rgba(7, 16, 34, 0.88) 100%);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    box-shadow: 0 12px 35px -10px rgba(2, 6, 23, 0.7), 0 0 25px -5px rgba(14, 165, 233, 0.1);
   }
   .commercial-card:hover {
-    border-color: rgba(56, 189, 248, 0.35);
-    box-shadow: 0 14px 35px -8px rgba(0, 0, 0, 0.7), 0 0 25px -4px rgba(14, 165, 233, 0.18);
+    border-color: rgba(56, 189, 248, 0.45);
+    box-shadow: 0 16px 40px -8px rgba(2, 6, 23, 0.8), 0 0 30px -3px rgba(14, 165, 233, 0.22);
+  }
+
+  .sky-glow-badge {
+    box-shadow: 0 0 14px rgba(14, 165, 233, 0.35);
   }
 
   table { border-collapse: collapse; }
-  th, td { padding: 0.75rem 1rem; text-align: left; }
-  th { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: #7dd3fc; background: rgba(12, 23, 44, 0.9); }
-  tr { border-bottom: 1px solid rgba(30, 41, 59, 0.7); }
-  tr:hover { background: rgba(14, 165, 233, 0.05); }
+  th, td { padding: 0.85rem 1rem; text-align: left; }
+  th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: #7dd3fc; background: rgba(10, 25, 52, 0.95); }
+  tr { border-bottom: 1px solid rgba(14, 165, 233, 0.12); }
+  tr:hover { background: rgba(14, 165, 233, 0.08); }
 
   /* Sky custom scrollbar */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: #030712; }
-  ::-webkit-scrollbar-thumb { background: #0c4a6e; border-radius: 4px; }
-  ::-webkit-scrollbar-thumb:hover { background: #0284c7; }
+  ::-webkit-scrollbar { width: 7px; height: 7px; }
+  ::-webkit-scrollbar-track { background: #060e1d; }
+  ::-webkit-scrollbar-thumb { background: #0284c7; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #38bdf8; }
   
   /* Collapsed sidebar styles */
-  body.sidebar-collapsed aside { width: 5rem; }
+  body.sidebar-collapsed aside { width: 5.2rem; }
   body.sidebar-collapsed .brand-text,
   body.sidebar-collapsed .nav-text,
-  body.sidebar-collapsed .logout-text { display: none; }
+  body.sidebar-collapsed .nav-section-title,
+  body.sidebar-collapsed .logout-text,
+  body.sidebar-collapsed .sidebar-footer { display: none; }
   body.sidebar-collapsed .nav-link { justify-content: center; padding-left: 0.5rem; padding-right: 0.5rem; }
 </style>
 </head>
 <body class="text-slate-100 min-h-screen antialiased selection:bg-sky-500 selection:text-white flex flex-col">
 <div class="flex flex-1 min-h-screen overflow-hidden">
-  <!-- Sidebar -->
-  <aside id="main-sidebar" class="w-64 bg-slate-950/95 backdrop-blur-2xl border-r border-sky-950/70 flex flex-col shrink-0 transition-all duration-300 z-30 shadow-2xl">
-    <div class="px-5 py-4 border-b border-sky-950/80 flex items-center justify-between">
+  <!-- Ultra-Sleek Sky Blue Sidebar -->
+  <aside id="main-sidebar" class="w-64 bg-slate-950/95 backdrop-blur-2xl border-r border-sky-500/20 flex flex-col shrink-0 transition-all duration-300 z-30 shadow-2xl">
+    <!-- Brand Header -->
+    <div class="px-5 py-4 border-b border-sky-500/20 flex items-center justify-between bg-sky-950/20">
       <div class="flex items-center gap-3">
-        <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-sky-500 via-cyan-400 to-blue-600 flex items-center justify-center font-black text-white shadow-lg shadow-sky-500/30 shrink-0 border border-sky-300/30">
-          B
+        <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-sky-600 via-sky-400 to-cyan-300 flex items-center justify-center font-black text-slate-950 shadow-lg shadow-sky-500/40 shrink-0 border border-sky-200/50">
+          <svg class="w-5 h-5 text-slate-950" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
         </div>
         <div class="brand-text">
           <div class="text-white font-extrabold text-sm tracking-wide flex items-center gap-1.5">
             <span class="bg-gradient-to-r from-sky-300 via-white to-cyan-300 bg-clip-text text-transparent">BASICTRICK</span>
-            <span class="text-[9px] bg-sky-500/20 text-sky-300 border border-sky-400/30 font-mono px-1.5 py-0.2 rounded font-bold shadow-sm shadow-sky-500/10">PRO</span>
+            <span class="text-[9px] bg-sky-500/25 text-sky-300 border border-sky-400/40 font-mono px-1.5 py-0.2 rounded font-bold shadow-sm shadow-sky-500/20">PRO</span>
           </div>
-          <div class="text-[11px] text-sky-400/80 font-medium">Enterprise Hub</div>
+          <div class="text-[11px] text-sky-400/90 font-semibold tracking-wider uppercase">Enterprise Cloud</div>
         </div>
       </div>
-      <button onclick="toggleSidebar()" title="Toggle Sidebar" class="p-1.5 text-sky-400/80 hover:text-white hover:bg-sky-950/60 rounded-lg transition border border-transparent hover:border-sky-800/50">
+      <button onclick="toggleSidebar()" title="Toggle Sidebar" class="p-1.5 text-sky-400 hover:text-white hover:bg-sky-900/50 rounded-lg transition border border-transparent hover:border-sky-500/30">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
       </button>
     </div>
-    <nav class="flex-1 p-2.5 space-y-1 text-xs font-medium overflow-y-auto">
-      <% const _links = [
-        ['/', '📊 Dashboard'],
-        ['/users', '👥 Users'],
-        ['/deposits', '💰 Deposits'],
-        ['/stock', '📦 Stock Inventory'],
-        ['/stock/check-uid', '🔍 Check UID'],
-        ['/replace', '🔄 Replace Requests'],
-        ['/orders', '📥 Orders History'],
-        ['/nord', '🛡 Nord Accounts'],
-        ['/vpn', '💵 VPN Pricing'],
-        ['/vpnapi', '🔌 VPN Reseller API'],
-        ['/buylimit', '⏱ Buy Limit Guard'],
-        ['/polls', '📊 Telegram Polls'],
-        ['/notice', '📢 Broadcast Notice'],
-        ['/credits', '🎁 Manual Credits'],
-        ['/audit', '📜 Audit Trail'],
-        ['/maintenance', '🛠 Maintenance Mode'],
-        ['/status', '⚙️ Server Status'],
-      ]; %>
-      <% _links.forEach(function(l){ var href=l[0], label=l[1];
-         var active = (currentPath === href) || (href !== '/' && currentPath.startsWith(href)); %>
-        <a href="<%= href %>"
-           title="<%= label %>"
-           class="nav-link flex items-center px-3 py-2 rounded-xl text-slate-300 hover:bg-slate-800/60 hover:text-white transition group <%= active ? 'active' : '' %>">
-          <span class="nav-text truncate"><%= label %></span>
-        </a>
-      <% }) %>
+
+    <!-- Grouped Modern Navigation -->
+    <nav class="flex-1 p-3 space-y-3 text-xs font-medium overflow-y-auto">
+      <!-- Group 1: Core Operations -->
+      <div>
+        <div class="nav-section-title px-3 py-1 text-[10px] font-mono uppercase tracking-widest text-sky-400/70 font-bold">⚡ Core Operations</div>
+        <div class="space-y-0.5 mt-1">
+          <% const group1 = [
+            ['/', '📊 Dashboard'],
+            ['/orders', '📥 Orders History'],
+            ['/replace', '🔄 Replace Requests'],
+            ['/users', '👥 User Registry'],
+          ]; %>
+          <% group1.forEach(function(l){ var href=l[0], label=l[1];
+             var active = (currentPath === href) || (href !== '/' && currentPath.startsWith(href)); %>
+            <a href="<%= href %>" class="nav-link flex items-center px-3 py-2 rounded-xl text-slate-300 hover:bg-sky-500/10 hover:text-sky-200 transition group <%= active ? 'active' : '' %>">
+              <span class="nav-text truncate"><%= label %></span>
+            </a>
+          <% }) %>
+        </div>
+      </div>
+
+      <!-- Group 2: Inventory & Catalog -->
+      <div>
+        <div class="nav-section-title px-3 py-1 text-[10px] font-mono uppercase tracking-widest text-sky-400/70 font-bold">📦 Stock & Services</div>
+        <div class="space-y-0.5 mt-1">
+          <% const group2 = [
+            ['/stock', '📦 Stock Inventory'],
+            ['/stock/check-uid', '🔍 Check UID'],
+            ['/nord', '🛡 Nord Accounts'],
+            ['/vpn', '💵 VPN Pricing'],
+            ['/vpnapi', '🔌 VPN Reseller API'],
+          ]; %>
+          <% group2.forEach(function(l){ var href=l[0], label=l[1];
+             var active = (currentPath === href) || (href !== '/' && currentPath.startsWith(href)); %>
+            <a href="<%= href %>" class="nav-link flex items-center px-3 py-2 rounded-xl text-slate-300 hover:bg-sky-500/10 hover:text-sky-200 transition group <%= active ? 'active' : '' %>">
+              <span class="nav-text truncate"><%= label %></span>
+            </a>
+          <% }) %>
+        </div>
+      </div>
+
+      <!-- Group 3: Finance & Billing -->
+      <div>
+        <div class="nav-section-title px-3 py-1 text-[10px] font-mono uppercase tracking-widest text-sky-400/70 font-bold">💳 Finance & Growth</div>
+        <div class="space-y-0.5 mt-1">
+          <% const group3 = [
+            ['/deposits', '💰 Deposits & ZiniPay'],
+            ['/credits', '🎁 Manual Credits'],
+            ['/buylimit', '⏱ Buy Limit Guard'],
+            ['/polls', '📊 Telegram Polls'],
+            ['/notice', '📢 Broadcast Notice'],
+          ]; %>
+          <% group3.forEach(function(l){ var href=l[0], label=l[1];
+             var active = (currentPath === href) || (href !== '/' && currentPath.startsWith(href)); %>
+            <a href="<%= href %>" class="nav-link flex items-center px-3 py-2 rounded-xl text-slate-300 hover:bg-sky-500/10 hover:text-sky-200 transition group <%= active ? 'active' : '' %>">
+              <span class="nav-text truncate"><%= label %></span>
+            </a>
+          <% }) %>
+        </div>
+      </div>
+
+      <!-- Group 4: System & Security -->
+      <div>
+        <div class="nav-section-title px-3 py-1 text-[10px] font-mono uppercase tracking-widest text-sky-400/70 font-bold">🛡️ System & Audit</div>
+        <div class="space-y-0.5 mt-1">
+          <% const group4 = [
+            ['/audit', '📜 Audit Trail'],
+            ['/maintenance', '🛠 Maintenance Mode'],
+            ['/status', '⚙️ Server Telemetry'],
+          ]; %>
+          <% group4.forEach(function(l){ var href=l[0], label=l[1];
+             var active = (currentPath === href) || (href !== '/' && currentPath.startsWith(href)); %>
+            <a href="<%= href %>" class="nav-link flex items-center px-3 py-2 rounded-xl text-slate-300 hover:bg-sky-500/10 hover:text-sky-200 transition group <%= active ? 'active' : '' %>">
+              <span class="nav-text truncate"><%= label %></span>
+            </a>
+          <% }) %>
+        </div>
+      </div>
     </nav>
-    <form method="post" action="/logout" class="p-3 border-t border-slate-800/80">
-      <button class="w-full text-left px-3 py-2 rounded-xl text-rose-400/90 hover:text-rose-300 hover:bg-rose-500/10 text-xs font-semibold transition flex items-center justify-between">
-        <span class="logout-text">↪ Logout Session</span>
-      </button>
-    </form>
+
+    <!-- Sidebar Bottom Status & Logout -->
+    <div class="p-3 border-t border-sky-500/20 bg-sky-950/30">
+      <div class="sidebar-footer flex items-center justify-between mb-2 px-1 text-[11px] text-sky-400/80 font-mono">
+        <span class="flex items-center gap-1.5">
+          <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>SYSTEM ACTIVE</span>
+        </span>
+        <span class="text-slate-400">v10.07 PRO</span>
+      </div>
+      <form method="post" action="/logout">
+        <button class="w-full text-left px-3 py-2 rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-500/15 text-xs font-semibold transition flex items-center justify-between border border-rose-500/20">
+          <span class="logout-text font-medium">↪ Logout Session</span>
+          <span>🛡</span>
+        </button>
+      </form>
+    </div>
   </aside>
 
   <!-- Main Content Viewport -->
-  <main class="flex-1 min-w-0 flex flex-col overflow-y-auto bg-slate-950/40">
+  <main class="flex-1 min-w-0 flex flex-col overflow-y-auto">
+    <!-- Top Enterprise Navigation Bar -->
+    <header class="h-14 border-b border-sky-500/20 bg-slate-950/80 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between shrink-0 sticky top-0 z-20">
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2 text-xs font-mono font-semibold text-sky-300 bg-sky-950/60 border border-sky-500/30 px-3 py-1 rounded-lg">
+          <span class="h-2 w-2 rounded-full bg-sky-400 animate-ping"></span>
+          <span>🕒 <span id="live-time">--:--:--</span></span>
+        </div>
+        <div class="hidden sm:flex items-center gap-2 text-[11px] text-slate-400 font-mono">
+          <span class="text-sky-500/70">|</span>
+          <span class="flex items-center gap-1 text-emerald-400"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span> VPS Online</span>
+          <span class="text-sky-500/70">|</span>
+          <span class="text-sky-300">SQLite Protected</span>
+        </div>
+      </div>
+
+      <!-- Quick Action Badges -->
+      <div class="flex items-center gap-2 sm:gap-3">
+        <a href="/orders" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-400/30 transition flex items-center gap-1.5">
+          <span>📥 Orders (25/P)</span>
+        </a>
+        <a href="/replace" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-400/30 transition flex items-center gap-1.5">
+          <span>🔄 Replaces</span>
+        </a>
+        <div class="h-8 w-8 rounded-full bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center font-bold text-white text-xs border border-sky-300/40 shadow-md shadow-sky-500/30" title="Super Admin">
+          A
+        </div>
+      </div>
+    </header>
+
     <!-- Top banner message if present -->
     <% if (typeof msg !== 'undefined' && msg) { %>
-      <div class="bg-gradient-to-r from-cyan-950/90 to-slate-950/90 border-b border-cyan-500/30 text-cyan-200 px-6 py-2.5 text-xs font-semibold flex items-center gap-2 backdrop-blur-md shrink-0">
-        <span class="h-2 w-2 rounded-full bg-cyan-400 animate-pulse"></span>
+      <div class="bg-gradient-to-r from-sky-950/90 via-cyan-950/90 to-slate-950/90 border-b border-sky-500/40 text-sky-200 px-6 py-2.5 text-xs font-semibold flex items-center gap-2 backdrop-blur-md shrink-0 shadow-lg shadow-sky-500/10">
+        <span class="h-2 w-2 rounded-full bg-sky-400 animate-pulse"></span>
         <span><%= msg %></span>
       </div>
     <% } %>
@@ -148,4 +276,14 @@
   if (localStorage.getItem('dsh_sidebar_collapsed') === '1') {
     document.body.classList.add('sidebar-collapsed');
   }
+
+  // Live Dhaka Clock
+  function updateClock() {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('en-US', { timeZone: 'Asia/Dhaka', hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const el = document.getElementById('live-time');
+    if (el) el.innerText = timeStr + ' BST';
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
 </script>
