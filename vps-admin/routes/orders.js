@@ -5,17 +5,42 @@ const router = express.Router();
 
 router.get('/', (req, res) => {
   const q = (req.query.q || '').trim();
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = 25;
+  const offset = (page - 1) * limit;
+
   let sales;
+  let totalCount = 0;
+
   if (q) {
+    const countRow = db.prepare(
+      `SELECT COUNT(*) as count FROM sales WHERE LOWER(COALESCE(username,'')) LIKE ?
+        OR CAST(user_id AS TEXT) LIKE ? OR LOWER(category) LIKE ?`
+    ).get(`%${q.toLowerCase()}%`, `%${q}%`, `%${q.toLowerCase()}%`);
+    totalCount = countRow ? countRow.count : 0;
+
     sales = db.prepare(
       `SELECT * FROM sales WHERE LOWER(COALESCE(username,'')) LIKE ?
         OR CAST(user_id AS TEXT) LIKE ? OR LOWER(category) LIKE ?
-        ORDER BY id DESC LIMIT 300`
-    ).all(`%${q.toLowerCase()}%`, `%${q}%`, `%${q.toLowerCase()}%`);
+        ORDER BY id DESC LIMIT ? OFFSET ?`
+    ).all(`%${q.toLowerCase()}%`, `%${q}%`, `%${q.toLowerCase()}%`, limit, offset);
   } else {
-    sales = db.prepare('SELECT * FROM sales ORDER BY id DESC LIMIT 300').all();
+    const countRow = db.prepare('SELECT COUNT(*) as count FROM sales').get();
+    totalCount = countRow ? countRow.count : 0;
+
+    sales = db.prepare('SELECT * FROM sales ORDER BY id DESC LIMIT ? OFFSET ?').all(limit, offset);
   }
-  res.render('orders', { sales, q });
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / limit));
+
+  res.render('orders', {
+    sales,
+    q,
+    page,
+    limit,
+    totalPages,
+    totalCount
+  });
 });
 
 // Download Excel for a particular sale: pulls stock matching category & qty if available,

@@ -3,37 +3,64 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title><%= typeof title !== 'undefined' ? title : 'Basictrick Admin' %></title>
+<title><%= typeof title !== 'undefined' ? title : 'Basictrick Enterprise' %></title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
+  :root {
+    --sky-primary: #0ea5e9;
+    --sky-glow: rgba(14, 165, 233, 0.35);
+    --sky-subtle: rgba(14, 165, 233, 0.08);
+  }
   body {
     font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
     background-color: #030712;
     background-image: 
-      radial-gradient(at 0% 0%, rgba(14, 165, 233, 0.08) 0px, transparent 50%),
-      radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.08) 0px, transparent 50%);
+      radial-gradient(at 0% 0%, rgba(14, 165, 233, 0.15) 0px, transparent 45%),
+      radial-gradient(at 100% 0%, rgba(56, 189, 248, 0.1) 0px, transparent 40%),
+      radial-gradient(at 50% 100%, rgba(2, 132, 199, 0.08) 0px, transparent 60%);
     background-attachment: fixed;
   }
   .font-mono { font-family: 'JetBrains Mono', monospace; }
+  
+  /* Commercial Sky Blue Active State */
   .nav-link.active {
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(59, 130, 246, 0.15) 100%);
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.22) 0%, rgba(2, 132, 199, 0.12) 100%);
     color: #38bdf8;
     border-left: 3px solid #38bdf8;
-    font-weight: 600;
+    box-shadow: inset 0 0 15px rgba(14, 165, 233, 0.15), 0 4px 12px rgba(14, 165, 233, 0.1);
+    font-weight: 700;
   }
+  .nav-link.active svg, .nav-link.active span:first-child {
+    filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.6));
+  }
+  
+  /* Glass card commercial styling */
+  .commercial-card {
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.75) 0%, rgba(8, 15, 30, 0.85) 100%);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(56, 189, 248, 0.15);
+    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.6), 0 0 20px -5px rgba(14, 165, 233, 0.06);
+  }
+  .commercial-card:hover {
+    border-color: rgba(56, 189, 248, 0.35);
+    box-shadow: 0 14px 35px -8px rgba(0, 0, 0, 0.7), 0 0 25px -4px rgba(14, 165, 233, 0.18);
+  }
+
   table { border-collapse: collapse; }
   th, td { padding: 0.75rem 1rem; text-align: left; }
-  th { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: #94a3b8; background: rgba(15, 23, 42, 0.8); }
-  tr { border-bottom: 1px solid rgba(30, 41, 59, 0.6); }
-  tr:hover { background: rgba(30, 41, 59, 0.35); }
-  /* Custom scrollbar */
+  th { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: #7dd3fc; background: rgba(12, 23, 44, 0.9); }
+  tr { border-bottom: 1px solid rgba(30, 41, 59, 0.7); }
+  tr:hover { background: rgba(14, 165, 233, 0.05); }
+
+  /* Sky custom scrollbar */
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: #030712; }
-  ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
-  ::-webkit-scrollbar-thumb:hover { background: #334155; }
+  ::-webkit-scrollbar-thumb { background: #0c4a6e; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #0284c7; }
   
   /* Collapsed sidebar styles */
   body.sidebar-collapsed aside { width: 5rem; }
@@ -43,24 +70,24 @@
   body.sidebar-collapsed .nav-link { justify-content: center; padding-left: 0.5rem; padding-right: 0.5rem; }
 </style>
 </head>
-<body class="text-slate-100 min-h-screen antialiased selection:bg-cyan-500 selection:text-white flex flex-col">
+<body class="text-slate-100 min-h-screen antialiased selection:bg-sky-500 selection:text-white flex flex-col">
 <div class="flex flex-1 min-h-screen overflow-hidden">
   <!-- Sidebar -->
-  <aside id="main-sidebar" class="w-64 bg-slate-950/90 backdrop-blur-xl border-r border-slate-800/80 flex flex-col shrink-0 transition-all duration-300 z-30">
-    <div class="px-5 py-4 border-b border-slate-800/80 flex items-center justify-between">
+  <aside id="main-sidebar" class="w-64 bg-slate-950/95 backdrop-blur-2xl border-r border-sky-950/70 flex flex-col shrink-0 transition-all duration-300 z-30 shadow-2xl">
+    <div class="px-5 py-4 border-b border-sky-950/80 flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <div class="h-9 w-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-500 flex items-center justify-center font-black text-white shadow-lg shadow-cyan-500/20 shrink-0">
+        <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-sky-500 via-cyan-400 to-blue-600 flex items-center justify-center font-black text-white shadow-lg shadow-sky-500/30 shrink-0 border border-sky-300/30">
           B
         </div>
         <div class="brand-text">
           <div class="text-white font-extrabold text-sm tracking-wide flex items-center gap-1.5">
-            <span>BASICTRICK</span>
-            <span class="text-[9px] bg-cyan-500/20 text-cyan-300 font-mono px-1.5 py-0.2 rounded font-bold">V10</span>
+            <span class="bg-gradient-to-r from-sky-300 via-white to-cyan-300 bg-clip-text text-transparent">BASICTRICK</span>
+            <span class="text-[9px] bg-sky-500/20 text-sky-300 border border-sky-400/30 font-mono px-1.5 py-0.2 rounded font-bold shadow-sm shadow-sky-500/10">PRO</span>
           </div>
-          <div class="text-[11px] text-slate-400 font-medium">Digital Store Hub</div>
+          <div class="text-[11px] text-sky-400/80 font-medium">Enterprise Hub</div>
         </div>
       </div>
-      <button onclick="toggleSidebar()" title="Toggle Sidebar" class="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-lg transition">
+      <button onclick="toggleSidebar()" title="Toggle Sidebar" class="p-1.5 text-sky-400/80 hover:text-white hover:bg-sky-950/60 rounded-lg transition border border-transparent hover:border-sky-800/50">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
       </button>
     </div>

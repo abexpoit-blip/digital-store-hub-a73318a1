@@ -1,180 +1,197 @@
-<%- include('partials/header', { title: 'Dashboard', msg, currentPath }) %>
+<%- include('partials/header', { title: 'Enterprise Dashboard', msg, currentPath }) %>
 
-<!-- Header bar -->
+<!-- Header Bar -->
 <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
   <div>
-    <h1 class="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
-      <span>Dashboard Overview</span>
-      <span class="text-[10px] bg-cyan-500/20 text-cyan-300 font-mono px-2 py-0.5 rounded-full font-bold border border-cyan-500/30">LIVE</span>
+    <h1 class="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
+      <span class="bg-gradient-to-r from-sky-400 via-cyan-300 to-blue-400 bg-clip-text text-transparent">Enterprise Overview</span>
+      <span class="text-[10px] bg-sky-500/20 text-sky-300 font-mono px-2.5 py-0.5 rounded-full font-bold border border-sky-400/30 shadow-sm shadow-sky-500/20 flex items-center gap-1.5">
+        <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        SYSTEM LIVE
+      </span>
     </h1>
-    <p class="text-xs text-slate-400 mt-0.5">Real-time bot performance, metrics, and recent activity.</p>
+    <p class="text-xs text-sky-300/70 mt-1">Real-time telemetry, automated settlement logs & customer order volume</p>
   </div>
   <div class="flex items-center gap-3">
-    <a href="/maintenance" class="px-3.5 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/60 text-xs font-semibold text-slate-300 transition flex items-center gap-1.5 shadow-sm">
-      <span>🛠 Maintenance</span>
+    <a href="/maintenance" class="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-sky-950/50 border border-sky-900/50 hover:border-sky-500/50 text-xs font-semibold text-sky-200 transition flex items-center gap-1.5 shadow-sm">
+      <span>🛠 Control Center</span>
     </a>
-    <form method="post" action="/bot-status" class="flex items-center gap-2 bg-slate-900/80 border border-slate-800 p-1.5 rounded-xl">
-      <span class="text-xs font-semibold text-slate-400 pl-2">Bot:</span>
-      <span class="px-2 py-0.5 rounded-md text-[11px] font-bold font-mono <%= botStatus === 'open' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30' %>"><%= botStatus.toUpperCase() %></span>
+    <form method="post" action="/bot-status" class="flex items-center gap-2 bg-slate-950/90 border border-sky-900/50 p-1 rounded-xl shadow-inner">
+      <span class="text-xs font-semibold text-sky-400/80 pl-2">Bot Engine:</span>
+      <span class="px-2.5 py-0.5 rounded-lg text-[11px] font-bold font-mono <%= botStatus === 'open' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/10' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40' %>"><%= botStatus.toUpperCase() %></span>
       <input type="hidden" name="status" value="<%= botStatus === 'open' ? 'closed' : 'open' %>"/>
-      <button class="text-xs px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded-lg transition">Toggle</button>
+      <button class="text-xs px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white font-medium rounded-lg transition shadow-sm">Toggle</button>
     </form>
   </div>
 </div>
 
-<!-- Primary Metric Cards -->
+<!-- Primary Metric Cards (Commercial Sky Blue Theme) -->
 <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-  <div class="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 p-5 rounded-2xl shadow-xl hover:border-cyan-500/30 transition group">
-    <div class="flex items-center justify-between text-xs font-medium text-slate-400">
+  <div class="commercial-card p-5 rounded-2xl transition group relative overflow-hidden">
+    <div class="flex items-center justify-between text-xs font-semibold text-sky-300/80 uppercase tracking-wider">
       <span>Total Users</span>
-      <span class="text-cyan-400 group-hover:scale-110 transition transform">👥</span>
+      <span class="p-2 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20 group-hover:scale-110 transition">👥</span>
     </div>
-    <div class="text-2xl font-black text-white mt-2 tracking-tight"><%= totalUsers.toLocaleString() %></div>
-    <div class="text-[11px] text-rose-400/90 mt-1 font-medium flex items-center gap-1">
+    <div class="text-3xl font-black text-white mt-3 tracking-tight"><%= totalUsers.toLocaleString() %></div>
+    <div class="text-[11px] text-rose-400/90 mt-2 font-medium flex items-center gap-1.5">
       <span class="h-1.5 w-1.5 rounded-full bg-rose-400"></span>
-      <span><%= bannedUsers %> banned</span>
+      <span><%= bannedUsers %> banned accounts</span>
     </div>
+    <div class="absolute -right-6 -bottom-6 w-24 h-24 bg-sky-500/5 rounded-full blur-xl pointer-events-none"></div>
   </div>
 
-  <div class="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 p-5 rounded-2xl shadow-xl hover:border-emerald-500/30 transition group">
-    <div class="flex items-center justify-between text-xs font-medium text-slate-400">
-      <span>Total User Balance</span>
-      <span class="text-emerald-400 group-hover:scale-110 transition transform">💰</span>
+  <div class="commercial-card p-5 rounded-2xl transition group relative overflow-hidden">
+    <div class="flex items-center justify-between text-xs font-semibold text-sky-300/80 uppercase tracking-wider">
+      <span>User Balance</span>
+      <span class="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-110 transition">💰</span>
     </div>
-    <div class="text-2xl font-black text-emerald-400 mt-2 tracking-tight"><%= totalBalance.toLocaleString() %>৳</div>
-    <div class="text-[11px] text-slate-400 mt-1 font-medium">Customer wallet funds</div>
+    <div class="text-3xl font-black text-emerald-400 mt-3 tracking-tight"><%= totalBalance.toLocaleString() %>৳</div>
+    <div class="text-[11px] text-sky-400/70 mt-2 font-medium">Customer wallet deposits held</div>
+    <div class="absolute -right-6 -bottom-6 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl pointer-events-none"></div>
   </div>
 
-  <div class="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 p-5 rounded-2xl shadow-xl hover:border-indigo-500/30 transition group">
-    <div class="flex items-center justify-between text-xs font-medium text-slate-400">
+  <div class="commercial-card p-5 rounded-2xl transition group relative overflow-hidden">
+    <div class="flex items-center justify-between text-xs font-semibold text-sky-300/80 uppercase tracking-wider">
       <span>Today's Deposits</span>
-      <span class="text-indigo-400 group-hover:scale-110 transition transform">⚡</span>
+      <span class="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 group-hover:scale-110 transition">⚡</span>
     </div>
-    <div class="text-2xl font-black text-cyan-300 mt-2 tracking-tight"><%= todayDeposits.s.toLocaleString() %>৳</div>
-    <div class="text-[11px] text-slate-400 mt-1 font-medium"><%= todayDeposits.c %> transactions completed</div>
+    <div class="text-3xl font-black text-cyan-300 mt-3 tracking-tight"><%= todayDeposits.s.toLocaleString() %>৳</div>
+    <div class="text-[11px] text-sky-400/70 mt-2 font-medium"><%= todayDeposits.c %> automated transactions</div>
+    <div class="absolute -right-6 -bottom-6 w-24 h-24 bg-cyan-500/5 rounded-full blur-xl pointer-events-none"></div>
   </div>
 
-  <div class="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 p-5 rounded-2xl shadow-xl hover:border-amber-500/30 transition group">
-    <div class="flex items-center justify-between text-xs font-medium text-slate-400">
+  <div class="commercial-card p-5 rounded-2xl transition group relative overflow-hidden">
+    <div class="flex items-center justify-between text-xs font-semibold text-sky-300/80 uppercase tracking-wider">
       <span>Total Approved Deposits</span>
-      <span class="text-amber-400 group-hover:scale-110 transition transform">💎</span>
+      <span class="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover:scale-110 transition">💎</span>
     </div>
-    <div class="text-2xl font-black text-amber-300 mt-2 tracking-tight"><%= totalApproved.toLocaleString() %>৳</div>
-    <div class="text-[11px] text-amber-400/90 mt-1 font-medium flex items-center gap-1">
-      <span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
-      <span><%= pendingPayments %> pending deposit request</span>
+    <div class="text-3xl font-black text-amber-300 mt-3 tracking-tight"><%= totalApproved.toLocaleString() %>৳</div>
+    <div class="text-[11px] text-amber-400/90 mt-2 font-medium flex items-center gap-1.5">
+      <span class="h-1.5 w-1.5 rounded-full <%= pendingPayments > 0 ? 'bg-amber-400 animate-ping' : 'bg-emerald-400' %>"></span>
+      <span><%= pendingPayments %> pending review</span>
     </div>
+    <div class="absolute -right-6 -bottom-6 w-24 h-24 bg-amber-500/5 rounded-full blur-xl pointer-events-none"></div>
   </div>
 </div>
 
 <!-- Secondary Widgets (3 Column Grid) -->
 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 mb-6">
   <!-- Stock by Category -->
-  <div class="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 p-5 rounded-2xl shadow-xl flex flex-col">
-    <div class="flex items-center justify-between pb-3 border-b border-slate-800/70 mb-3">
+  <div class="commercial-card p-5 rounded-2xl flex flex-col">
+    <div class="flex items-center justify-between pb-3 border-b border-sky-950/80 mb-3">
       <div class="text-sm font-bold text-white flex items-center gap-2">
-        <span>📦 Stock by Category</span>
+        <span class="text-sky-400">📦</span>
+        <span>Inventory Breakdown</span>
       </div>
-      <span class="text-xs font-mono font-bold bg-slate-800/80 text-cyan-300 px-2.5 py-0.5 rounded-lg border border-slate-700/60">
-        Total: <%= totalStock %>
+      <span class="text-xs font-mono font-bold bg-sky-950/80 text-sky-300 px-2.5 py-0.5 rounded-lg border border-sky-800/50 shadow-sm">
+        Stock: <%= totalStock %>
       </span>
     </div>
     <div class="flex-1 overflow-y-auto max-h-56 space-y-2 pr-1">
       <% if (!stockByCategory.length) { %>
-        <div class="text-slate-500 text-xs py-4 text-center">No inventory found.</div>
+        <div class="text-slate-500 text-xs py-6 text-center">No inventory found.</div>
       <% } else { %>
         <% stockByCategory.forEach(function(s){ %>
-          <div class="flex justify-between items-center text-xs py-1.5 px-2.5 rounded-lg bg-slate-950/40 border border-slate-800/40">
-            <span class="text-slate-300 font-medium"><%= s.category %></span>
-            <span class="font-mono font-bold <%= s.c < 5 ? 'text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded' : 'text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded' %>">
+          <div class="flex justify-between items-center text-xs py-2 px-3 rounded-xl bg-slate-950/60 border border-sky-950/60 hover:border-sky-800/40 transition">
+            <span class="text-slate-200 font-semibold"><%= s.category %></span>
+            <span class="font-mono font-bold <%= s.c < 5 ? 'text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-md' : 'text-sky-300 bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 rounded-md' %>">
               <%= s.c %> pcs
             </span>
           </div>
         <% }) %>
       <% } %>
     </div>
-    <div class="pt-3 border-t border-slate-800/70 mt-3 text-right">
-      <a href="/stock" class="text-xs text-cyan-400 hover:text-cyan-300 font-semibold transition">Manage Stock →</a>
+    <div class="pt-3 border-t border-sky-950/80 mt-3 text-right">
+      <a href="/stock" class="text-xs text-sky-400 hover:text-sky-300 font-semibold transition inline-flex items-center gap-1">
+        Manage Stock <span>→</span>
+      </a>
     </div>
   </div>
 
   <!-- Replace Requests Widget -->
-  <div class="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 p-5 rounded-2xl shadow-xl flex flex-col justify-between">
+  <div class="commercial-card p-5 rounded-2xl flex flex-col justify-between">
     <div>
-      <div class="flex items-center justify-between pb-3 border-b border-slate-800/70 mb-3">
+      <div class="flex items-center justify-between pb-3 border-b border-sky-950/80 mb-3">
         <div class="text-sm font-bold text-white flex items-center gap-2">
-          <span>🔄 Replace Requests</span>
+          <span class="text-sky-400">🔄</span>
+          <span>Replace Center</span>
         </div>
-        <span class="h-2 w-2 rounded-full <%= pendingReplaces > 0 ? 'bg-amber-400 animate-ping' : 'bg-emerald-400' %>"></span>
+        <span class="h-2.5 w-2.5 rounded-full <%= pendingReplaces > 0 ? 'bg-amber-400 animate-ping' : 'bg-emerald-400' %>"></span>
       </div>
       <div class="flex items-baseline gap-3 my-2">
         <div class="text-4xl font-black text-amber-400 tracking-tight"><%= pendingReplaces %></div>
-        <div class="text-xs text-slate-400 font-medium">Pending Claims</div>
+        <div class="text-xs text-sky-300/80 font-medium uppercase tracking-wider">Pending Claims</div>
       </div>
       <p class="text-xs text-slate-400 leading-relaxed mt-2">
-        <%= pendingReplaces > 0 ? 'ক্রেতাদের সমস্যাযুক্ত আইডি রিপ্লেস অপেক্ষমাণ রয়েছে। দ্রুত সমাধান করুন।' : 'সব রিপ্লেস রিকোয়েস্ট সমাধান করা হয়েছে।' %>
+        <%= pendingReplaces > 0 ? 'Customer warranty claims awaiting validation. Deliver fresh accounts directly to Telegram.' : 'All customer replacement claims have been verified and processed.' %>
       </p>
     </div>
-    <div class="pt-4 border-t border-slate-800/70 mt-4">
-      <a href="/replace" class="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-xs transition shadow-lg shadow-cyan-500/20">
+    <div class="pt-4 border-t border-sky-950/80 mt-4">
+      <a href="/replace" class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs transition shadow-lg shadow-sky-500/25">
         <span>Go to Replace Panel</span>
         <span>→</span>
       </a>
     </div>
   </div>
 
-  <!-- Change Password Widget -->
-  <div class="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 p-5 rounded-2xl shadow-xl flex flex-col justify-between">
+  <!-- Security & Password Widget -->
+  <div class="commercial-card p-5 rounded-2xl flex flex-col justify-between">
     <div>
-      <div class="pb-3 border-b border-slate-800/70 mb-3">
-        <div class="text-sm font-bold text-white">🔐 Security & Password</div>
-        <div class="text-[11px] text-slate-400">Change Web Admin master password</div>
+      <div class="pb-3 border-b border-sky-950/80 mb-3">
+        <div class="text-sm font-bold text-white flex items-center gap-2">
+          <span class="text-sky-400">🔐</span>
+          <span>Security & Master Key</span>
+        </div>
+        <div class="text-[11px] text-sky-300/70">Update administrative session password</div>
       </div>
       <form method="post" action="/change-password" class="space-y-2.5">
-        <input type="password" name="current" placeholder="Current password" required class="w-full bg-slate-950/80 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"/>
-        <input type="password" name="next" placeholder="New password (min 6 characters)" required minlength="6" class="w-full bg-slate-950/80 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"/>
-        <button class="w-full bg-slate-800 hover:bg-slate-700 text-cyan-300 font-semibold text-xs py-2 rounded-xl transition border border-slate-700/60">Update Admin Password</button>
+        <input type="password" name="current" placeholder="Current password" required class="w-full bg-slate-950/90 border border-sky-900/50 focus:border-sky-400 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition"/>
+        <input type="password" name="next" placeholder="New master password (min 6 chars)" required minlength="6" class="w-full bg-slate-950/90 border border-sky-900/50 focus:border-sky-400 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 outline-none transition"/>
+        <button class="w-full bg-slate-900 hover:bg-sky-950 text-sky-300 font-bold text-xs py-2 rounded-xl transition border border-sky-900/60 shadow-sm">Update Password</button>
       </form>
     </div>
   </div>
 </div>
 
 <!-- Recent Sales Table Card -->
-<div class="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-2xl shadow-xl overflow-hidden">
-  <div class="px-6 py-4 border-b border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
+<div class="commercial-card rounded-2xl overflow-hidden mb-6">
+  <div class="px-6 py-4 border-b border-sky-950/80 flex flex-wrap items-center justify-between gap-3 bg-slate-950/40">
     <div class="text-sm font-bold text-white flex items-center gap-2">
-      <span>📥 Recent Sales & Deliveries</span>
+      <span class="text-sky-400">📥</span>
+      <span>Recent Dispatched Orders</span>
     </div>
-    <a href="/orders" class="text-xs text-cyan-400 hover:text-cyan-300 font-semibold transition">Full Order History →</a>
+    <a href="/orders" class="text-xs text-sky-400 hover:text-sky-300 font-bold transition flex items-center gap-1">
+      Open Full Orders History (25 / Page) <span>→</span>
+    </a>
   </div>
   <div class="overflow-x-auto">
     <table class="w-full text-xs">
       <thead>
-        <tr>
-          <th>Order ID</th>
-          <th>Customer</th>
-          <th>Item / Category</th>
-          <th>Qty</th>
-          <th>Total</th>
-          <th>Purchase Time</th>
+        <tr class="border-b border-sky-950/80 bg-slate-950/70 text-sky-300/90 font-mono text-[11px] tracking-wider uppercase">
+          <th class="py-3 px-4">Order ID</th>
+          <th class="py-3 px-4">Customer</th>
+          <th class="py-3 px-4">Category</th>
+          <th class="py-3 px-4 text-center">Qty</th>
+          <th class="py-3 px-4">Total</th>
+          <th class="py-3 px-4">Purchase Time</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody class="divide-y divide-slate-800/60">
         <% if (!recentSales.length) { %>
           <tr><td colspan="6" class="text-center text-slate-500 py-8">No orders recorded yet.</td></tr>
         <% } %>
         <% recentSales.forEach(function(s){ %>
-          <tr class="hover:bg-slate-800/30 transition">
-            <td class="font-mono text-cyan-400 font-bold">#<%= s.id %></td>
-            <td><a href="/users/<%= s.user_id %>" class="text-slate-200 hover:text-cyan-300 font-medium transition"><%= s.username || ('User ' + s.user_id) %></a></td>
-            <td>
-              <span class="px-2.5 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-slate-800/80 text-slate-300 border border-slate-700/50">
+          <tr class="hover:bg-sky-500/5 transition">
+            <td class="py-3 px-4 font-mono text-sky-400 font-bold">#<%= s.id %></td>
+            <td class="py-3 px-4"><a href="/users/<%= s.user_id %>" class="text-slate-200 hover:text-sky-300 font-medium transition"><%= s.username || ('User ' + s.user_id) %></a></td>
+            <td class="py-3 px-4">
+              <span class="px-2.5 py-0.5 rounded-md font-mono text-[11px] font-semibold bg-sky-950/50 text-sky-300 border border-sky-700/40">
                 <%= s.category %>
               </span>
             </td>
-            <td class="font-mono text-slate-300 font-bold"><%= s.qty %></td>
-            <td class="text-emerald-400 font-mono font-bold"><%= s.total %>৳</td>
-            <td class="text-slate-400 text-[11px]"><%= s.date %> <%= s.time || '' %></td>
+            <td class="py-3 px-4 text-center font-mono text-slate-200 font-bold"><%= s.qty %></td>
+            <td class="py-3 px-4 text-emerald-400 font-mono font-bold"><%= s.total %>৳</td>
+            <td class="py-3 px-4 text-slate-400 text-[11px]"><%= s.date %> <%= s.time || '' %></td>
           </tr>
         <% }) %>
       </tbody>

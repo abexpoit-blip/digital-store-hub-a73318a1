@@ -1,31 +1,184 @@
-<%- include('partials/header', { title: 'Orders', msg: null, currentPath }) %>
+<%- include('partials/header', { title: 'Orders History', msg: null, currentPath }) %>
 
-<h1 class="text-2xl font-bold mb-4">📥 Orders</h1>
-
-<form class="mb-4 flex gap-2">
-  <input name="q" value="<%= q %>" placeholder="Search user/category..."
-    class="flex-1 max-w-md bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm"/>
-  <button class="bg-cyan-600 hover:bg-cyan-500 px-4 rounded text-sm">Search</button>
-</form>
-
-<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-  <table class="w-full text-sm">
-    <thead><tr><th>ID</th><th>User</th><th>Category</th><th>Qty</th><th>Total</th><th>Date</th><th>Excel</th></tr></thead>
-    <tbody>
-      <% if (!sales.length) { %><tr><td colspan="7" class="text-center text-slate-500 py-6">No orders.</td></tr><% } %>
-      <% sales.forEach(function(s){ %>
-        <tr>
-          <td class="font-mono text-slate-500">#<%= s.id %></td>
-          <td><a href="/users/<%= s.user_id %>" class="text-cyan-400 hover:underline"><%= s.username || s.user_id %></a></td>
-          <td><%= s.category %></td>
-          <td><%= s.qty %></td>
-          <td class="text-emerald-400"><%= s.total %>৳</td>
-          <td class="text-xs text-slate-400"><%= s.date %> <%= s.time||'' %></td>
-          <td><a href="/orders/<%= s.id %>/excel" class="text-cyan-400 hover:underline text-xs">⬇ Download</a></td>
-        </tr>
-      <% }) %>
-    </tbody>
-  </table>
+<!-- Header Bar -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-sky-400 via-cyan-300 to-blue-400 bg-clip-text text-transparent flex items-center gap-2.5">
+      <span>📥 Orders History</span>
+      <span class="text-xs font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-400/30 px-2.5 py-0.5 rounded-full shadow-sm shadow-sky-500/10">
+        <%= totalCount.toLocaleString() %> Total
+      </span>
+    </h1>
+    <p class="text-xs text-sky-300/70 mt-1">Real-time ledger of completed sales, automated file downloads & customer order tracking</p>
+  </div>
+  <div class="flex items-center gap-2">
+    <span class="text-xs text-slate-400 font-mono bg-slate-900/80 border border-sky-900/40 px-3 py-1.5 rounded-xl">
+      Showing 25 / page (Page <%= page %> of <%= totalPages %>)
+    </span>
+  </div>
 </div>
+
+<!-- Search Bar & Filters -->
+<div class="commercial-card p-4 rounded-2xl mb-6">
+  <form method="get" action="/orders" class="flex flex-col sm:flex-row items-center gap-3">
+    <div class="relative flex-1 w-full">
+      <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-sky-400/60">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+      </div>
+      <input name="q" value="<%= q %>" placeholder="Search by Username, User ID, or Category (e.g. fb1000, bmfb)..."
+        class="w-full bg-slate-950/80 border border-sky-900/50 focus:border-sky-400 focus:ring-1 focus:ring-sky-400 rounded-xl pl-10 pr-4 py-2.5 text-xs placeholder-slate-500 text-slate-200 outline-none transition"/>
+    </div>
+    <div class="flex items-center gap-2 w-full sm:w-auto">
+      <button type="submit" class="w-full sm:w-auto bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold px-6 py-2.5 rounded-xl text-xs shadow-lg shadow-sky-500/25 flex items-center justify-center gap-1.5 transition">
+        <span>🔍</span> Search Orders
+      </button>
+      <% if (q) { %>
+        <a href="/orders" class="px-3.5 py-2.5 text-xs text-sky-400 hover:text-white bg-slate-900 border border-sky-900/50 rounded-xl transition">
+          Clear
+        </a>
+      <% } %>
+    </div>
+  </form>
+</div>
+
+<!-- Orders Table Card -->
+<div class="commercial-card rounded-2xl overflow-hidden mb-6">
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="border-b border-sky-950/80 bg-slate-950/70 text-sky-300/90 font-mono text-[11px] tracking-wider uppercase">
+          <th class="py-3.5 px-4">Order ID</th>
+          <th class="py-3.5 px-4">Customer</th>
+          <th class="py-3.5 px-4">Category</th>
+          <th class="py-3.5 px-4 text-center">Quantity</th>
+          <th class="py-3.5 px-4">Total Amount</th>
+          <th class="py-3.5 px-4">Purchase Date & Time</th>
+          <th class="py-3.5 px-4 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-800/60">
+        <% if (!sales.length) { %>
+          <tr>
+            <td colspan="7" class="text-center text-slate-500 py-12">
+              <div class="text-3xl mb-2">📭</div>
+              <div class="text-sm font-medium">কোনো অর্ডার পাওয়া যায়নি।</div>
+            </td>
+          </tr>
+        <% } %>
+        <% sales.forEach(function(s){ %>
+          <tr class="hover:bg-sky-500/5 transition">
+            <td class="py-3.5 px-4 font-mono text-sky-400 font-bold">#<%= s.id %></td>
+            <td class="py-3.5 px-4">
+              <a href="/users/<%= s.user_id %>" class="text-white hover:text-sky-300 font-semibold block transition">
+                <%= s.username || ('User ' + s.user_id) %>
+              </a>
+              <div class="text-[10px] text-slate-500 font-mono">ID: `<%= s.user_id %>`</div>
+            </td>
+            <td class="py-3.5 px-4">
+              <span class="inline-block px-2.5 py-1 rounded-lg font-mono text-[11px] font-semibold bg-sky-950/50 text-sky-300 border border-sky-700/40 shadow-sm shadow-sky-950/50">
+                <%= s.category %>
+              </span>
+            </td>
+            <td class="py-3.5 px-4 text-center font-mono text-slate-200 font-bold text-xs">
+              <span class="bg-slate-900/90 px-2 py-0.5 rounded border border-slate-700/60">
+                <%= s.qty %> pcs
+              </span>
+            </td>
+            <td class="py-3.5 px-4 font-mono font-bold text-emerald-400 text-xs">
+              <%= s.total %>৳
+            </td>
+            <td class="py-3.5 px-4 text-slate-400 text-[11px] whitespace-nowrap">
+              <div class="text-slate-200 font-medium"><%= s.date %></div>
+              <div class="text-slate-500 text-[10px]"><%= s.time || '' %></div>
+            </td>
+            <td class="py-3.5 px-4 text-right whitespace-nowrap">
+              <a href="/orders/<%= s.id %>/excel"
+                 class="inline-flex items-center gap-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 hover:border-sky-400/50 px-3 py-1.5 rounded-xl text-xs font-semibold transition shadow-sm">
+                <span>⬇</span> Excel (.xlsx)
+              </a>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Commercial Pagination Toolbar (Next, Prev, 1, 2, 3...) -->
+<% if (totalPages > 1) { %>
+  <div class="flex flex-col sm:flex-row items-center justify-between gap-4 commercial-card p-4 rounded-2xl">
+    <div class="text-xs text-sky-300/80">
+      Showing <span class="font-bold text-white"><%= ((page - 1) * limit) + 1 %></span> to <span class="font-bold text-white"><%= Math.min(page * limit, totalCount) %></span> of <span class="font-bold text-white"><%= totalCount %></span> records
+    </div>
+
+    <div class="flex items-center gap-1.5">
+      <!-- Previous Page Button -->
+      <% if (page > 1) { %>
+        <a href="/orders?page=<%= page - 1 %><%= q ? '&q=' + encodeURIComponent(q) : '' %>"
+           class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900/90 text-sky-300 border border-sky-900/50 hover:bg-sky-500/20 hover:border-sky-400/50 transition flex items-center gap-1">
+          ‹ Prev
+        </a>
+      <% } else { %>
+        <span class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-950/50 text-slate-600 border border-slate-900 cursor-not-allowed">
+          ‹ Prev
+        </span>
+      <% } %>
+
+      <!-- Numbered Page Buttons -->
+      <% 
+        let startPage = Math.max(1, page - 2);
+        let endPage = Math.min(totalPages, startPage + 4);
+        if (endPage - startPage < 4) {
+          startPage = Math.max(1, endPage - 4);
+        }
+      %>
+
+      <% if (startPage > 1) { %>
+        <a href="/orders?page=1<%= q ? '&q=' + encodeURIComponent(q) : '' %>"
+           class="w-8 h-8 rounded-xl text-xs font-semibold flex items-center justify-center bg-slate-900 text-slate-300 border border-slate-800 hover:bg-sky-500/20 hover:text-sky-300 transition">
+          1
+        </a>
+        <% if (startPage > 2) { %>
+          <span class="text-slate-600 px-1 text-xs">…</span>
+        <% } %>
+      <% } %>
+
+      <% for (let p = startPage; p <= endPage; p++) { %>
+        <% if (p === page) { %>
+          <span class="w-8 h-8 rounded-xl text-xs font-bold flex items-center justify-center bg-gradient-to-tr from-sky-500 to-blue-600 text-white shadow-lg shadow-sky-500/30 border border-sky-400/40">
+            <%= p %>
+          </span>
+        <% } else { %>
+          <a href="/orders?page=<%= p %><%= q ? '&q=' + encodeURIComponent(q) : '' %>"
+             class="w-8 h-8 rounded-xl text-xs font-semibold flex items-center justify-center bg-slate-900/80 text-slate-300 border border-sky-950 hover:bg-sky-500/20 hover:text-sky-300 hover:border-sky-500/40 transition">
+            <%= p %>
+          </a>
+        <% } %>
+      <% } %>
+
+      <% if (endPage < totalPages) { %>
+        <% if (endPage < totalPages - 1) { %>
+          <span class="text-slate-600 px-1 text-xs">…</span>
+        <% } %>
+        <a href="/orders?page=<%= totalPages %><%= q ? '&q=' + encodeURIComponent(q) : '' %>"
+           class="w-8 h-8 rounded-xl text-xs font-semibold flex items-center justify-center bg-slate-900 text-slate-300 border border-slate-800 hover:bg-sky-500/20 hover:text-sky-300 transition">
+          <%= totalPages %>
+        </a>
+      <% } %>
+
+      <!-- Next Page Button -->
+      <% if (page < totalPages) { %>
+        <a href="/orders?page=<%= page + 1 %><%= q ? '&q=' + encodeURIComponent(q) : '' %>"
+           class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900/90 text-sky-300 border border-sky-900/50 hover:bg-sky-500/20 hover:border-sky-400/50 transition flex items-center gap-1">
+          Next ›
+        </a>
+      <% } else { %>
+        <span class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-950/50 text-slate-600 border border-slate-900 cursor-not-allowed">
+          Next ›
+        </span>
+      <% } %>
+    </div>
+  </div>
+<% } %>
 
 <%- include('partials/footer') %>
