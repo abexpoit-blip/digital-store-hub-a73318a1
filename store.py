@@ -99,6 +99,62 @@ QUOTES = [
     "“ডিজিটাল সেবায় আমরা আছি আপনার পাশে।”"
 ]
 
+BOT_VERSION = "V 10.07"
+
+# --- REPLACEMENT DYNAMIC TIERS & TIME HELPERS ---
+def get_replace_window_hours(qty: int) -> int:
+    """
+    Tier-based replace windows:
+    1-4 pcs   : 2 hours
+    5-30 pcs  : 6 hours
+    31-100 pcs: 12 hours
+    101+ pcs  : 24 hours
+    """
+    try:
+        q = int(qty)
+    except Exception:
+        q = 1
+    if q <= 4:
+        return 2
+    elif q <= 30:
+        return 6
+    elif q <= 100:
+        return 12
+    else:
+        return 24
+
+def get_sale_epoch(sale_id: int, date_str: str, time_str: str) -> int:
+    """Return unix timestamp (seconds) of sale delivery or creation."""
+    import time
+    try:
+        conn = _dbc()
+        row = conn.execute("SELECT delivered_at FROM delivery_archive WHERE sale_id=? ORDER BY id ASC LIMIT 1", (sale_id,)).fetchone()
+        conn.close()
+        if row and row[0]:
+            return int(row[0])
+    except Exception:
+        pass
+    try:
+        dt_str = f"{date_str} {time_str}"
+        dt = datetime.strptime(dt_str, "%Y-%m-%d %I:%M %p")
+        bst_tz = timezone(timedelta(hours=6))
+        dt = dt.replace(tzinfo=bst_tz)
+        return int(dt.timestamp())
+    except Exception:
+        return int(time.time())
+
+def format_duration(seconds: int) -> str:
+    """Format duration in seconds into human-readable Bengali string."""
+    seconds = max(0, int(seconds))
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    if hours > 0 and minutes > 0:
+        return f"{hours} ঘণ্টা {minutes} মিনিট"
+    elif hours > 0:
+        return f"{hours} ঘণ্টা"
+    else:
+        return f"{max(1, minutes)} মিনিট"
+
 # --- VPN EMOJI MAP (Colorful & Professional) ---
 VPN_EMOJIS = {
     "nord": "🛡️",
@@ -315,11 +371,11 @@ async def show_dashboard_ui(user_id, first_name, bot_instance, chat_id):
     online_status = "🟢 Online" if is_bot_online() else "🔴 Offline"
     
     dashboard = (
-        f"**★ B A S I C T R I C K   S T O R E   P R O ★**\n"
+        f"⚡ **BASICTRICK DIGITAL STORE • {BOT_VERSION} PREMIUM** ⚡\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"✨ {quote}\n\n"
         f"⏱ **ওয়ার্কিং সময়:** ৯:০০ AM - ২:০০ AM\n"
-        f"🤖 **স্ট্যাটাস:** {online_status}\n"
+        f"🤖 **স্ট্যাটাস:** {online_status}  •  🚀 **System:** `{BOT_VERSION} Active`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"👤 **অ্যাকাউন্ট:** {first_name}\n"
         f"🆔 **ইউজার আইডি:** `{user_id}`\n"
@@ -335,7 +391,8 @@ async def show_dashboard_ui(user_id, first_name, bot_instance, chat_id):
     kb.row(types.InlineKeyboardButton(text="💳 ব্যালেন্স অ্যাড", callback_data="deposit"),
            types.InlineKeyboardButton(text="👤 প্রোফাইল", callback_data="profile"))
 
-    kb.row(types.InlineKeyboardButton(text="🌐 VPN Services", callback_data="vpn_catalog"))
+    kb.row(types.InlineKeyboardButton(text="🌐 VPN Services", callback_data="vpn_catalog"),
+           types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
 
     kb.row(types.InlineKeyboardButton(text="📞 সাপোর্ট ও হেল্প", callback_data="support_menu"),
            types.InlineKeyboardButton(text="📢 কমিউনিটি গ্রুপ", url=GROUP_LINK))
@@ -2335,7 +2392,49 @@ async def submit_vpn_delivery(m: types.Message, state: FSMContext):
         
     await state.clear()
 
-# --- NEW: SUPPORT SYSTEM ---
+# --- NEW: SUPPORT SYSTEM & TERMS & POLICY ---
+
+@dp.message(Command("terms"))
+@dp.message(Command("rules"))
+@dp.callback_query(F.data == "terms_policy")
+async def show_terms_policy(event: types.Message | types.CallbackQuery):
+    if isinstance(event, types.CallbackQuery):
+        await event.answer()
+        sender = event.message.edit_text
+    else:
+        sender = event.answer
+        
+    kb = InlineKeyboardBuilder()
+    kb.row(types.InlineKeyboardButton(text="🔄 রিপ্লেস ক্লেইম করুন", callback_data="sup_replace"))
+    kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
+    
+    terms_text = (
+        f"📜 **TERMS & POLICY • {BOT_VERSION} PREMIUM** 📜\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "আমাদের স্টোর থেকে কেনাকাটার পূর্বে ও পরে নিচের নীতিমালাগুলো বাধ্যতামূলকভাবে মেনে চলতে হবে:\n\n"
+        "⏱️ **ডায়নামিক রিপ্লেস সময়সীমা (Replacement Tiers):**\n"
+        "▫️ **১ – ৪ পিস আইডি:** ক্রয়ের পর **২ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ **৫ – ৩০ পিস আইডি:** ক্রয়ের পর **৬ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ **৩১ – ১০০ পিস আইডি:** ক্রয়ের পর **১২ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ **১০১+ পিস আইডি:** ক্রয়ের পর **২৪ ঘণ্টা** গ্যারান্টি\n\n"
+        "🚫 *অনুমোদিত সময় পার হয়ে গেলে স্বয়ংক্রিয়ভাবে রিপ্লেস মেয়াদ শেষ হবে এবং কোনো রিকোয়েস্ট গ্রহণ করা হবে না।*\n\n"
+        "📌 **রিপ্লেসের নিয়মাবলী ও শর্তাবলী:**\n"
+        "১. শুধুমাত্র `UID PASSWORD COOKIES` টেক্সট আকারে সাবমিট করতে হবে।\n"
+        "২. কোনো ফটো, স্ক্রিনশট বা ফাইল পাঠালে রিকোয়েস্ট সাথে সাথে স্বয়ংক্রিয়ভাবে বাতিল হবে।\n"
+        "৩. আইডি কেনার পর পাসওয়ার্ড পরিবর্তন করা হলে অথবা ২-ফ্যাক্টর অন করা হলে রিপ্লেস দেওয়া হবে না।\n"
+        "৪. নিজস্ব আইপি বা ব্রাউজারের ভুলের কারণে আইডি নষ্ট হলে কিংবা আইডি লাইভ থাকলে রিপ্লেস হবে না।\n"
+        "৫. একাধিক আইডি থাকলে প্রতি লাইনে একটি করে আইডি সাবমিট করতে হবে।\n\n"
+        "💳 **ডিপোজিট ও রিফান্ড নীতি:**\n"
+        "▫️ ব্যালেন্স রিফান্ডেবল নয়; যেকোনো সময় স্টোরের কেনাকাটায় ব্যবহার্য।\n"
+        "▫️ ZiniPay বা Binance পেমেন্ট সম্পন্ন হওয়ার কয়েক সেকেন্ডে ব্যালেন্স অটো যোগ হয়।\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"🛡️ *BasicTrick Automated Store • {BOT_VERSION} Active*"
+    )
+    try:
+        await sender(terms_text, reply_markup=kb.as_markup(), parse_mode="Markdown")
+    except Exception:
+        if isinstance(event, types.CallbackQuery):
+            await event.message.answer(terms_text, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
 @dp.callback_query(F.data == "support_menu")
 async def support_menu(c: types.CallbackQuery):
@@ -2344,51 +2443,175 @@ async def support_menu(c: types.CallbackQuery):
     kb = InlineKeyboardBuilder()
     kb.row(types.InlineKeyboardButton(text="🔄 Replace PC Clone ID", callback_data="sup_replace"))
     kb.row(types.InlineKeyboardButton(text="📝 Complain", callback_data="sup_complain"))
+    kb.row(types.InlineKeyboardButton(text="📜 শর্তাবলী ও পলিসি (Terms)", callback_data="terms_policy"))
     kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="back_home"))
     
-    msg = "📞 **সাপোর্ট ও হেল্প সেন্টার**\n━━━━━━━━━━━━━━━━━━━━\nআপনি কোন ধরনের সাহায্য চাইছেন তা নিচের বাটন থেকে সিলেক্ট করুন:"
-    await c.message.edit_text(msg, reply_markup=kb.as_markup())
+    msg = (
+        f"📞 **সাপোর্ট ও হেল্প সেন্টার • {BOT_VERSION}**\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "আপনার যেকোনো সমস্যা বা সার্ভিসের জন্য নিচের অপশন সিলেক্ট করুন:\n\n"
+        "💡 *নষ্ট আইডি রিপ্লেসের জন্য 'Replace PC Clone ID' এ ক্লিক করুন।*"
+    )
+    await c.message.edit_text(msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
 @dp.callback_query(F.data == "sup_replace")
-async def support_replace_warn(c: types.CallbackQuery):
+async def support_replace_start(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
+    await state.clear()
     
+    conn = _dbc()
+    user_sales = conn.execute("""
+        SELECT id, category, qty, total, date, time 
+        FROM sales 
+        WHERE user_id=? AND category NOT LIKE 'VPN%'
+        ORDER BY id DESC LIMIT 6
+    """, (c.from_user.id,)).fetchall()
+    conn.close()
+    
+    if not user_sales:
+        kb = InlineKeyboardBuilder()
+        kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
+        kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
+        
+        no_order_msg = (
+            "🚫 **কোনো সক্রিয় অর্ডার পাওয়া যায়নি!**\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "⚠️ আপনার অ্যাকাউন্টে পূর্বে ক্রয়কৃত কোনো আইডি পাওয়া যায়নি।\n\n"
+            "📌 **পলিসি নির্দেশিকা:**\n"
+            "▫️ শুধুমাত্র আমাদের স্টোর থেকে সরাসরি ক্রয়কৃত আইডির ক্ষেত্রেই অটো রিপ্লেস গ্যারান্টি প্রযোজ্য।\n"
+            "▫️ আপনি যদি অন্য টেলিগ্রাম অ্যাকাউন্ট থেকে কিনে থাকেন, অনুগ্রহ করে সেই অ্যাকাউন্ট থেকে যোগাযোগ করুন।"
+        )
+        return await c.message.edit_text(no_order_msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
+        
     kb = InlineKeyboardBuilder()
-    kb.row(types.InlineKeyboardButton(text="✅ Agree & Continue", callback_data="sup_replace_agree"))
+    now_ts = int(__import__("time").time())
+    
+    for sale in user_sales:
+        s_id, s_cat, s_qty, s_tot, s_date, s_time = sale
+        lbl = {"fb61":"FB 61","fb1000":"FB 1000","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(s_cat, s_cat.upper())
+        
+        s_epoch = get_sale_epoch(s_id, s_date, s_time)
+        allowed_h = get_replace_window_hours(s_qty)
+        is_expired = (now_ts - s_epoch) > (allowed_h * 3600)
+        
+        status_tag = "🔴 Expired" if is_expired else "🟢 Active"
+        btn_text = f"📦 #{s_id} • {lbl} ({s_qty} pcs) [{status_tag}]"
+        kb.row(types.InlineKeyboardButton(text=btn_text, callback_data=f"rep_ord_{s_id}"))
+        
+    kb.row(types.InlineKeyboardButton(text="📜 শর্তাবলী ও নিয়ম (Terms)", callback_data="terms_policy"))
     kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
     
-    warn_msg = (
-        f"⚠️ **REPLACEMENT WARNING & RULES** ⚠️\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"দয়া করে আইডি রিপ্লেস চাওয়ার আগে নিচের নিয়মগুলো মনোযোগ দিয়ে পড়ুন:\n\n"
-        f"১. **Time Limit:** আইডি কেনার **৬ ঘণ্টার** মধ্যে সমস্যা হলে শুধুমাত্র তখনই রিপ্লেস দেওয়া হবে। ৬ ঘণ্টার পর কোনো রিকোয়েস্ট গ্রহণ করা হবে না।\n"
-        f"২. **Format:** রিপ্লেসের জন্য অবশ্যই **UID PASS COOKIES** এই format-এ (space-separated) submit করতে হবে।\n"
-        f"৩. **শুধু TEXT accept হবে** — File / Photo / Screenshot / Document / Voice পাঠালে auto-reject।\n"
-        f"৪. **Multiple ID:** প্রতি লাইনে একটা ID (UID PASS COOKIES)।\n"
-        f"৫. **Format ভুল** হলে বা কোনো field missing হলে reject।\n"
-        f"৩. **Admin Rights:** যদি আপনার আইডি নিয়ম অনুযায়ী সমস্যাযুক্ত না হয়, তবে অ্যাডমিন কোনো নোটিশ ছাড়াই আপনার রিকোয়েস্ট রিজেক্ট করার ক্ষমতা রাখেন।\n\n"
-        f"✅ আপনি কি এই শর্তগুলোর সাথে একমত?"
+    pick_msg = (
+        f"🔄 **রিপ্লেস রিকোয়েস্ট সেন্টার • {BOT_VERSION}**\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "কোন অর্ডারের নষ্ট আইডি আপনি রিপ্লেস করতে চান তা নিচে থেকে সিলেক্ট করুন:\n\n"
+        "⏱️ **আমাদের অটোমেটিক রিপ্লেস গ্যারান্টি:**\n"
+        "▫️ ১ – ৪ পিস: **২ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ ৫ – ৩০ পিস: **৬ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ ৩১ – ১০০ পিস: **১২ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ ১০১+ পিস: **২৪ ঘণ্টা** গ্যারান্টি\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "💡 *সিস্টেম স্বয়ংক্রিয়ভাবে অর্ডারের সময় এবং পরিমাণের ওপর ভিত্তি করে রিপ্লেসের মেয়াদ যাচাই করবে।*"
     )
-    await c.message.edit_text(warn_msg, reply_markup=kb.as_markup())
+    await c.message.edit_text(pick_msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
-@dp.callback_query(F.data == "sup_replace_agree")
-async def support_replace_input(c: types.CallbackQuery, state: FSMContext):
+@dp.callback_query(F.data.startswith("rep_ord_"))
+async def select_replace_order(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
+    s_id = int(c.data.split("_")[2])
+    
+    conn = _dbc()
+    sale = conn.execute("SELECT id, user_id, username, category, qty, total, date, time FROM sales WHERE id=? AND user_id=?", (s_id, c.from_user.id)).fetchone()
+    conn.close()
+    
+    if not sale:
+        return await c.message.answer("❌ অর্ডারটি পাওয়া যায়নি।")
+        
+    sale_id, u_id, uname, cat_name, qty, total, d_str, t_str = sale
+    lbl = {"fb61":"FB 61","fb1000":"FB 1000","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat_name, cat_name.upper())
+    
+    sale_epoch = get_sale_epoch(sale_id, d_str, t_str)
+    now_ts = int(__import__("time").time())
+    elapsed_sec = max(0, now_ts - sale_epoch)
+    allowed_h = get_replace_window_hours(qty)
+    allowed_sec = allowed_h * 3600
+    
+    elapsed_str = format_duration(elapsed_sec)
+    
+    if elapsed_sec > allowed_sec:
+        # EXPIRED WARNING
+        kb = InlineKeyboardBuilder()
+        kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy (শর্তাবলী)", callback_data="terms_policy"))
+        kb.row(types.InlineKeyboardButton(text="🔙 অন্য অর্ডার বাছুন", callback_data="sup_replace"))
+        
+        expired_msg = (
+            "🚫 **রিপ্লেস সময়সীমা অতিক্রম করেছে (Time Expired)** 🚫\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"📦 **অর্ডার নং:** `#{sale_id}`\n"
+            f"🏷️ **আইটেম:** {lbl} ({qty} pcs)\n"
+            f"🕒 **কেনার সময়:** {d_str} | {t_str}\n"
+            f"⏳ **অনুমোদিত রিপ্লেস উইন্ডো:** {allowed_h} ঘণ্টা\n"
+            f"⌛ **অতিবাহিত সময়:** {elapsed_str}\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"⚠️ **দুঃখিত!** আপনার অর্ডারের জন্য নির্ধারিত **{allowed_h} ঘণ্টার** রিপ্লেস সময়সীমা শেষ হয়ে গেছে।\n\n"
+            "📜 আমাদের অটোমেটিক সিকিউরিটি ও টার্মস পলিসি অনুযায়ী নির্ধারিত সময় পার হওয়ার পর সিস্টেম থেকে কোনো রিপ্লেস গ্রহণ করা সম্ভব নয়।"
+        )
+        return await c.message.edit_text(expired_msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
+        
+    # STILL VALID!
+    rem_sec = allowed_sec - elapsed_sec
+    rem_str = format_duration(rem_sec)
+    
+    await state.update_data(
+        replace_sale_id=sale_id,
+        replace_qty=qty,
+        replace_cat=cat_name,
+        replace_allowed_hours=allowed_h,
+        replace_sale_time=f"{d_str} {t_str}",
+        replace_sale_epoch=sale_epoch
+    )
+    
+    kb = InlineKeyboardBuilder()
+    kb.row(types.InlineKeyboardButton(text="✅ Agree & Submit", callback_data=f"rep_agree_{sale_id}"))
+    kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
+    kb.row(types.InlineKeyboardButton(text="🔙 অন্য অর্ডার বাছুন", callback_data="sup_replace"))
+    
+    valid_msg = (
+        "⚡ **অর্ডার ভেরিফাইড (রিপ্লেসের জন্য যোগ্য)** ⚡\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 **অর্ডার নং:** `#{sale_id}`\n"
+        f"🏷️ **আইটেম:** {lbl} ({qty} pcs)\n"
+        f"🕒 **কেনার সময়:** {d_str} | {t_str}\n"
+        f"⏳ **অনুমোদিত গ্যারান্টি:** {allowed_h} ঘণ্টা\n"
+        f"⏱️ **বাকি সময় আছে:** {rem_str}\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "📌 **নিয়মাবলী ও শর্তসমূহ:**\n"
+        "১. শুধুমাত্র নষ্ট আইডি দিন (UID PASS COOKIES)।\n"
+        "২. কোনো ফাইল, ফটো বা স্ক্রিনশট পাঠালে সরাসরি রিজেক্ট হবে।\n"
+        "৩. পাসওয়ার্ড চেঞ্জ করা বা নিজস্ব ভুলের কারণে নষ্ট আইডি রিপ্লেস হবে না।\n\n"
+        "✅ আপনি কি এই শর্তে নষ্ট আইডি সাবমিট করতে প্রস্তুত?"
+    )
+    await c.message.edit_text(valid_msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
+
+@dp.callback_query(F.data.startswith("rep_agree_"))
+async def rep_agree_action(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    sale_id = c.data.split("_")[2]
+    
     await c.message.edit_text(
-        "✍️ **নষ্ট আইডিগুলো text আকারে দিন:**\n\n"
+        f"✍️ **অর্ডার `#{sale_id}` এর নষ্ট আইডিগুলো টেক্সট আকারে দিন:**\n\n"
         "📌 **Format (প্রতি লাইনে):**\n"
         "`UID PASSWORD COOKIES`\n\n"
         "📝 **Example:**\n"
         "`100011... myPass123 datr=xxx; c_user=100011...; xs=...`\n\n"
-        "⚠️ File / Photo / Screenshot পাঠালে **auto-reject**।\n"
-        "একাধিক ID হলে প্রতি লাইনে একটা করে দিন।"
+        "⚠️ শুধুমাত্র Text accept হবে। File / Screenshot পাঠালে auto-reject।\n"
+        "একাধিক আইডি হলে প্রতি লাইনে একটি করে দিন।"
     )
     await state.set_state(ShopStates.waiting_for_replace_data)
 
 @dp.message(ShopStates.waiting_for_replace_data)
 async def process_replace_request(m: types.Message, state: FSMContext):
     # [REPLACE_TEXTONLY_PATCH_V1]
-    # ---- Layer 1: block non-text (file/photo/doc/video/voice/sticker/etc) ----
     if m.content_type != "text" or not m.text:
         return await m.answer(
             "❌ **File / Photo / Screenshot / Document accept হবে না।**\n\n"
@@ -2408,7 +2631,7 @@ async def process_replace_request(m: types.Message, state: FSMContext):
 
     _errors = []
     for _i, _ln in enumerate(raw_lines, 1):
-        _parts = _ln.split(None, 2)   # split into max 3 parts (UID, PASS, rest=COOKIES)
+        _parts = _ln.split(None, 2)
         if len(_parts) < 3:
             _errors.append(f"  • Line {_i}: শুধু {len(_parts)}টা field পাওয়া গেছে (দরকার 3 — UID PASS COOKIES)")
             continue
@@ -2431,22 +2654,43 @@ async def process_replace_request(m: types.Message, state: FSMContext):
             f"প্রতি লাইনে একটা ID দিয়ে আবার পাঠান, অথবা /cancel দিন।"
         )
 
-    # ---- All valid, proceed with original flow ----
+    # Re-verify time expiration in state
+    st_data = await state.get_data()
+    sale_id = st_data.get("replace_sale_id")
+    allowed_h = st_data.get("replace_allowed_hours", 6)
+    sale_epoch = st_data.get("replace_sale_epoch")
+    qty = st_data.get("replace_qty", len(raw_lines))
+
+    now_ts = int(__import__("time").time())
+    if sale_epoch and (now_ts - sale_epoch) > (allowed_h * 3600):
+        await state.clear()
+        kb = InlineKeyboardBuilder()
+        kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
+        kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
+        return await m.answer(
+            f"🚫 **রিপ্লেস সময়সীমা অতিক্রম করেছে!**\n\nআইডি সাবমিট করার আগেই আপনার অর্ডারের {allowed_h} ঘণ্টার গ্যারান্টি মেয়াদ শেষ হয়ে গেছে।",
+            reply_markup=kb.as_markup()
+        )
+
     ticket_id = str(uuid.uuid4())[:8]
+    order_ref = f"Order #{sale_id}" if sale_id else "Direct"
     lines = raw_lines
     acc_count_warning = f"⚠️ __ইউজার {len(lines)} টি একাউন্ট দিয়েছে!__" if len(lines) > 1 else ""
     
     username_display = f"@{m.from_user.username}" if m.from_user.username else "No Username"
-    now_ts = datetime.now(timezone.utc).timestamp()
+    utc_now_ts = datetime.now(timezone.utc).timestamp()
     
     conn = _dbc()
     try:
-        conn.execute("INSERT INTO support_tickets (ticket_id, user_id, type, status, data, timestamp) VALUES (?, ?, 'replace', 'pending', ?, ?)", (ticket_id, m.from_user.id, user_data_text, now_ts))
-        _rep_ts = int(now_ts * 1000)
+        conn.execute(
+            "INSERT INTO support_tickets (ticket_id, user_id, type, status, data, timestamp) VALUES (?, ?, 'replace', 'pending', ?, ?)",
+            (ticket_id, m.from_user.id, user_data_text, utc_now_ts)
+        )
+        _rep_ts = int(utc_now_ts * 1000)
         _rep_uname = f"@{m.from_user.username}" if m.from_user.username else (m.from_user.first_name or f"User_{m.from_user.id}")
         conn.execute(
             "INSERT INTO replace_requests (user_id, username, category, old_data, reason, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
-            (m.from_user.id, _rep_uname, "ID", user_data_text, f"Ticket #{ticket_id}", _rep_ts)
+            (m.from_user.id, _rep_uname, "ID", user_data_text, f"Ticket #{ticket_id} ({order_ref})", _rep_ts)
         )
         conn.commit()
     except Exception as e:
@@ -2461,8 +2705,9 @@ async def process_replace_request(m: types.Message, state: FSMContext):
     short_text = user_data_text[:60] + "..." if len(user_data_text) > 60 else user_data_text
     
     admin_msg = (
-        f"🚨 **NEW REPLACE REQUEST** 🚨\n"
+        f"🚨 **NEW REPLACE REQUEST • {BOT_VERSION}** 🚨\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 **{order_ref}** ({qty} pcs | Tier: {allowed_h}h)\n"
         f"👤 **Name:** {m.from_user.first_name}\n"
         f"🔗 **User:** {username_display}\n"
         f"🆔 **ID:** `{m.from_user.id}`\n\n"
@@ -2474,7 +2719,7 @@ async def process_replace_request(m: types.Message, state: FSMContext):
     if len(user_data_text) > 60:
         kb.row(types.InlineKeyboardButton(text="📄 See Full Details", callback_data=f"tick_view_{ticket_id}"))
     kb.row(types.InlineKeyboardButton(text="🔄 Replace", callback_data=f"tick_rep_{ticket_id}"))
-    kb.row(types.InlineKeyboardButton(text="⏱ 6 Hours Over", callback_data=f"tick_6hr_{ticket_id}"))
+    kb.row(types.InlineKeyboardButton(text=f"⏱ Time Over ({allowed_h}h)", callback_data=f"tick_timeover_{ticket_id}_{allowed_h}"))
     kb.row(types.InlineKeyboardButton(text="✉️ Reply", callback_data=f"tick_reply_{ticket_id}"))
     kb.row(types.InlineKeyboardButton(text="🔕 Cancel Reminder", callback_data=f"tick_cancelrem_{ticket_id}"))
     
@@ -2482,7 +2727,12 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         try: await bot.send_message(admin[0], admin_msg, reply_markup=kb.as_markup())
         except: pass
         
-    await m.answer("✅ **আপনার রিকোয়েস্টটি অ্যাডমিনের কাছে পাঠানো হয়েছে!**\nঅ্যাডমিন চেক করে দ্রুত রিপ্লেস আইডি দিয়ে দিবে।")
+    await m.answer(
+        f"✅ **আপনার রিকোয়েস্টটি অ্যাডমিনের কাছে সফলভাবে পাঠানো হয়েছে!**\n\n"
+        f"📦 **অর্ডার:** {order_ref}\n"
+        f"🎫 **টিকিট আইডি:** `#{ticket_id}`\n"
+        f"অ্যাডমিন চেক করে দ্রুত রিপ্লেস দিয়ে দিবে।"
+    )
     await state.clear()
     
     asyncio.create_task(ticket_reminder(ticket_id, admins, admin_msg, kb))
@@ -2585,7 +2835,7 @@ async def tick_view_action(c: types.CallbackQuery):
         full_text = ticket[1] or ""
         kb = InlineKeyboardBuilder()
         kb.row(types.InlineKeyboardButton(text="🔄 Replace", callback_data=f"tick_rep_{ticket_id}"))
-        kb.row(types.InlineKeyboardButton(text="⏱ 6 Hours Over", callback_data=f"tick_6hr_{ticket_id}"))
+        kb.row(types.InlineKeyboardButton(text="⏱ Time Over", callback_data=f"tick_timeover_{ticket_id}_6"))
         kb.row(types.InlineKeyboardButton(text="✉️ Reply", callback_data=f"tick_reply_{ticket_id}"))
         kb.row(types.InlineKeyboardButton(text="🔕 Cancel Reminder", callback_data=f"tick_cancelrem_{ticket_id}"))
 
@@ -2634,10 +2884,13 @@ async def tick_cancel_reminder_action(c: types.CallbackQuery):
     try: await c.message.edit_text(f"{c.message.text}\n\n🔕 **Reminder Cancelled by {c.from_user.first_name}**")
     except: pass
 
+@dp.callback_query(F.data.startswith("tick_timeover_"))
 @dp.callback_query(F.data.startswith("tick_6hr_"))
-async def tick_6hr_action(c: types.CallbackQuery):
+async def tick_timeover_action(c: types.CallbackQuery):
     await c.answer()
-    ticket_id = c.data.split("_")[2]
+    parts = c.data.split("_")
+    ticket_id = parts[2]
+    allowed_h = parts[3] if len(parts) > 3 else "6"
     
     conn = _dbc()
     ticket = conn.execute("SELECT user_id, status FROM support_tickets WHERE ticket_id=?", (ticket_id,)).fetchone()
@@ -2662,13 +2915,14 @@ async def tick_6hr_action(c: types.CallbackQuery):
     
     try: await c.message.edit_reply_markup(reply_markup=None)
     except: pass
-    try: await c.message.edit_text(f"{c.message.text}\n\n❌ **Rejected (6Hr Over) by {c.from_user.first_name}**")
+    try: await c.message.edit_text(f"{c.message.text}\n\n❌ **Rejected (Time Over - {allowed_h}h) by {c.from_user.first_name}**")
     except: pass
     
     user_msg = (
         f"😔 **দুঃখিত!**\n\n"
-        f"আপনি আইডি কেনার ৬ ঘণ্টা পর রিপ্লেসের জন্য রিকোয়েস্ট করেছেন। আমাদের রুলস অনুযায়ী ৬ ঘণ্টার পর আইডি রিপ্লেস দেওয়া সম্ভব নয়।\n"
-        f"পরবর্তীতে দ্রুত সমস্যা জানানোর জন্য অনুরোধ করা হলো।"
+        f"আপনার অর্ডারের জন্য নির্ধারিত **{allowed_h} ঘণ্টার** রিপ্লেস সময়সীমা অতিক্রম করেছে।\n"
+        f"আমাদের স্টোরের অটোমেটিক পলিসি ও রুলস অনুযায়ী সময়সীমা শেষ হওয়ার পর আইডি রিপ্লেস দেওয়া সম্ভব নয়।\n\n"
+        f"পরবর্তীতে আইডি কেনার পর দ্রুত চেক করে কোনো সমস্যা থাকলে নির্দিষ্ট সময়ের মধ্যে জানানোর জন্য অনুরোধ করা হলো।"
     )
     try: await bot.send_message(user_id, user_msg)
     except: pass
