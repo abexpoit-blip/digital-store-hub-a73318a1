@@ -92,8 +92,20 @@ async function verifyAndApprove(invoice_id, source = 'manual') {
         .run(verifiedAmount, row.user_id);
     }
     return updated.changes;
-  });
-  const changes = tx();
+  }).immediate;
+  let changes = 0;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      changes = tx();
+      break;
+    } catch (err) {
+      if ((err.code === 'SQLITE_BUSY' || (err.message && err.message.includes('locked'))) && attempt < 2) {
+        await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
   if (!changes) return { alreadyApproved: true };
 
   logAudit(`zinipay-${source}`, 'auto-approve', `user=${row.user_id} amt=${verifiedAmount} inv=${invoice_id} txn=${txnId}`);

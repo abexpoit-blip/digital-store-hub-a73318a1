@@ -1,79 +1,172 @@
-<%- include('partials/header', { title: 'Replace Requests', msg, currentPath }) %>
+<%- include('partials/header', { title: 'Replace Management', msg, currentPath }) %>
 
-<div class="flex items-center justify-between mb-4">
-  <h1 class="text-2xl font-bold">🔄 Replace Requests</h1>
-  <div class="flex gap-2">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+  <div>
+    <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 via-teal-300 to-indigo-400 bg-clip-text text-transparent">
+      🔄 Replace Requests
+    </h1>
+    <p class="text-xs text-slate-400 mt-1">Manage customer replacement claims, deliver replacement files/text directly to Telegram</p>
+  </div>
+  <div class="flex items-center gap-2">
     <form method="post" action="/replace/bulk/dedupe" class="inline"
           onsubmit="return confirm('Pending থেকে duplicate entries মুছে দেবে। নিশ্চিত?');">
-      <button class="bg-amber-700 hover:bg-amber-600 px-3 py-1.5 rounded text-xs">🧹 Dedupe pending</button>
+      <button class="bg-amber-600/20 border border-amber-500/30 hover:bg-amber-600/30 text-amber-300 px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+        <span>🧹</span> Dedupe Pending
+      </button>
     </form>
     <% if (status === 'collected' && rows.length) { %>
       <form method="post" action="/replace/bulk/delete-collected" class="inline"
             onsubmit="return confirm('সব collected entries permanently মুছে যাবে। নিশ্চিত?');">
-        <button class="bg-rose-700 hover:bg-rose-600 px-3 py-1.5 rounded text-xs">🗑️ Delete all collected</button>
+        <button class="bg-rose-600/20 border border-rose-500/30 hover:bg-rose-600/30 text-rose-300 px-3.5 py-2 rounded-xl text-xs font-semibold transition">
+          🗑️ Delete All Collected
+        </button>
       </form>
     <% } %>
   </div>
 </div>
 
-<div class="flex gap-2 mb-4 flex-wrap">
-  <a href="/replace?status=pending" class="px-4 py-2 rounded text-sm <%= status==='pending'?'bg-amber-600 text-white':'bg-slate-800 text-slate-300 hover:bg-slate-700' %>">
-    ⏳ Pending (<%= counts.pending %>)
+<!-- Status Tabs -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+  <a href="/replace?status=pending"
+     class="p-4 rounded-2xl border transition relative overflow-hidden <%= status==='pending' ? 'bg-amber-500/15 border-amber-500/50 text-amber-300 shadow-lg shadow-amber-500/10' : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-800/80 hover:text-slate-200' %>">
+    <div class="text-xs font-medium uppercase tracking-wider">⏳ Pending Claims</div>
+    <div class="text-2xl font-black mt-1"><%= counts.pending %></div>
   </a>
-  <a href="/replace?status=collected" class="px-4 py-2 rounded text-sm <%= status==='collected'?'bg-emerald-600 text-white':'bg-slate-800 text-slate-300 hover:bg-slate-700' %>">
-    ✅ Collected (<%= counts.collected %>)
+  <a href="/replace?status=replaced"
+     class="p-4 rounded-2xl border transition relative overflow-hidden <%= status==='replaced' ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300 shadow-lg shadow-emerald-500/10' : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-800/80 hover:text-slate-200' %>">
+    <div class="text-xs font-medium uppercase tracking-wider">✅ Replaced / Done</div>
+    <div class="text-2xl font-black mt-1"><%= counts.replaced || 0 %></div>
   </a>
-  <a href="/replace?status=rejected" class="px-4 py-2 rounded text-sm <%= status==='rejected'?'bg-rose-600 text-white':'bg-slate-800 text-slate-300 hover:bg-slate-700' %>">
-    🚫 Rejected (<%= counts.rejected %>)
+  <a href="/replace?status=collected"
+     class="p-4 rounded-2xl border transition relative overflow-hidden <%= status==='collected' ? 'bg-cyan-500/15 border-cyan-500/50 text-cyan-300 shadow-lg shadow-cyan-500/10' : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-800/80 hover:text-slate-200' %>">
+    <div class="text-xs font-medium uppercase tracking-wider">📦 Collected</div>
+    <div class="text-2xl font-black mt-1"><%= counts.collected %></div>
+  </a>
+  <a href="/replace?status=rejected"
+     class="p-4 rounded-2xl border transition relative overflow-hidden <%= status==='rejected' ? 'bg-rose-500/15 border-rose-500/50 text-rose-300 shadow-lg shadow-rose-500/10' : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-800/80 hover:text-slate-200' %>">
+    <div class="text-xs font-medium uppercase tracking-wider">🚫 Rejected</div>
+    <div class="text-2xl font-black mt-1"><%= counts.rejected %></div>
   </a>
 </div>
 
-<form class="mb-4 flex gap-2">
+<!-- Search Bar -->
+<form class="mb-6 flex gap-2">
   <input type="hidden" name="status" value="<%= status %>"/>
-  <input name="q" value="<%= q %>" placeholder="Search by user / category / data..."
-    class="flex-1 max-w-md bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm"/>
-  <button class="bg-cyan-600 hover:bg-cyan-500 px-4 rounded text-sm">Search</button>
-  <% if (q) { %><a href="/replace?status=<%= status %>" class="px-4 py-2 text-sm text-slate-400 hover:text-white">Clear</a><% } %>
+  <div class="relative flex-1 max-w-lg">
+    <input name="q" value="<%= q %>" placeholder="Search by User ID, @username, or Account data..."
+      class="w-full bg-slate-900/90 border border-slate-700/80 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl px-4 py-2.5 text-sm placeholder-slate-500 text-slate-200 outline-none transition"/>
+  </div>
+  <button class="bg-cyan-600 hover:bg-cyan-500 text-white font-medium px-5 py-2.5 rounded-xl text-sm transition shadow-lg shadow-cyan-600/20">
+    Search
+  </button>
+  <% if (q) { %>
+    <a href="/replace?status=<%= status %>" class="px-4 py-2.5 text-sm text-slate-400 hover:text-white flex items-center">
+      Clear
+    </a>
+  <% } %>
 </form>
 
-<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+<!-- Table Container -->
+<div class="bg-slate-900/70 backdrop-blur-md border border-slate-800/90 rounded-2xl overflow-hidden shadow-2xl">
   <div class="overflow-x-auto">
   <table class="w-full text-sm">
-    <thead><tr><th>ID</th><th>User</th><th>Category</th><th>Old Data</th><th>Reason</th><th>Submitted</th><th>Collected</th><th>Action</th></tr></thead>
-    <tbody>
-      <% if (!rows.length) { %><tr><td colspan="8" class="text-center text-slate-500 py-6">কোনো request নেই।</td></tr><% } %>
-      <% rows.forEach(function(r){ %>
+    <thead>
+      <tr class="border-b border-slate-800 bg-slate-950/60 text-slate-400 font-mono text-[11px] tracking-wider uppercase">
+        <th class="py-3.5 px-4">ID</th>
+        <th class="py-3.5 px-4">User</th>
+        <th class="py-3.5 px-4">Category</th>
+        <th class="py-3.5 px-4">Broken Accounts (Old Data)</th>
+        <% if (status === 'replaced') { %>
+          <th class="py-3.5 px-4">Replacement Provided</th>
+          <th class="py-3.5 px-4">Resolved By / Date</th>
+        <% } else { %>
+          <th class="py-3.5 px-4">Reason / Note</th>
+          <th class="py-3.5 px-4">Submitted</th>
+        <% } %>
+        <th class="py-3.5 px-4 text-right">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-800/60">
+      <% if (!rows.length) { %>
         <tr>
-          <td class="font-mono text-slate-500">#<%= r.id %></td>
-          <td>
-            <a href="/users/<%= r.user_id %>" class="text-cyan-400 hover:underline"><%= r.username || 'user' %></a>
-            <div class="text-[10px] text-slate-500 font-mono">ID: <%= r.user_id %></div>
+          <td colspan="7" class="text-center text-slate-500 py-12">
+            <div class="text-3xl mb-2">📭</div>
+            <div>এই ক্যাটাগরিতে কোনো রিকোয়েস্ট পাওয়া যায়নি।</div>
           </td>
-          <td><span class="bg-slate-800 px-2 py-0.5 rounded text-xs"><%= r.category || '-' %></span></td>
-          <td class="font-mono text-xs text-slate-300 max-w-md break-all align-top">
-            <div class="text-slate-400"><%= (r.old_data || '-').split('\n')[0].slice(0,60) %><%= ((r.old_data||'').length>60 || (r.old_data||'').includes('\n'))?'...':'' %></div>
-            <button type="button" class="mt-1 text-[11px] text-cyan-400 hover:underline"
-              onclick='showFull(<%- JSON.stringify(String(r.id)) %>, <%- JSON.stringify(String(r.old_data || "-")) %>)'>
-              🔍 See full details
+        </tr>
+      <% } %>
+      <% rows.forEach(function(r){ %>
+        <tr class="hover:bg-slate-800/40 transition">
+          <td class="py-3 px-4 font-mono text-slate-500 font-bold">#<%= r.id %></td>
+          <td class="py-3 px-4">
+            <a href="/users/<%= r.user_id %>" class="text-cyan-400 hover:underline font-semibold block">
+              <%= r.username || 'User' %>
+            </a>
+            <div class="text-[11px] text-slate-500 font-mono">ID: `<%= r.user_id %>`</div>
+          </td>
+          <td class="py-3 px-4">
+            <span class="inline-block bg-slate-800 border border-slate-700/60 text-slate-300 font-mono text-xs px-2.5 py-0.5 rounded-lg">
+              <%= r.category || 'ID' %>
+            </span>
+          </td>
+          <td class="py-3 px-4 align-top">
+            <div class="font-mono text-xs text-slate-300 max-w-xs md:max-w-sm truncate">
+              <%= (r.old_data || '-').split('\n')[0].slice(0, 55) %>
+            </div>
+            <button type="button" class="mt-1 text-[11px] text-cyan-400 hover:text-cyan-300 font-medium flex items-center gap-1"
+                    onclick="openViewer(<%= r.id %>)">
+              <span>🔍</span> See Full Details (<%= (r.old_data || '').split('\n').filter(Boolean).length %> accounts)
             </button>
           </td>
 
-          <td class="text-slate-400 text-xs max-w-xs"><%= r.reason || '-' %></td>
-          <td class="text-slate-400 text-xs whitespace-nowrap"><%= new Date(r.created_at).toLocaleString('en-GB') %></td>
-          <td class="text-slate-400 text-xs whitespace-nowrap"><%= r.collected_at ? new Date(r.collected_at).toLocaleString('en-GB') : '-' %></td>
-          <td class="space-x-1 whitespace-nowrap">
+          <% if (status === 'replaced') { %>
+            <td class="py-3 px-4 align-top">
+              <% if (r.replacement_file) { %>
+                <div class="inline-flex items-center gap-1.5 bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 px-2.5 py-1 rounded-lg text-xs font-mono">
+                  <span>📄</span> <%= r.replacement_file %>
+                </div>
+              <% } %>
+              <% if (r.replacement_data) { %>
+                <div class="font-mono text-xs text-emerald-300 max-w-xs truncate mt-1">
+                  <%= r.replacement_data.split('\n')[0].slice(0, 50) %>
+                </div>
+                <button type="button" class="text-[11px] text-emerald-400 hover:underline" onclick="openViewer(<%= r.id %>, 'replacement')">
+                  🔍 View Replaced Data
+                </button>
+              <% } %>
+            </td>
+            <td class="py-3 px-4 text-xs text-slate-400">
+              <span class="text-slate-300 font-semibold"><%= r.resolved_by || 'admin' %></span>
+              <div class="text-[11px] text-slate-500"><%= r.resolved_at ? new Date(r.resolved_at).toLocaleString('en-GB') : '-' %></div>
+            </td>
+          <% } else { %>
+            <td class="py-3 px-4 text-slate-400 text-xs max-w-xs"><%= r.reason || '-' %></td>
+            <td class="py-3 px-4 text-slate-400 text-xs whitespace-nowrap">
+              <%= new Date(r.created_at).toLocaleString('en-GB') %>
+            </td>
+          <% } %>
+
+          <td class="py-3 px-4 text-right space-x-1 whitespace-nowrap">
             <% if (r.status === 'pending') { %>
+              <button type="button" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold px-3 py-1.5 rounded-xl text-xs shadow-md shadow-emerald-700/20 transition"
+                      onclick="openResolveModal(<%= r.id %>, '<%= r.user_id %>', '<%- (r.username || 'User').replace(/'/g, '') %>')">
+                🔄 Give Replace
+              </button>
               <form method="post" action="/replace/<%= r.id %>/collect" class="inline">
-                <button class="bg-emerald-600 hover:bg-emerald-500 px-3 py-1 rounded text-xs">Collect</button>
+                <button class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-xl text-xs transition">
+                  Mark Collect
+                </button>
               </form>
-              <form method="post" action="/replace/<%= r.id %>/reject" class="inline"
-                    onsubmit="return confirm('Reject this request? User কে auto message যাবে।');">
-                <button class="bg-rose-500 hover:bg-rose-400 px-3 py-1 rounded text-xs">🚫 Reject</button>
-              </form>
+              <button type="button" class="bg-rose-500/20 border border-rose-500/30 hover:bg-rose-500/30 text-rose-300 px-2.5 py-1.5 rounded-xl text-xs transition"
+                      onclick="openRejectModal(<%= r.id %>)">
+                🚫 Reject
+              </button>
             <% } %>
             <form method="post" action="/replace/<%= r.id %>/delete" class="inline"
-                  onsubmit="return confirm('Permanently delete?');">
-              <button class="bg-rose-700 hover:bg-rose-600 px-3 py-1 rounded text-xs">Delete</button>
+                  onsubmit="return confirm('Permanently delete record?');">
+              <button class="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg text-xs transition" title="Delete">
+                🗑️
+              </button>
             </form>
           </td>
         </tr>
@@ -83,44 +176,158 @@
   </div>
 </div>
 
-<div class="mt-6 bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-xs text-slate-400 space-y-2">
-  <div class="font-semibold text-slate-300">কীভাবে কাজ করে:</div>
-  <div>• User bot এ replace command পাঠালে data এখানে save হবে।</div>
-  <div>• <b class="text-emerald-400">Collect</b> = data নিয়ে নিয়েছেন (history তে থাকবে)। <b class="text-rose-400">Delete</b> = পুরোপুরি মুছে দেবে।</div>
-  <div>• <b class="text-amber-400">Duplicate prevention:</b> একই user একই (category + old_data) দিয়ে দ্বিতীয়বার pending submit করতে পারবে না — DB index level এ block হবে।</div>
-  <div>• পুরোনো duplicate থাকলে <b>🧹 Dedupe pending</b> বাটন চাপুন (oldest টা থাকবে, বাকিগুলো মুছবে)।</div>
-</div>
-
-<!-- Full details modal -->
-<div id="fullModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4">
-  <div class="w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
-    <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-      <div class="text-sm font-semibold">Replace Request <span id="fullTitle" class="text-cyan-400 font-mono"></span></div>
-      <div class="flex gap-2">
-        <button onclick="copyFull()" class="bg-slate-800 hover:bg-slate-700 px-3 py-1 rounded text-xs">📋 Copy</button>
-        <button onclick="hideFull()" class="bg-rose-700 hover:bg-rose-600 px-3 py-1 rounded text-xs">✕ Close</button>
+<!-- ================= MODAL 1: GIVE REPLACE (FILE OR TEXT) ================= -->
+<div id="resolveModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+  <div class="w-full max-w-xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
+      <div>
+        <div class="text-base font-bold text-slate-100 flex items-center gap-2">
+          <span>🔄 Give Replacement</span>
+          <span id="resModalId" class="text-cyan-400 font-mono text-sm"></span>
+        </div>
+        <div class="text-xs text-slate-400 mt-0.5">To: <span id="resModalUser" class="text-slate-200 font-semibold"></span></div>
       </div>
+      <button onclick="closeResolveModal()" class="text-slate-400 hover:text-slate-200 text-lg p-1">✕</button>
     </div>
-    <pre id="fullBody" class="p-4 max-h-[65vh] overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-slate-200 bg-slate-950"></pre>
+
+    <form id="resolveForm" method="post" enctype="multipart/form-data" class="p-6 space-y-4">
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+          Option 1: Upload Replacement File (.txt or .xlsx)
+        </label>
+        <input type="file" name="replace_file" accept=".txt,.xlsx,.csv"
+               class="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-cyan-600/20 file:text-cyan-300 hover:file:bg-cyan-600/30 file:cursor-pointer border border-dashed border-slate-700 rounded-xl p-3 bg-slate-950/50"/>
+        <p class="text-[11px] text-slate-500 mt-1">ফাইল সিলেক্ট করলে এটি সরাসরি ইউজারের টেলিগ্রামে চলে যাবে।</p>
+      </div>
+
+      <div class="relative flex items-center justify-center">
+        <div class="border-t border-slate-800 w-full"></div>
+        <div class="bg-slate-900 px-3 text-xs text-slate-500 uppercase tracking-widest absolute">OR</div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+          Option 2: Paste New Account Data (UID PASS COOKIES)
+        </label>
+        <textarea name="replacement_text" rows="5" placeholder="1000... password123 datr=...&#10;1000... password456 datr=..."
+                  class="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl p-3 font-mono text-xs text-slate-200 placeholder-slate-600 outline-none"></textarea>
+      </div>
+
+      <div class="pt-2 flex justify-end gap-3">
+        <button type="button" onclick="closeResolveModal()" class="px-4 py-2 rounded-xl text-xs text-slate-400 hover:bg-slate-800">
+          Cancel
+        </button>
+        <button type="submit" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold px-6 py-2.5 rounded-xl text-xs shadow-lg shadow-emerald-600/30 flex items-center gap-2">
+          <span>🚀</span> Send Replacement to User
+        </button>
+      </div>
+    </form>
   </div>
 </div>
+
+<!-- ================= MODAL 2: FULL DATA VIEWER (ASYNC) ================= -->
+<div id="viewerModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+  <div class="w-full max-w-2xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
+      <div>
+        <div class="text-sm font-bold text-slate-100 flex items-center gap-2">
+          <span id="viewerTitle">Replace Details</span>
+          <span id="viewerId" class="text-cyan-400 font-mono"></span>
+        </div>
+        <div id="viewerSub" class="text-xs text-slate-400"></div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="copyViewerText()" class="bg-slate-800 hover:bg-slate-700 text-cyan-300 px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1">
+          <span>📋</span> Copy All
+        </button>
+        <button onclick="closeViewer()" class="text-slate-400 hover:text-slate-200 text-base p-1">✕</button>
+      </div>
+    </div>
+    <div class="p-6">
+      <pre id="viewerContent" class="p-4 max-h-[60vh] overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-slate-200 bg-slate-950 border border-slate-800 rounded-xl leading-relaxed"></pre>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MODAL 3: REJECT REASON ================= -->
+<div id="rejectModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+  <div class="w-full max-w-md bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-6">
+    <h3 class="text-base font-bold text-slate-100 mb-2">🚫 Reject Replace Request</h3>
+    <p class="text-xs text-slate-400 mb-4">User কে বাতিল করার কারণসহ নোটিফিকেশন মেসেজ পাঠানো হবে।</p>
+    <form id="rejectForm" method="post" class="space-y-4">
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 mb-1">Reason (ঐচ্ছিক):</label>
+        <input name="reject_reason" placeholder="যেমন: 2 ঘণ্টার টাইম লিমিট পার হয়েছে"
+               class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-rose-500"/>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" onclick="closeRejectModal()" class="px-4 py-2 rounded-xl text-xs text-slate-400 hover:bg-slate-800">Cancel</button>
+        <button type="submit" class="bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-xl text-xs">Confirm Reject</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script>
-  function showFull(id, data) {
-    document.getElementById('fullTitle').textContent = '#' + id;
-    document.getElementById('fullBody').textContent = data;
-    var m = document.getElementById('fullModal');
+  function openResolveModal(id, uid, uname) {
+    document.getElementById('resModalId').textContent = '#' + id;
+    document.getElementById('resModalUser').textContent = uname + ' (' + uid + ')';
+    document.getElementById('resolveForm').action = '/replace/' + id + '/resolve';
+    var m = document.getElementById('resolveModal');
     m.classList.remove('hidden'); m.classList.add('flex');
   }
-  function hideFull() {
-    var m = document.getElementById('fullModal');
+  function closeResolveModal() {
+    var m = document.getElementById('resolveModal');
     m.classList.add('hidden'); m.classList.remove('flex');
   }
-  function copyFull() {
-    var t = document.getElementById('fullBody').textContent;
-    navigator.clipboard.writeText(t).then(function(){ alert('Copied ✅'); });
+
+  function openRejectModal(id) {
+    document.getElementById('rejectForm').action = '/replace/' + id + '/reject';
+    var m = document.getElementById('rejectModal');
+    m.classList.remove('hidden'); m.classList.add('flex');
   }
-  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') hideFull(); });
-  document.getElementById('fullModal').addEventListener('click', function(e){ if (e.target === this) hideFull(); });
+  function closeRejectModal() {
+    var m = document.getElementById('rejectModal');
+    m.classList.add('hidden'); m.classList.remove('flex');
+  }
+
+  function openViewer(id, field) {
+    document.getElementById('viewerId').textContent = '#' + id;
+    document.getElementById('viewerContent').textContent = 'Loading full data...';
+    var m = document.getElementById('viewerModal');
+    m.classList.remove('hidden'); m.classList.add('flex');
+
+    fetch('/replace/' + id + '/data')
+      .then(function(r){ return r.json(); })
+      .then(function(json){
+        if (!json.ok) return alert('Failed to load data');
+        var row = json.data;
+        if (field === 'replacement') {
+          document.getElementById('viewerTitle').textContent = '✅ Provided Replacement Data';
+          document.getElementById('viewerSub').textContent = 'Sent by ' + (row.resolved_by || 'admin');
+          document.getElementById('viewerContent').textContent = row.replacement_data || '(No text data)';
+        } else {
+          document.getElementById('viewerTitle').textContent = '📋 Broken Accounts Claimed by User';
+          document.getElementById('viewerSub').textContent = (row.username || 'User') + ' (' + row.user_id + ')';
+          document.getElementById('viewerContent').textContent = row.old_data || '(No data)';
+        }
+      })
+      .catch(function(err){
+        document.getElementById('viewerContent').textContent = 'Error loading data: ' + err.message;
+      });
+  }
+  function closeViewer() {
+    var m = document.getElementById('viewerModal');
+    m.classList.add('hidden'); m.classList.remove('flex');
+  }
+  function copyViewerText() {
+    var text = document.getElementById('viewerContent').textContent;
+    navigator.clipboard.writeText(text).then(function(){ alert('Copied to clipboard ✅'); });
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') { closeViewer(); closeResolveModal(); closeRejectModal(); }
+  });
 </script>
 
 <%- include('partials/footer') %>

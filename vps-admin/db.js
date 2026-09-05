@@ -4,9 +4,9 @@ const path = require('path');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'store.db');
 
-const db = new Database(DB_PATH);
+const db = new Database(DB_PATH, { timeout: 15000 });
 db.pragma('journal_mode = WAL'); // matches bot — safe for concurrent reads/writes
-db.pragma('busy_timeout = 5000');
+db.pragma('busy_timeout = 15000');
 
 // --- Add NEW tables only. Bot's existing tables are untouched. ---
 db.exec(`
@@ -19,8 +19,20 @@ db.exec(`
     reason TEXT,
     status TEXT DEFAULT 'pending',
     created_at INTEGER NOT NULL,
-    collected_at INTEGER
+    collected_at INTEGER,
+    replacement_data TEXT,
+    replacement_file TEXT,
+    resolved_by TEXT,
+    resolved_at INTEGER
   );
+` );
+
+// Ensure columns exist on older databases
+['replacement_data TEXT', 'replacement_file TEXT', 'resolved_by TEXT', 'resolved_at INTEGER'].forEach(c => {
+  try { db.exec(`ALTER TABLE replace_requests ADD COLUMN ${c}`); } catch (_) {}
+});
+
+db.exec(`
 
   CREATE TABLE IF NOT EXISTS manual_credits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
