@@ -3027,12 +3027,12 @@ async def tick_timeover_action(c: types.CallbackQuery):
     user_id = ticket[0]
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     admin_name = f"bot-admin ({c.from_user.first_name})"
-    conn.execute("UPDATE support_tickets SET status='processed' WHERE ticket_id=?", (ticket_id,))
+    conn.execute("UPDATE support_tickets SET status='processed', admin_response=? WHERE ticket_id=?", (f"Time Over ({allowed_h}h)", ticket_id))
     conn.execute("""
         UPDATE replace_requests 
-        SET status='rejected', resolved_by=?, resolved_at=? 
-        WHERE reason LIKE ? AND status='pending'
-    """, (admin_name, now_ms, f"%{ticket_id}%"))
+        SET status='rejected', replacement_data=?, resolved_by=?, resolved_at=? 
+        WHERE (reason LIKE ? OR (user_id=? AND status='pending'))
+    """, (f"[Time Over: {allowed_h}h limit exceeded]", admin_name, now_ms, f"%{ticket_id}%", user_id))
     conn.commit()
     conn.close()
     
@@ -3077,10 +3077,18 @@ async def send_admin_reply(m: types.Message, state: FSMContext):
     
     if not user_id: return await m.answer("❌ Error.")
     
-    reply_text = m.text
+    reply_text = m.text or ""
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    admin_name = f"bot-admin ({m.from_user.first_name})"
     
     conn = _dbc()
-    conn.execute("UPDATE support_tickets SET status='processed' WHERE ticket_id=?", (ticket_id,))
+    conn.execute("UPDATE support_tickets SET status='processed', admin_response=? WHERE ticket_id=?", (reply_text, ticket_id))
+    # Sync with replace_requests so it does not stay in pending!
+    conn.execute("""
+        UPDATE replace_requests 
+        SET status='replaced', replacement_data=?, resolved_by=?, resolved_at=? 
+        WHERE (reason LIKE ? OR (user_id=? AND status='pending'))
+    """, (f"[Replied: {reply_text}]", admin_name, now_ms, f"%{ticket_id}%", user_id))
     conn.commit()
     conn.close()
     
@@ -3088,8 +3096,8 @@ async def send_admin_reply(m: types.Message, state: FSMContext):
     
     try:
         await bot.send_message(user_id, user_msg)
-        await m.answer("✅ মেসেজ ইউজারের কাছে পাঠানো হয়েছে।")
-        try: await bot.edit_message_text(f"✅ **Replied by {m.from_user.first_name}**", chat_id=m.chat.id, message_id=msg_id)
+        await m.answer("✅ মেসেজ ইউজারের কাছে পাঠানো হয়েছে এবং রিকোয়েস্ট সমাধান হিসেবে মার্ক করা হয়েছে।")
+        try: await bot.edit_message_text(f"✅ **Replied & Solved by {m.from_user.first_name}**", chat_id=m.chat.id, message_id=msg_id)
         except: pass
     except:
         await m.answer("❌ User delivery failed.")
