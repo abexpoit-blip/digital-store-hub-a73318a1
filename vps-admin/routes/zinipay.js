@@ -94,13 +94,13 @@ async function verifyAndApprove(invoice_id, source = 'manual') {
     return updated.changes;
   }).immediate;
   let changes = 0;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     try {
       changes = tx();
       break;
     } catch (err) {
-      if ((err.code === 'SQLITE_BUSY' || (err.message && err.message.includes('locked'))) && attempt < 2) {
-        await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
+      if ((err.code === 'SQLITE_BUSY' || (err.message && err.message.includes('locked'))) && attempt < 5) {
+        await new Promise((r) => setTimeout(r, 200 * Math.pow(1.5, attempt) + Math.random() * 100));
         continue;
       }
       throw err;
