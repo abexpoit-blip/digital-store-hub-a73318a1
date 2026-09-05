@@ -78,9 +78,125 @@
 
   table { border-collapse: collapse; }
   th, td { padding: 0.85rem 1rem; text-align: left; }
-  th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: #0369a1; background: #f0f9ff; font-weight: 700; }
+  th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: #0369a1 !important; background: #f0f9ff !important; font-weight: 700 !important; }
   tr { border-bottom: 1px solid #e0f2fe; }
   tr:hover { background: #f8fbfe; }
+
+  /* Universal Light Mode System Theme Overrides */
+  .bg-slate-900, .bg-slate-900\/90, .bg-slate-900\/80, .bg-slate-900\/70, .bg-slate-900\/60,
+  .bg-slate-950, .bg-slate-950\/90, .bg-slate-950\/80, .bg-slate-950\/70, .bg-slate-950\/60,
+  .bg-slate-950\/50, .bg-slate-950\/40 {
+    background-color: #ffffff !important;
+  }
+  .bg-slate-800, .bg-slate-800\/90, .bg-slate-800\/80, .bg-slate-800\/60, .bg-slate-800\/50, .bg-slate-800\/40 {
+    background-color: #f0f9ff !important;
+  }
+  .border-slate-800, .border-slate-800\/90, .border-slate-800\/80, .border-slate-800\/60,
+  .border-slate-700, .border-slate-700\/80, .border-slate-700\/60,
+  .border-sky-950, .border-sky-950\/80, .border-sky-950\/60,
+  .border-sky-900, .border-sky-900\/60, .border-sky-900\/50, .border-sky-900\/40 {
+    border-color: #bae6fd !important;
+  }
+  .divide-slate-800, .divide-slate-800\/60, .divide-slate-700, .divide-sky-950, .divide-sky-950\/60 {
+    border-color: #e0f2fe !important;
+  }
+  
+  /* Text Contrast & Visibility Fixes */
+  h1, h2, h3, h4, h5, h6 {
+    color: #0f172a;
+  }
+  .text-white:not(button):not(button *):not(a.btn):not(a.btn *):not(.bg-gradient-to-r *):not(.bg-gradient-to-tr *):not(.bg-sky-500 *):not(.bg-sky-600 *):not(.bg-emerald-600 *):not(.bg-rose-600 *) {
+    color: #0f172a !important;
+  }
+  .text-slate-100, .text-slate-200, .text-slate-300 {
+    color: #1e293b !important;
+  }
+  .text-slate-400 {
+    color: #475569 !important;
+  }
+  .text-slate-500 {
+    color: #64748b !important;
+  }
+  .text-cyan-400, .text-cyan-300 {
+    color: #0284c7 !important;
+  }
+  .text-sky-300 {
+    color: #0369a1 !important;
+  }
+
+  /* Table styling */
+  table thead tr {
+    background-color: #f0f9ff !important;
+    border-bottom: 1px solid #bae6fd !important;
+  }
+  table thead th {
+    color: #0369a1 !important;
+    font-weight: 700 !important;
+    background-color: #f0f9ff !important;
+  }
+  table tbody tr {
+    border-bottom: 1px solid #e0f2fe !important;
+    background-color: #ffffff !important;
+  }
+  table tbody tr:hover {
+    background-color: #f8fbfe !important;
+  }
+
+  /* Inputs, Textareas, & Selects */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+  textarea, select {
+    background-color: #ffffff !important;
+    border: 1px solid #bae6fd !important;
+    color: #0f172a !important;
+  }
+  input::placeholder, textarea::placeholder {
+    color: #94a3b8 !important;
+  }
+  input:focus, textarea:focus, select:focus {
+    border-color: #0ea5e9 !important;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15) !important;
+  }
+
+  /* Preserve Vibrant Button Visibility */
+  button.text-white, a.text-white, button span.text-white, a span.text-white,
+  .bg-gradient-to-r, .bg-gradient-to-tr, .bg-sky-500, .bg-sky-600, .bg-emerald-600, .bg-rose-600 {
+    color: #ffffff !important;
+  }
+
+  /* Status Badges & Pills High Contrast Overrides */
+  .bg-emerald-700\/40, .bg-emerald-900\/40, .bg-emerald-950\/40 {
+    background-color: #ecfdf5 !important;
+    color: #047857 !important;
+    border: 1px solid #a7f3d0 !important;
+    font-weight: 600;
+  }
+  .bg-amber-700\/40, .bg-amber-900\/40, .bg-amber-950\/40 {
+    background-color: #fffbeb !important;
+    color: #b45309 !important;
+    border: 1px solid #fde68a !important;
+    font-weight: 600;
+  }
+  .bg-rose-700\/40, .bg-rose-900\/40, .bg-rose-950\/40 {
+    background-color: #fff1f2 !important;
+    color: #be123c !important;
+    border: 1px solid #fecdd3 !important;
+    font-weight: 600;
+  }
+  .bg-cyan-700\/40, .bg-cyan-900\/40, .bg-sky-700\/40 {
+    background-color: #f0f9ff !important;
+    color: #0369a1 !important;
+    border: 1px solid #bae6fd !important;
+    font-weight: 600;
+  }
+  .text-emerald-300, .text-emerald-400 {
+    color: #047857 !important;
+  }
+  .text-amber-300, .text-amber-400 {
+    color: #b45309 !important;
+  }
+  .text-rose-300, .text-rose-400 {
+    color: #be123c !important;
+  }
 
   /* Sky custom scrollbar */
   ::-webkit-scrollbar { width: 7px; height: 7px; }

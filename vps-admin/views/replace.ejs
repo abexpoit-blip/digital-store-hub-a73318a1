@@ -2,22 +2,25 @@
 
 <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
   <div>
-    <h1 class="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 via-teal-300 to-indigo-400 bg-clip-text text-transparent">
-      🔄 Replace Requests
+    <h1 class="text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2.5">
+      <span>🔄 Replace Requests</span>
+      <span class="text-xs font-mono font-bold bg-sky-50 text-sky-700 border border-sky-200 px-2.5 py-0.5 rounded-full shadow-xs">
+        BASICTRICK Warranty Hub
+      </span>
     </h1>
-    <p class="text-xs text-slate-400 mt-1">Manage customer replacement claims, deliver replacement files/text directly to Telegram</p>
+    <p class="text-xs text-slate-500 mt-1">Manage customer replacement claims, deliver replacement files/text directly to Telegram</p>
   </div>
   <div class="flex items-center gap-2">
     <form method="post" action="/replace/bulk/dedupe" class="inline"
           onsubmit="return confirm('Pending থেকে duplicate entries মুছে দেবে। নিশ্চিত?');">
-      <button class="bg-amber-600/20 border border-amber-500/30 hover:bg-amber-600/30 text-amber-300 px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition">
+      <button class="bg-amber-50 border border-amber-200 hover:bg-amber-100 text-amber-800 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs">
         <span>🧹</span> Dedupe Pending
       </button>
     </form>
     <% if (status === 'collected' && rows.length) { %>
       <form method="post" action="/replace/bulk/delete-collected" class="inline"
             onsubmit="return confirm('সব collected entries permanently মুছে যাবে। নিশ্চিত?');">
-        <button class="bg-rose-600/20 border border-rose-500/30 hover:bg-rose-600/30 text-rose-300 px-3.5 py-2 rounded-xl text-xs font-semibold transition">
+        <button class="bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-xs">
           🗑️ Delete All Collected
         </button>
       </form>
@@ -28,24 +31,24 @@
 <!-- Status Tabs -->
 <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
   <a href="/replace?status=pending"
-     class="p-4 rounded-2xl border transition relative overflow-hidden <%= status==='pending' ? 'bg-amber-500/15 border-amber-500/50 text-amber-300 shadow-lg shadow-amber-500/10' : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-800/80 hover:text-slate-200' %>">
-    <div class="text-xs font-medium uppercase tracking-wider">⏳ Pending Claims</div>
-    <div class="text-2xl font-black mt-1"><%= counts.pending %></div>
+     class="p-4 rounded-2xl border transition relative overflow-hidden <%= status==='pending' ? 'bg-amber-50 border-amber-300 text-amber-900 shadow-sm font-bold' : 'bg-white border-sky-200 text-slate-600 hover:bg-sky-50 hover:text-sky-700 shadow-xs' %>">
+    <div class="text-xs font-semibold uppercase tracking-wider">⏳ Pending Claims</div>
+    <div class="text-2xl font-black mt-1 text-slate-900"><%= counts.pending %></div>
   </a>
   <a href="/replace?status=replaced"
-     class="p-4 rounded-2xl border transition relative overflow-hidden <%= status==='replaced' ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300 shadow-lg shadow-emerald-500/10' : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-800/80 hover:text-slate-200' %>">
-    <div class="text-xs font-medium uppercase tracking-wider">✅ Replaced / Done</div>
-    <div class="text-2xl font-black mt-1"><%= counts.replaced || 0 %></div>
+     class="p-4 rounded-2xl border transition relative overflow-hidden <%= status==='replaced' ? 'bg-emerald-50 border-emerald-300 text-emerald-900 shadow-sm font-bold' : 'bg-white border-sky-200 text-slate-600 hover:bg-sky-50 hover:text-sky-700 shadow-xs' %>">
+    <div class="text-xs font-semibold uppercase tracking-wider">✅ Replaced / Done</div>
+    <div class="text-2xl font-black mt-1 text-slate-900"><%= counts.replaced || 0 %></div>
   </a>
   <a href="/replace?status=collected"
-     class="p-4 rounded-2xl border transition relative overflow-hidden <%= status==='collected' ? 'bg-cyan-500/15 border-cyan-500/50 text-cyan-300 shadow-lg shadow-cyan-500/10' : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-800/80 hover:text-slate-200' %>">
-    <div class="text-xs font-medium uppercase tracking-wider">📦 Collected</div>
-    <div class="text-2xl font-black mt-1"><%= counts.collected %></div>
+     class="p-4 rounded-2xl border transition relative overflow-hidden <%= status==='collected' ? 'bg-sky-50 border-sky-300 text-sky-900 shadow-sm font-bold' : 'bg-white border-sky-200 text-slate-600 hover:bg-sky-50 hover:text-sky-700 shadow-xs' %>">
+    <div class="text-xs font-semibold uppercase tracking-wider">📦 Collected</div>
+    <div class="text-2xl font-black mt-1 text-slate-900"><%= counts.collected %></div>
   </a>
   <a href="/replace?status=rejected"
-     class="p-4 rounded-2xl border transition relative overflow-hidden <%= status==='rejected' ? 'bg-rose-500/15 border-rose-500/50 text-rose-300 shadow-lg shadow-rose-500/10' : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-800/80 hover:text-slate-200' %>">
-    <div class="text-xs font-medium uppercase tracking-wider">🚫 Rejected</div>
-    <div class="text-2xl font-black mt-1"><%= counts.rejected %></div>
+     class="p-4 rounded-2xl border transition relative overflow-hidden <%= status==='rejected' ? 'bg-rose-50 border-rose-300 text-rose-900 shadow-sm font-bold' : 'bg-white border-sky-200 text-slate-600 hover:bg-sky-50 hover:text-sky-700 shadow-xs' %>">
+    <div class="text-xs font-semibold uppercase tracking-wider">🚫 Rejected</div>
+    <div class="text-2xl font-black mt-1 text-slate-900"><%= counts.rejected %></div>
   </a>
 </div>
 
@@ -56,12 +59,12 @@
   <div class="flex gap-2 flex-1 max-w-lg">
     <input type="hidden" name="status" value="<%= status %>"/>
     <input name="q" value="<%= q %>" placeholder="Search by User ID, @username, or Account data..."
-      class="w-full bg-slate-900/90 border border-slate-700/80 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl px-4 py-2.5 text-sm placeholder-slate-500 text-slate-200 outline-none transition"/>
-    <button type="submit" form="searchForm" class="bg-cyan-600 hover:bg-cyan-500 text-white font-medium px-4 py-2 rounded-xl text-xs transition shadow-lg shadow-cyan-600/20">
+      class="w-full bg-white border border-sky-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-xl px-4 py-2.5 text-xs placeholder-slate-400 text-slate-800 outline-none transition shadow-xs"/>
+    <button type="submit" form="searchForm" class="bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-xs">
       Search
     </button>
     <% if (q) { %>
-      <a href="/replace?status=<%= status %>" class="px-3 py-2 text-xs text-slate-400 hover:text-white flex items-center">
+      <a href="/replace?status=<%= status %>" class="px-3 py-2 text-xs text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition flex items-center">
         Clear
       </a>
     <% } %>
@@ -70,25 +73,25 @@
   <!-- Bulk Selection Actions -->
   <div class="flex items-center gap-2">
     <button type="button" id="btnDeleteSelected" onclick="submitDeleteSelected()"
-            class="hidden bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-lg shadow-rose-600/30 items-center gap-1.5 transition">
+            class="hidden bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md shadow-rose-600/30 items-center gap-1.5 transition">
       <span>🗑️</span> Delete Selected (<span id="selectedCount">0</span>)
     </button>
     <button type="button" onclick="confirmClearAll('<%= status %>')"
-            class="bg-rose-950/40 border border-rose-600/30 hover:bg-rose-900/40 text-rose-300 font-semibold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 transition">
+            class="bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 transition shadow-xs">
       <span>💥</span> Clear All <%= status.toUpperCase() %>
     </button>
   </div>
 </div>
 
 <!-- Table Container -->
-<div class="bg-slate-900/70 backdrop-blur-md border border-slate-800/90 rounded-2xl overflow-hidden shadow-2xl">
+<div class="commercial-card rounded-2xl overflow-hidden bg-white border border-sky-200 shadow-sm">
   <div class="overflow-x-auto">
-  <table class="w-full text-sm">
+  <table class="w-full text-xs">
     <thead>
-      <tr class="border-b border-slate-800 bg-slate-950/60 text-slate-400 font-mono text-[11px] tracking-wider uppercase">
+      <tr class="border-b border-sky-100 bg-sky-50/90 text-sky-800 font-mono text-[11px] tracking-wider uppercase font-bold">
         <th class="py-3.5 px-4 w-10 text-center">
           <input type="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll(this)"
-                 class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-cyan-600 focus:ring-0 cursor-pointer"/>
+                 class="w-4 h-4 rounded bg-white border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"/>
         </th>
         <th class="py-3.5 px-3">ID</th>
         <th class="py-3.5 px-4">User</th>
@@ -104,38 +107,38 @@
         <th class="py-3.5 px-4 text-right">Actions</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-slate-800/60">
+    <tbody class="divide-y divide-sky-100">
       <% if (!rows.length) { %>
         <tr>
-          <td colspan="8" class="text-center text-slate-500 py-12">
+          <td colspan="8" class="text-center text-slate-400 py-12">
             <div class="text-3xl mb-2">📭</div>
-            <div>এই ক্যাটাগরিতে কোনো রিকোয়েস্ট পাওয়া যায়নি।</div>
+            <div class="font-medium">এই ক্যাটাগরিতে কোনো রিকোয়েস্ট পাওয়া যায়নি।</div>
           </td>
         </tr>
       <% } %>
       <% rows.forEach(function(r){ %>
-        <tr class="hover:bg-slate-800/40 transition">
+        <tr class="hover:bg-sky-50/50 transition">
           <td class="py-3 px-4 text-center">
             <input type="checkbox" name="selected_ids" value="<%= r.id %>" onclick="updateSelectedCount()"
-                   class="row-checkbox w-4 h-4 rounded bg-slate-900 border-slate-700 text-cyan-600 focus:ring-0 cursor-pointer"/>
+                   class="row-checkbox w-4 h-4 rounded bg-white border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"/>
           </td>
-          <td class="py-3 px-3 font-mono text-slate-500 font-bold">#<%= r.id %></td>
+          <td class="py-3 px-3 font-mono text-slate-400 font-bold">#<%= r.id %></td>
           <td class="py-3 px-4">
-            <a href="/users/<%= r.user_id %>" class="text-cyan-400 hover:underline font-semibold block">
+            <a href="/users/<%= r.user_id %>" class="text-slate-900 hover:text-sky-600 font-semibold block transition">
               <%= r.username || 'User' %>
             </a>
-            <div class="text-[11px] text-slate-500 font-mono">ID: `<%= r.user_id %>`</div>
+            <div class="text-[11px] text-slate-400 font-mono">ID: `<%= r.user_id %>`</div>
           </td>
           <td class="py-3 px-4">
-            <span class="inline-block bg-slate-800 border border-slate-700/60 text-slate-300 font-mono text-xs px-2.5 py-0.5 rounded-lg">
+            <span class="inline-block bg-sky-50 border border-sky-200 text-sky-700 font-mono text-xs px-2.5 py-0.5 rounded-lg font-bold">
               <%= r.category || 'ID' %>
             </span>
           </td>
           <td class="py-3 px-4 align-top">
-            <div class="font-mono text-xs text-slate-300 max-w-xs md:max-w-sm truncate">
+            <div class="font-mono text-xs text-slate-700 max-w-xs md:max-w-sm truncate">
               <%= (r.old_data || '-').split('\n')[0].slice(0, 55) %>
             </div>
-            <button type="button" class="mt-1 text-[11px] text-cyan-400 hover:text-cyan-300 font-medium flex items-center gap-1"
+            <button type="button" class="mt-1 text-[11px] text-sky-600 hover:text-sky-800 font-bold flex items-center gap-1"
                     onclick="openViewer(<%= r.id %>)">
               <span>🔍</span> See Full Details (<%= (r.old_data || '').split('\n').filter(Boolean).length %> accounts)
             </button>
@@ -144,45 +147,45 @@
           <% if (status === 'replaced') { %>
             <td class="py-3 px-4 align-top">
               <% if (r.replacement_file) { %>
-                <div class="inline-flex items-center gap-1.5 bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 px-2.5 py-1 rounded-lg text-xs font-mono">
+                <div class="inline-flex items-center gap-1.5 bg-sky-50 border border-sky-200 text-sky-700 px-2.5 py-1 rounded-lg text-xs font-mono font-bold">
                   <span>📄</span> <%= r.replacement_file %>
                 </div>
               <% } %>
               <% if (r.replacement_data) { %>
-                <div class="font-mono text-xs text-emerald-300 max-w-xs truncate mt-1">
+                <div class="font-mono text-xs text-emerald-600 max-w-xs truncate mt-1">
                   <%= r.replacement_data.split('\n')[0].slice(0, 50) %>
                 </div>
-                <button type="button" class="text-[11px] text-emerald-400 hover:underline" onclick="openViewer(<%= r.id %>, 'replacement')">
+                <button type="button" class="text-[11px] text-emerald-600 font-bold hover:underline" onclick="openViewer(<%= r.id %>, 'replacement')">
                   🔍 View Replaced Data
                 </button>
               <% } %>
             </td>
-            <td class="py-3 px-4 text-xs text-slate-400">
-              <span class="text-slate-300 font-semibold"><%= r.resolved_by || 'admin' %></span>
-              <div class="text-[11px] text-slate-500"><%= r.resolved_at ? new Date(r.resolved_at).toLocaleString('en-GB') : '-' %></div>
+            <td class="py-3 px-4 text-xs text-slate-500">
+              <span class="text-slate-800 font-semibold"><%= r.resolved_by || 'admin' %></span>
+              <div class="text-[11px] text-slate-400"><%= r.resolved_at ? new Date(r.resolved_at).toLocaleString('en-GB') : '-' %></div>
             </td>
           <% } else { %>
-            <td class="py-3 px-4 text-slate-400 text-xs max-w-xs"><%= r.reason || '-' %></td>
-            <td class="py-3 px-4 text-slate-400 text-xs whitespace-nowrap">
+            <td class="py-3 px-4 text-slate-600 text-xs max-w-xs"><%= r.reason || '-' %></td>
+            <td class="py-3 px-4 text-slate-500 text-xs whitespace-nowrap">
               <%= new Date(r.created_at).toLocaleString('en-GB') %>
             </td>
           <% } %>
 
           <td class="py-3 px-4 text-right space-x-1 whitespace-nowrap">
             <% if (r.status === 'pending') { %>
-              <button type="button" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold px-3 py-1.5 rounded-xl text-xs shadow-md shadow-emerald-700/20 transition"
+              <button type="button" class="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs shadow-xs transition"
                       onclick="openResolveModal(<%= r.id %>, '<%= r.user_id %>', '<%- (r.username || 'User').replace(/'/g, '') %>')">
                 🔄 Give Replace
               </button>
-              <button type="button" onclick="submitCollect(<%= r.id %>)" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-xl text-xs transition">
+              <button type="button" onclick="submitCollect(<%= r.id %>)" class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2.5 py-1.5 rounded-xl text-xs font-bold transition">
                 Mark Collect
               </button>
-              <button type="button" class="bg-rose-500/20 border border-rose-500/30 hover:bg-rose-500/30 text-rose-300 px-2.5 py-1.5 rounded-xl text-xs transition"
+              <button type="button" class="bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 px-2.5 py-1.5 rounded-xl text-xs font-bold transition"
                       onclick="openRejectModal(<%= r.id %>)">
                 🚫 Reject
               </button>
             <% } %>
-            <button type="button" onclick="submitDeleteSingle(<%= r.id %>)" class="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg text-xs transition" title="Delete">
+            <button type="button" onclick="submitDeleteSingle(<%= r.id %>)" class="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg text-xs transition" title="Delete">
               🗑️
             </button>
           </td>
@@ -205,47 +208,47 @@
 </form>
 
 <!-- ================= MODAL 1: GIVE REPLACE (FILE OR TEXT) ================= -->
-<div id="resolveModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-  <div class="w-full max-w-xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
+<div id="resolveModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+  <div class="w-full max-w-xl bg-white border border-sky-200 rounded-3xl shadow-2xl overflow-hidden">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-sky-100 bg-sky-50/80">
       <div>
-        <div class="text-base font-bold text-slate-100 flex items-center gap-2">
+        <div class="text-base font-bold text-slate-900 flex items-center gap-2">
           <span>🔄 Give Replacement</span>
-          <span id="resModalId" class="text-cyan-400 font-mono text-sm"></span>
+          <span id="resModalId" class="text-sky-600 font-mono text-sm font-bold"></span>
         </div>
-        <div class="text-xs text-slate-400 mt-0.5">To: <span id="resModalUser" class="text-slate-200 font-semibold"></span></div>
+        <div class="text-xs text-slate-500 mt-0.5">To: <span id="resModalUser" class="text-slate-800 font-bold"></span></div>
       </div>
-      <button onclick="closeResolveModal()" class="text-slate-400 hover:text-slate-200 text-lg p-1">✕</button>
+      <button onclick="closeResolveModal()" class="text-slate-400 hover:text-slate-700 text-lg p-1">✕</button>
     </div>
 
     <form id="resolveForm" method="post" enctype="multipart/form-data" class="p-6 space-y-4">
       <div>
-        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
           Option 1: Upload Replacement File (.txt or .xlsx)
         </label>
         <input type="file" name="replace_file" accept=".txt,.xlsx,.csv"
-               class="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-cyan-600/20 file:text-cyan-300 hover:file:bg-cyan-600/30 file:cursor-pointer border border-dashed border-slate-700 rounded-xl p-3 bg-slate-950/50"/>
+               class="w-full text-xs text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 file:cursor-pointer border border-dashed border-sky-200 rounded-xl p-3 bg-slate-50"/>
         <p class="text-[11px] text-slate-500 mt-1">ফাইল সিলেক্ট করলে এটি সরাসরি ইউজারের টেলিগ্রামে চলে যাবে।</p>
       </div>
 
       <div class="relative flex items-center justify-center">
-        <div class="border-t border-slate-800 w-full"></div>
-        <div class="bg-slate-900 px-3 text-xs text-slate-500 uppercase tracking-widest absolute">OR</div>
+        <div class="border-t border-slate-200 w-full"></div>
+        <div class="bg-white px-3 text-xs text-slate-400 uppercase tracking-widest absolute font-bold">OR</div>
       </div>
 
       <div>
-        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
           Option 2: Paste New Account Data (UID PASS COOKIES)
         </label>
         <textarea name="replacement_text" rows="5" placeholder="1000... password123 datr=...&#10;1000... password456 datr=..."
-                  class="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl p-3 font-mono text-xs text-slate-200 placeholder-slate-600 outline-none"></textarea>
+                  class="w-full bg-slate-50 border border-slate-200 focus:border-sky-500 focus:bg-white rounded-xl p-3 font-mono text-xs text-slate-800 placeholder-slate-400 outline-none"></textarea>
       </div>
 
       <div class="pt-2 flex justify-end gap-3">
-        <button type="button" onclick="closeResolveModal()" class="px-4 py-2 rounded-xl text-xs text-slate-400 hover:bg-slate-800">
+        <button type="button" onclick="closeResolveModal()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100">
           Cancel
         </button>
-        <button type="submit" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold px-6 py-2.5 rounded-xl text-xs shadow-lg shadow-emerald-600/30 flex items-center gap-2">
+        <button type="submit" class="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs shadow-md shadow-emerald-600/25 flex items-center gap-2">
           <span>🚀</span> Send Replacement to User
         </button>
       </div>
@@ -254,43 +257,43 @@
 </div>
 
 <!-- ================= MODAL 2: FULL DATA VIEWER (ASYNC) ================= -->
-<div id="viewerModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-  <div class="w-full max-w-2xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
+<div id="viewerModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+  <div class="w-full max-w-2xl bg-white border border-sky-200 rounded-3xl shadow-2xl overflow-hidden">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-sky-100 bg-sky-50/80">
       <div>
-        <div class="text-sm font-bold text-slate-100 flex items-center gap-2">
+        <div class="text-sm font-bold text-slate-900 flex items-center gap-2">
           <span id="viewerTitle">Replace Details</span>
-          <span id="viewerId" class="text-cyan-400 font-mono"></span>
+          <span id="viewerId" class="text-sky-600 font-mono font-bold"></span>
         </div>
-        <div id="viewerSub" class="text-xs text-slate-400"></div>
+        <div id="viewerSub" class="text-xs text-slate-500"></div>
       </div>
       <div class="flex gap-2">
-        <button onclick="copyViewerText()" class="bg-slate-800 hover:bg-slate-700 text-cyan-300 px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1">
+        <button onclick="copyViewerText()" class="bg-sky-100 hover:bg-sky-200 text-sky-800 px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1">
           <span>📋</span> Copy All
         </button>
-        <button onclick="closeViewer()" class="text-slate-400 hover:text-slate-200 text-base p-1">✕</button>
+        <button onclick="closeViewer()" class="text-slate-400 hover:text-slate-700 text-base p-1">✕</button>
       </div>
     </div>
     <div class="p-6">
-      <pre id="viewerContent" class="p-4 max-h-[60vh] overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-slate-200 bg-slate-950 border border-slate-800 rounded-xl leading-relaxed"></pre>
+      <pre id="viewerContent" class="p-4 max-h-[60vh] overflow-auto whitespace-pre-wrap break-all font-mono text-xs text-slate-800 bg-slate-50 border border-slate-200 rounded-2xl leading-relaxed"></pre>
     </div>
   </div>
 </div>
 
 <!-- ================= MODAL 3: REJECT REASON ================= -->
-<div id="rejectModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-  <div class="w-full max-w-md bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl p-6">
-    <h3 class="text-base font-bold text-slate-100 mb-2">🚫 Reject Replace Request</h3>
-    <p class="text-xs text-slate-400 mb-4">User কে বাতিল করার কারণসহ নোটিফিকেশন মেসেজ পাঠানো হবে।</p>
+<div id="rejectModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+  <div class="w-full max-w-md bg-white border border-sky-200 rounded-3xl shadow-2xl p-6">
+    <h3 class="text-base font-bold text-slate-900 mb-2">🚫 Reject Replace Request</h3>
+    <p class="text-xs text-slate-500 mb-4">User কে বাতিল করার কারণসহ নোটিফিকেশন মেসেজ পাঠানো হবে।</p>
     <form id="rejectForm" method="post" class="space-y-4">
       <div>
-        <label class="block text-xs font-semibold text-slate-300 mb-1">Reason (ঐচ্ছিক):</label>
+        <label class="block text-xs font-bold text-slate-700 mb-1">Reason (ঐচ্ছিক):</label>
         <input name="reject_reason" placeholder="যেমন: 2 ঘণ্টার টাইম লিমিট পার হয়েছে"
-               class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-rose-500"/>
+               class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:border-rose-500 focus:bg-white"/>
       </div>
       <div class="flex justify-end gap-2 pt-2">
-        <button type="button" onclick="closeRejectModal()" class="px-4 py-2 rounded-xl text-xs text-slate-400 hover:bg-slate-800">Cancel</button>
-        <button type="submit" class="bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-xl text-xs">Confirm Reject</button>
+        <button type="button" onclick="closeRejectModal()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100">Cancel</button>
+        <button type="submit" class="bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-xs">Confirm Reject</button>
       </div>
     </form>
   </div>
