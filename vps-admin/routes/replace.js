@@ -53,9 +53,15 @@ async function sendDocumentToUser(userId, buffer, filename, caption = '') {
 router.get('/', (req, res) => {
   const status = req.query.status || 'pending';
   const q = (req.query.q || '').trim();
+  const cat = (req.query.cat || 'all').trim();
 
   let sql = 'SELECT * FROM replace_requests WHERE status = ?';
   const params = [status];
+  if (cat === 'used') {
+    sql += " AND (LOWER(category) LIKE '%used%')";
+  } else if (cat === 'fresh') {
+    sql += " AND (LOWER(category) NOT LIKE '%used%')";
+  }
   if (q) {
     sql += ` AND (LOWER(COALESCE(username,'')) LIKE ? OR CAST(user_id AS TEXT) LIKE ?
              OR LOWER(COALESCE(old_data,'')) LIKE ? OR LOWER(COALESCE(replacement_data,'')) LIKE ?
@@ -71,8 +77,14 @@ router.get('/', (req, res) => {
     replaced: db.prepare("SELECT COUNT(*) AS c FROM replace_requests WHERE status='replaced'").get().c,
     collected: db.prepare("SELECT COUNT(*) AS c FROM replace_requests WHERE status='collected'").get().c,
     rejected: db.prepare("SELECT COUNT(*) AS c FROM replace_requests WHERE status='rejected'").get().c,
+    usedPending: db.prepare("SELECT COUNT(*) AS c FROM replace_requests WHERE status='pending' AND LOWER(category) LIKE '%used%'").get().c,
   };
-  res.render('replace', { rows, status, counts, q, msg: req.query.msg || null });
+  const stockCounts = {
+    fb1000_used: db.prepare("SELECT COUNT(*) AS c FROM stock WHERE category='fb1000_used'").get().c,
+    fb1000: db.prepare("SELECT COUNT(*) AS c FROM stock WHERE category='fb1000'").get().c,
+    fb61: db.prepare("SELECT COUNT(*) AS c FROM stock WHERE category='fb61'").get().c,
+  };
+  res.render('replace', { rows, status, counts, q, cat, stockCounts, msg: req.query.msg || null });
 });
 
 // GET full data by ID (for modal viewer to avoid HTML attribute escaping issues)
@@ -83,17 +95,46 @@ router.get('/:id/data', (req, res) => {
   res.json({ ok: true, data: row });
 });
 
-// POST Give Replacement (Text or File)
+// POST Give Replacement (Text, File, or Stock Auto-Fetch)
 router.post('/:id/resolve', upload.single('replace_file'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const row = db.prepare('SELECT * FROM replace_requests WHERE id = ?').get(id);
   if (!row) return res.redirect('/replace?msg=' + encodeURIComponent('❌ Request not found'));
 
-  const replaceText = (req.body.replacement_text || '').trim();
+  let replaceText = (req.body.replacement_text || '').trim();
   const file = req.file;
+  const useStock = req.body.use_stock === '1';
+  const stockCat = (req.body.stock_category || '').trim();
+
+  // If Admin selected "Auto-fetch from Stock"
+  if (useStock && stockCat) {
+    const qty = Math.max(1, parseInt(req.body.stock_qty, 10) || 1);
+    const stockItems = db.prepare('SELECT id, data FROM stock WHERE category = ? LIMIT ?').all(stockCat, qty);
+    if (stockItems.length < qty) {
+      return res.redirect('/replace?msg=' + encodeURIComponent(`❌ পর্যাপ্ত স্টক নেই! '${stockCat}' এ আছে ${stockItems.length}টি`));
+    }
+    const lines = [];
+    const delIds = [];
+    for (const item of stockItems) {
+      delIds.push(item.id);
+      let raw = item.data;
+      if (raw.includes('UID:') || raw.includes('🆔')) {
+        const mUid = raw.match(/(?:UID|Temp ID|FB ID):\*?\*?\s*`?([^\s`\n]+)`?/i);
+        const mPass = raw.match(/(?:PASS):\*?\*?\s*`?([^\s`\n]+)`?/i);
+        const mCookie = raw.match(/(?:COOKIE):\*?\*?\s*`?([^\n`]+)`?/i);
+        if (mUid && mPass) {
+          raw = `${mUid[1]} ${mPass[1]} ${mCookie ? mCookie[1].trim() : ''}`;
+        }
+      }
+      lines.push(raw.trim());
+    }
+    replaceText = lines.join('\n');
+    const placeholders = delIds.map(() => '?').join(',');
+    db.prepare(`DELETE FROM stock WHERE id IN (${placeholders})`).run(...delIds);
+  }
 
   if (!replaceText && !file) {
-    return res.redirect('/replace?msg=' + encodeURIComponent('❌ টেক্সট অথবা ফাইল যেকোনো একটি দিতে হবে!'));
+    return res.redirect('/replace?msg=' + encodeURIComponent('❌ টেক্সট, ফাইল অথবা স্টক যেকোনো একটি থেকে রিপ্লেস দিতে হবে!'));
   }
 
   const now = Date.now();

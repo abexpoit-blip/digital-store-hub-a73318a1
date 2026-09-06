@@ -7,16 +7,18 @@
 <p class="text-slate-400 text-sm mb-2">Bot এর <code class="bg-slate-800 px-1.5 py-0.5 rounded">/add</code> command এর সাথে 100% match — শুধু allowed categories ব্যবহার হবে।</p>
 
 <!-- Allowed categories info -->
-<div class="bg-cyan-950/40 border border-cyan-800/50 rounded-lg p-3 mb-5 text-xs">
-  <div class="text-cyan-300 font-semibold mb-1">✅ Allowed Categories (bot recognize করে):</div>
+<div class="bg-sky-50 border border-sky-200 rounded-xl p-3 mb-5 text-xs">
+  <div class="text-sky-800 font-bold mb-1.5">✅ Allowed Categories (bot recognize করে):</div>
   <div class="flex gap-2 flex-wrap">
-    <% allowedCategories.forEach(function(c){ %>
-      <span class="bg-cyan-900/60 border border-cyan-700 text-cyan-200 px-2 py-0.5 rounded font-mono"><%= c %></span>
+    <% allowedCategories.forEach(function(c){ 
+       var label = c === 'fb1000_used' ? '1000xxx PC clon{Content Used} (fb1000_used)' : c === 'fb1000' ? 'FB 1000 Fresh (fb1000)' : c;
+    %>
+      <span class="bg-white border border-sky-300 text-sky-800 px-2.5 py-1 rounded-lg font-mono font-bold shadow-xs"><%= label %></span>
     <% }) %>
   </div>
-  <div class="text-slate-400 mt-2">
-    📝 Format: <code class="bg-slate-800 px-1 rounded">UID PASS COOKIES</code> (space-separated)
-    &nbsp;•&nbsp; Multi-upload separator: <code class="bg-slate-800 px-1 rounded">###</code>
+  <div class="text-slate-600 mt-2 font-medium">
+    📝 Format: <code class="bg-white border border-sky-200 px-1 rounded font-bold text-sky-800">UID PASS COOKIES</code> (space-separated)
+    &nbsp;•&nbsp; Multi-upload separator: <code class="bg-white border border-sky-200 px-1 rounded font-bold text-sky-800">###</code>
   </div>
 </div>
 
@@ -104,8 +106,10 @@
     <label class="text-xs text-slate-400 block mb-1">Category:</label>
     <select name="category" required class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm mb-3">
       <option value="">— Select category —</option>
-      <% allowedCategories.forEach(function(c){ %>
-        <option value="<%= c %>"><%= c %></option>
+      <% allowedCategories.forEach(function(c){ 
+         var label = c === 'fb1000_used' ? '🎬 1000xxx PC clon{Content Used}' : c === 'fb1000' ? '🆔 FB 1000 Fresh' : c === 'fb61' ? '🆔 FB 61 (Old)' : c;
+      %>
+        <option value="<%= c %>"><%= label %></option>
       <% }) %>
     </select>
 
@@ -133,8 +137,11 @@
       <label class="text-xs text-slate-400 block mb-1">Category</label>
       <select name="category" required class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm">
         <option value="">— Select —</option>
-        <% allowedCategories.forEach(function(c){ %>
-          <option value="<%= c %>"><%= c %> (<%= (byCategory.find(function(x){return x.category===c})||{}).c || 0 %> available)</option>
+        <% allowedCategories.forEach(function(c){ 
+           var label = c === 'fb1000_used' ? '🎬 1000xxx PC clon{Content Used}' : c === 'fb1000' ? '🆔 FB 1000 Fresh' : c === 'fb61' ? '🆔 FB 61 (Old)' : c;
+           var count = (byCategory.find(function(x){return x.category===c})||{}).c || 0;
+        %>
+          <option value="<%= c %>"><%= label %> (<%= count %> available)</option>
         <% }) %>
       </select>
     </div>

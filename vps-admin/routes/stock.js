@@ -6,7 +6,7 @@ const { db, logAudit, cleanupOldUidHistory } = require('../db');
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-const ALLOWED_CATEGORIES = ['fb61', 'fb1000', 'tempid'];
+const ALLOWED_CATEGORIES = ['fb61', 'fb1000', 'fb1000_used', 'tempid'];
 const SEPARATOR = '###';
 const HISTORY_DAYS = 3;
 

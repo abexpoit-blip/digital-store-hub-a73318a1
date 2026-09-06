@@ -52,19 +52,37 @@
   </a>
 </div>
 
+<!-- Category Filter Pills -->
+<div class="flex flex-wrap items-center gap-2 mb-6 bg-white p-2.5 rounded-2xl border border-sky-100 shadow-xs">
+  <span class="text-xs font-bold text-slate-500 uppercase tracking-wider px-2">Filter:</span>
+  <a href="/replace?status=<%= status %>&cat=all<%= q ? '&q=' + encodeURIComponent(q) : '' %>"
+     class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition <%= cat === 'all' ? 'bg-sky-600 text-white shadow-xs' : 'bg-slate-100 text-slate-700 hover:bg-sky-50 hover:text-sky-700' %>">
+    All Categories
+  </a>
+  <a href="/replace?status=<%= status %>&cat=used<%= q ? '&q=' + encodeURIComponent(q) : '' %>"
+     class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 <%= cat === 'used' ? 'bg-amber-500 text-white shadow-xs' : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100' %>">
+    <span>🎬</span> 1000xxx Used (<%= counts.usedPending || 0 %>)
+  </a>
+  <a href="/replace?status=<%= status %>&cat=fresh<%= q ? '&q=' + encodeURIComponent(q) : '' %>"
+     class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition <%= cat === 'fresh' ? 'bg-sky-600 text-white shadow-xs' : 'bg-slate-100 text-slate-700 hover:bg-sky-50 hover:text-sky-700' %>">
+    Fresh IDs Only
+  </a>
+</div>
+
 <form id="bulkActionForm" method="post" action="/replace/bulk/delete-selected">
 <!-- Bulk Action Toolbar & Search Bar -->
 <div class="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
   <!-- Search -->
   <div class="flex gap-2 flex-1 max-w-lg">
     <input type="hidden" name="status" value="<%= status %>"/>
+    <input type="hidden" name="cat" value="<%= cat %>"/>
     <input name="q" value="<%= q %>" placeholder="Search by User ID, @username, or Account data..."
       class="w-full bg-white border border-sky-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-xl px-4 py-2.5 text-xs placeholder-slate-400 text-slate-800 outline-none transition shadow-xs"/>
     <button type="submit" form="searchForm" class="bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-bold px-4 py-2 rounded-xl text-xs transition shadow-xs">
       Search
     </button>
     <% if (q) { %>
-      <a href="/replace?status=<%= status %>" class="px-3 py-2 text-xs text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition flex items-center">
+      <a href="/replace?status=<%= status %>&cat=<%= cat %>" class="px-3 py-2 text-xs text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition flex items-center">
         Clear
       </a>
     <% } %>
@@ -130,9 +148,16 @@
             <div class="text-[11px] text-slate-400 font-mono">ID: `<%= r.user_id %>`</div>
           </td>
           <td class="py-3 px-4">
-            <span class="inline-block bg-sky-50 border border-sky-200 text-sky-700 font-mono text-xs px-2.5 py-0.5 rounded-lg font-bold">
-              <%= r.category || 'ID' %>
-            </span>
+            <% if ((r.category || '').toLowerCase().includes('used')) { %>
+              <span class="inline-flex items-center gap-1 bg-amber-50 border border-amber-300 text-amber-900 font-mono text-xs px-2.5 py-1 rounded-lg font-extrabold shadow-xs">
+                <span>🎬</span> 1000xxx Used
+              </span>
+              <div class="text-[10px] text-amber-700 font-bold mt-0.5">⏱️ 2h Limit</div>
+            <% } else { %>
+              <span class="inline-block bg-sky-50 border border-sky-200 text-sky-700 font-mono text-xs px-2.5 py-0.5 rounded-lg font-bold">
+                <%= r.category || 'ID' %>
+              </span>
+            <% } %>
           </td>
           <td class="py-3 px-4 align-top">
             <div class="font-mono text-xs text-slate-700 max-w-xs md:max-w-sm truncate">
@@ -174,7 +199,7 @@
           <td class="py-3 px-4 text-right space-x-1 whitespace-nowrap">
             <% if (r.status === 'pending') { %>
               <button type="button" class="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs shadow-xs transition"
-                      onclick="openResolveModal(<%= r.id %>, '<%= r.user_id %>', '<%- (r.username || 'User').replace(/'/g, '') %>')">
+                      onclick="openResolveModal(<%= r.id %>, '<%= r.user_id %>', '<%- (r.username || 'User').replace(/'/g, '') %>', '<%- (r.category || 'fb1000').replace(/'/g, '') %>', <%= (r.old_data || '').split('\n').filter(Boolean).length || 1 %>)">
                 🔄 Give Replace
               </button>
               <button type="button" onclick="submitCollect(<%= r.id %>)" class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2.5 py-1.5 rounded-xl text-xs font-bold transition">
@@ -200,6 +225,7 @@
 <!-- Dedicated Hidden Forms for Single Actions (Prevents nested form issues) -->
 <form id="searchForm" method="get" action="/replace" class="hidden">
   <input type="hidden" name="status" value="<%= status %>"/>
+  <input type="hidden" name="cat" value="<%= cat %>"/>
   <input type="hidden" name="q" id="searchQVal" value="<%= q %>"/>
 </form>
 <form id="singleActionForm" method="post" class="hidden"></form>
@@ -207,7 +233,7 @@
   <input type="hidden" name="status" id="clearAllStatus" value="<%= status %>"/>
 </form>
 
-<!-- ================= MODAL 1: GIVE REPLACE (FILE OR TEXT) ================= -->
+<!-- ================= MODAL 1: GIVE REPLACE (STOCK AUTO-FETCH, FILE, OR TEXT) ================= -->
 <div id="resolveModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
   <div class="w-full max-w-xl bg-white border border-sky-200 rounded-3xl shadow-2xl overflow-hidden">
     <div class="flex items-center justify-between px-6 py-4 border-b border-sky-100 bg-sky-50/80">
@@ -215,6 +241,7 @@
         <div class="text-base font-bold text-slate-900 flex items-center gap-2">
           <span>🔄 Give Replacement</span>
           <span id="resModalId" class="text-sky-600 font-mono text-sm font-bold"></span>
+          <span id="resModalCategory" class="text-xs font-mono font-bold px-2 py-0.5 rounded-lg bg-sky-100 text-sky-800"></span>
         </div>
         <div class="text-xs text-slate-500 mt-0.5">To: <span id="resModalUser" class="text-slate-800 font-bold"></span></div>
       </div>
@@ -222,25 +249,52 @@
     </div>
 
     <form id="resolveForm" method="post" enctype="multipart/form-data" class="p-6 space-y-4">
+      <!-- Option 1: Live Stock Auto-Fetch -->
+      <div class="p-4 bg-emerald-50/70 border border-emerald-200 rounded-2xl">
+        <div class="flex items-center justify-between">
+          <label class="flex items-center gap-2 cursor-pointer font-bold text-xs text-emerald-950">
+            <input type="checkbox" id="use_stock_toggle" name="use_stock" value="1" onchange="toggleStockOption(this.checked)"
+                   class="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"/>
+            <span>⚡ Auto-Fetch from Live Stock (লাইভ স্টক থেকে সরাসরি কাটুন)</span>
+          </label>
+        </div>
+
+        <div id="stockOptionBody" class="hidden mt-3 pt-3 border-t border-emerald-200/70 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[11px] font-bold text-emerald-950 uppercase mb-1">ক্যাটাগরি সিলেক্ট করুন:</label>
+            <select name="stock_category" id="modalStockCategory" class="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-400">
+              <option value="fb1000_used">🎬 1000xxx Used (স্টক: <%= (stockCounts && stockCounts.fb1000_used) || 0 %>)</option>
+              <option value="fb1000">💎 1000xxx Fresh (স্টক: <%= (stockCounts && stockCounts.fb1000) || 0 %>)</option>
+              <option value="fb61">⚡ 61xxx Clon (স্টক: <%= (stockCounts && stockCounts.fb61) || 0 %>)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-emerald-950 uppercase mb-1">পরিমাণ (Quantity):</label>
+            <input type="number" name="stock_qty" id="modalStockQty" min="1" value="1"
+                   class="w-full bg-white border border-emerald-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-400"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="relative flex items-center justify-center">
+        <div class="border-t border-slate-200 w-full"></div>
+        <div class="bg-white px-3 text-xs text-slate-400 uppercase tracking-widest absolute font-bold">OR (MANUAL)</div>
+      </div>
+
       <div>
         <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-          Option 1: Upload Replacement File (.txt or .xlsx)
+          Option 2: Upload Replacement File (.txt or .xlsx)
         </label>
         <input type="file" name="replace_file" accept=".txt,.xlsx,.csv"
                class="w-full text-xs text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 file:cursor-pointer border border-dashed border-sky-200 rounded-xl p-3 bg-slate-50"/>
         <p class="text-[11px] text-slate-500 mt-1">ফাইল সিলেক্ট করলে এটি সরাসরি ইউজারের টেলিগ্রামে চলে যাবে।</p>
       </div>
 
-      <div class="relative flex items-center justify-center">
-        <div class="border-t border-slate-200 w-full"></div>
-        <div class="bg-white px-3 text-xs text-slate-400 uppercase tracking-widest absolute font-bold">OR</div>
-      </div>
-
       <div>
         <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-          Option 2: Paste New Account Data (UID PASS COOKIES)
+          Option 3: Paste New Account Data (UID PASS COOKIES)
         </label>
-        <textarea name="replacement_text" rows="5" placeholder="1000... password123 datr=...&#10;1000... password456 datr=..."
+        <textarea name="replacement_text" rows="4" placeholder="1000... password123 datr=...&#10;1000... password456 datr=..."
                   class="w-full bg-slate-50 border border-slate-200 focus:border-sky-500 focus:bg-white rounded-xl p-3 font-mono text-xs text-slate-800 placeholder-slate-400 outline-none"></textarea>
       </div>
 
@@ -346,13 +400,53 @@
     f.submit();
   }
 
-  function openResolveModal(id, uid, uname) {
+  function openResolveModal(id, uid, uname, category, qty) {
     document.getElementById('resModalId').textContent = '#' + id;
     document.getElementById('resModalUser').textContent = uname + ' (' + uid + ')';
+    var catBadge = document.getElementById('resModalCategory');
+    if (catBadge) {
+      catBadge.textContent = category || 'ID';
+    }
     document.getElementById('resolveForm').action = '/replace/' + id + '/resolve';
+
+    // Auto configure category and qty for live stock fetch
+    var catSelect = document.getElementById('modalStockCategory');
+    if (catSelect) {
+      var catStr = (category || '').toLowerCase();
+      if (catStr.includes('used')) {
+        catSelect.value = 'fb1000_used';
+      } else if (catStr.includes('61')) {
+        catSelect.value = 'fb61';
+      } else {
+        catSelect.value = 'fb1000';
+      }
+    }
+    var qtyInput = document.getElementById('modalStockQty');
+    if (qtyInput) {
+      qtyInput.value = qty || 1;
+    }
+    // Uncheck stock toggle by default
+    var stockToggle = document.getElementById('use_stock_toggle');
+    if (stockToggle) {
+      stockToggle.checked = false;
+      toggleStockOption(false);
+    }
+
     var m = document.getElementById('resolveModal');
     m.classList.remove('hidden'); m.classList.add('flex');
   }
+
+  function toggleStockOption(enabled) {
+    var body = document.getElementById('stockOptionBody');
+    if (body) {
+      if (enabled) {
+        body.classList.remove('hidden');
+      } else {
+        body.classList.add('hidden');
+      }
+    }
+  }
+
   function closeResolveModal() {
     var m = document.getElementById('resolveModal');
     m.classList.add('hidden'); m.classList.remove('flex');

@@ -103,14 +103,18 @@ QUOTES = [
 BOT_VERSION = "V 10.07"
 
 # --- REPLACEMENT DYNAMIC TIERS & TIME HELPERS ---
-def get_replace_window_hours(qty: int) -> int:
+def get_replace_window_hours(qty: int, category: str = "") -> int:
     """
     Tier-based replace windows:
+    1000xxx PC clon{Content Used} : strictly 2 hours
     1-4 pcs   : 2 hours
     5-30 pcs  : 6 hours
     31-100 pcs: 12 hours
     101+ pcs  : 24 hours
     """
+    cat_str = str(category).lower().strip()
+    if "used" in cat_str or cat_str == "fb1000_used":
+        return 2
     try:
         q = int(qty)
     except Exception:
@@ -321,6 +325,7 @@ def init_db():
     # Defaults Prices
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_fb61', '10')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_fb1000', '20')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_fb1000_used', '10')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_bmig', '50')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_bmfb', '60')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_tempid', '15')")
@@ -1517,21 +1522,64 @@ async def show_cat(c: types.CallbackQuery):
             parse_mode="Markdown"
         )
     conn = _dbc()
-    f6 = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb61'").fetchone()[0]
     f1 = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb1000'").fetchone()[0]
+    f_used = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb1000_used'").fetchone()[0]
+    f6 = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb61'").fetchone()[0]
     t_id = conn.execute("SELECT COUNT(*) FROM stock WHERE category='tempid'").fetchone()[0]
     
-    p6 = get_price('fb61')
     p1 = get_price('fb1000')
+    p_used = get_price('fb1000_used')
+    p6 = get_price('fb61')
     pt = get_price('tempid')
     conn.close()
     
     kb = InlineKeyboardBuilder()
+    kb.row(types.InlineKeyboardButton(text=f"🆔 FB 1000 Fresh ({f1}) ➜ {p1}৳", callback_data="buy_fb1000"))
+    kb.row(types.InlineKeyboardButton(text=f"🎬 1000xxx PC clon{{Content Used}} ({f_used}) ➜ {p_used}৳", callback_data="used_terms"))
     kb.row(types.InlineKeyboardButton(text=f"🆔 FB 61 ({f6}) ➜ {p6}৳", callback_data="buy_fb61"))
-    kb.row(types.InlineKeyboardButton(text=f"🆔 FB 1000 ({f1}) ➜ {p1}৳", callback_data="buy_fb1000"))
     kb.row(types.InlineKeyboardButton(text=f"🆔 Temp ID ({t_id}) ➜ {pt}৳", callback_data="buy_tempid"))
     kb.row(types.InlineKeyboardButton(text="🔙 ফিরে যান", callback_data="back_home"))
     await c.message.edit_text("📥 **আইডি ক্যাটাগরি মেনু**", reply_markup=kb.as_markup())
+
+@dp.callback_query(F.data == "used_terms")
+async def show_used_terms(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    await state.clear()
+    
+    if not is_service_enabled("buy_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer(
+            "🛒 **আইডি ক্রয় সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
+            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
+            parse_mode="Markdown"
+        )
+    
+    conn = _dbc()
+    stock_count = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb1000_used'").fetchone()[0]
+    conn.close()
+    p_used = get_price('fb1000_used')
+    
+    terms_msg = (
+        "⚠️ **1000xxx PC clon{Content Used} — শর্তাবলী ও পলিসি (বাধ্যতামূলক পাঠ্য)** ⚠️\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "আমাদের এই ক্যাটাগরি থেকে আইডি ক্রয়ের পূর্বে নিচের বাস্তবতাসমূহ গুরুত্বসহকারে পড়ে জেনে নিন:\n\n"
+        "▫️ **আইডির ধরণ ও অবস্থা:** এই আইডিগুলো কনটেন্ট ইউজ (Video Reels বা Content Used) করা হয়েছে। আমরা এই আইডিগুলো বিভিন্ন সেলারদের থেকে নিখুঁতভাবে ফিল্টার করে নিয়েছি।\n"
+        "▫️ **কাদের জন্য বেস্ট অপশন:** বেশিরভাগ বায়ার কম রেটে আইডি চান — Threshold, রিসার্চ, নতুন মেথড ট্রায়াল/টেস্টিং বা BM / Ad Account ব্যবহারের জন্য এটি তাদের জন্য সেরা ও সাশ্রয়ী অপশন।\n"
+        "▫️ **Ad Account একদম ফ্রেশ:** আইডিতে মূলত ভিডিও রিলস বা কনটেন্ট ইউজ করা হয়েছে কিন্তু ভেতরের Ad Account সম্পূর্ণ ফ্রেশ! আপনারা আগের পেজ থাকা সত্ত্বেও নতুন পেজ বানিয়ে নিতে পারবেন অথবা ওল্ড পেজ বা সরাসরি প্রোফাইল বুস্ট রান করতে পারবেন।\n"
+        f"▫️ **মার্কেট রেটের চেয়ে অনেক কম:** কনটেন্ট ইউজ হওয়ার কারণে এর রেট অনেক কম রাখা হয়েছে — যেখানে বর্তমান মার্কেটে ফ্রেশ আইডির দাম ১৬–১৮ টাকা, সেখানে আমরা এই আইডি মাত্র **{p_used}৳** মূল্যে দিচ্ছি।\n"
+        "▫️ **রিপ্লেস সময়সীমা:** সবকিছু জেনে ও বুঝে আইডি নিবেন। এই ক্যাটাগরির জন্য **রিপ্লেস টাইম মাত্র ২ ঘণ্টা (Replace time only 2 hours)**!\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 **বর্তমান স্টক:** `{stock_count}` টি আইডি উপলব্ধ আছে।\n\n"
+        "💡 *আপনি কি উপরোক্ত শর্তাবলী ও মার্কেট বাস্তবতা মেনে নিয়ে আইডি ক্রয় করতে সম্মত?*"
+    )
+    
+    kb = InlineKeyboardBuilder()
+    if stock_count > 0:
+        kb.row(types.InlineKeyboardButton(text="✅ Agree & Buy (শর্তে সম্মত ও কিনব)", callback_data="buy_fb1000_used"))
+    else:
+        kb.row(types.InlineKeyboardButton(text="❌ বর্তমানে স্টক খালি (Stock Out)", callback_data="catalog"))
+    kb.row(types.InlineKeyboardButton(text="🔙 ফিরে যান (Back)", callback_data="catalog"))
+    
+    await c.message.edit_text(terms_msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
 @dp.callback_query(F.data == "bm_catalog")
 async def show_bm_cat(c: types.CallbackQuery):
@@ -1628,7 +1676,7 @@ async def process_buy(m: types.Message, state: FSMContext):
         conn.execute("INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
                        (m.from_user.id, m.from_user.first_name, cat, qty, total, datetime.now().strftime("%Y-%m-%d"), current_time))
 
-        _lbl = {"fb61":"FB 61","fb1000":"FB 1000","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat, cat.upper())
+        _lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx PC clon{Content Used}","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat, cat.upper())
         # [DELIVERY_FORMAT_PATCH_V1] — ask format before dumping
         # Get sale_id (last inserted), delete stock, archive, then ask format
         _sale_id = cursor.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -2602,10 +2650,10 @@ async def support_replace_start(c: types.CallbackQuery, state: FSMContext):
     
     for sale in user_sales:
         s_id, s_cat, s_qty, s_tot, s_date, s_time = sale
-        lbl = {"fb61":"FB 61","fb1000":"FB 1000","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(s_cat, s_cat.upper())
+        lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx Used","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(s_cat, s_cat.upper())
         
         s_epoch = get_sale_epoch(s_id, s_date, s_time)
-        allowed_h = get_replace_window_hours(s_qty)
+        allowed_h = get_replace_window_hours(s_qty, s_cat)
         is_expired = (now_ts - s_epoch) > (allowed_h * 3600)
         
         status_tag = "🔴 Expired" if is_expired else "🟢 Active"
@@ -2620,12 +2668,13 @@ async def support_replace_start(c: types.CallbackQuery, state: FSMContext):
         "━━━━━━━━━━━━━━━━━━━━\n"
         "কোন অর্ডারের নষ্ট আইডি আপনি রিপ্লেস করতে চান তা নিচে থেকে সিলেক্ট করুন:\n\n"
         "⏱️ **আমাদের অটোমেটিক রিপ্লেস গ্যারান্টি:**\n"
-        "▫️ ১ – ৪ পিস: **২ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ 1000xxx PC clon{{Content Used}}: **২ ঘণ্টা** ফিক্সড গ্যারান্টি\n"
+        "▫️ ১ – ৪ পিস (অন্যান্য): **২ ঘণ্টা** গ্যারান্টি\n"
         "▫️ ৫ – ৩০ পিস: **৬ ঘণ্টা** গ্যারান্টি\n"
         "▫️ ৩১ – ১০০ পিস: **১২ ঘণ্টা** গ্যারান্টি\n"
         "▫️ ১০১+ পিস: **২৪ ঘণ্টা** গ্যারান্টি\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "💡 *সিস্টেম স্বয়ংক্রিয়ভাবে অর্ডারের সময় এবং পরিমাণের ওপর ভিত্তি করে রিপ্লেসের মেয়াদ যাচাই করবে।*"
+        "💡 *সিস্টেম স্বয়ংক্রিয়ভাবে অর্ডারের সময়, ক্যাটাগরি এবং পরিমাণের ওপর ভিত্তি করে রিপ্লেসের মেয়াদ যাচাই করবে।*"
     )
     await c.message.edit_text(pick_msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
@@ -2642,12 +2691,12 @@ async def select_replace_order(c: types.CallbackQuery, state: FSMContext):
         return await c.message.answer("❌ অর্ডারটি পাওয়া যায়নি।")
         
     sale_id, u_id, uname, cat_name, qty, total, d_str, t_str = sale
-    lbl = {"fb61":"FB 61","fb1000":"FB 1000","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat_name, cat_name.upper())
+    lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx PC clon{Content Used}","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat_name, cat_name.upper())
     
     sale_epoch = get_sale_epoch(sale_id, d_str, t_str)
     now_ts = int(__import__("time").time())
     elapsed_sec = max(0, now_ts - sale_epoch)
-    allowed_h = get_replace_window_hours(qty)
+    allowed_h = get_replace_window_hours(qty, cat_name)
     allowed_sec = allowed_h * 3600
     
     elapsed_str = format_duration(elapsed_sec)
@@ -2811,9 +2860,11 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         )
         _rep_ts = int(utc_now_ts * 1000)
         _rep_uname = f"@{m.from_user.username}" if m.from_user.username else (m.from_user.first_name or f"User_{m.from_user.id}")
+        rep_cat = st_data.get("replace_cat", "fb1000")
+        db_cat_label = "1000xxx PC clon{Content Used}" if (rep_cat == "fb1000_used" or "used" in str(rep_cat).lower()) else ({"fb61":"FB 61","fb1000":"FB 1000 Fresh","tempid":"Temp ID"}.get(rep_cat, rep_cat))
         conn.execute(
             "INSERT INTO replace_requests (user_id, username, category, old_data, reason, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
-            (m.from_user.id, _rep_uname, "ID", user_data_text, f"Ticket #{ticket_id} ({order_ref})", _rep_ts)
+            (m.from_user.id, _rep_uname, db_cat_label, user_data_text, f"Ticket #{ticket_id} ({order_ref})", _rep_ts)
         )
         conn.commit()
     except Exception as e:
@@ -2826,10 +2877,13 @@ async def process_replace_request(m: types.Message, state: FSMContext):
     conn.close()
     
     short_text = user_data_text[:60] + "..." if len(user_data_text) > 60 else user_data_text
+    is_used_cat = (rep_cat == "fb1000_used" or "used" in str(rep_cat).lower())
+    cat_badge = "🎬 **Category: 1000xxx PC clon{Content Used}**\n⚠️ *[Content Used Section — 2h Limit]*\n" if is_used_cat else f"🏷️ **Category:** {db_cat_label}\n"
     
     admin_msg = (
         f"🚨 **NEW REPLACE REQUEST • {BOT_VERSION}** 🚨\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"{cat_badge}"
         f"📦 **{order_ref}** ({qty} pcs | Tier: {allowed_h}h)\n"
         f"👤 **Name:** {m.from_user.first_name}\n"
         f"🔗 **User:** {username_display}\n"
