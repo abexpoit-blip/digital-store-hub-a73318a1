@@ -38,11 +38,26 @@ function brandName(vpn_id) {
 
 function loadAll() {
   const rows = db.prepare('SELECT vpn_id, pkg_id, price FROM vpn_packages ORDER BY vpn_id, pkg_id').all();
+  let apiMap = {};
+  try {
+    const apiRows = db.prepare('SELECT vpn_id, pkg_id, service, rate, available FROM vpn_api_services').all();
+    for (const a of apiRows) {
+      apiMap[`${a.vpn_id}_${a.pkg_id}`] = a;
+    }
+  } catch (_) {}
+
   const groups = {};
   for (const r of rows) {
     const k = String(r.vpn_id).toLowerCase();
     if (!groups[k]) groups[k] = { vpn_id: k, name: brandName(k), items: [] };
-    groups[k].items.push({ ...r, pkg_label: fmtPkg(r.pkg_id) });
+    const apiMatch = apiMap[`${k}_${String(r.pkg_id).toLowerCase()}`];
+    groups[k].items.push({
+      ...r,
+      pkg_label: fmtPkg(r.pkg_id),
+      apiService: apiMatch ? apiMatch.service : null,
+      apiCost: apiMatch ? apiMatch.rate : null,
+      apiAvailable: apiMatch ? apiMatch.available : null,
+    });
   }
   return Object.values(groups);
 }

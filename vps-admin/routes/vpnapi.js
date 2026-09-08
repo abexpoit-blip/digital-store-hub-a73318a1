@@ -9,6 +9,7 @@ const { db, logAudit } = require('../db');
 const router = express.Router();
 
 const DEFAULT_API_URL = 'https://vpn.sajeebtechonline.top/api.php';
+const DEFAULT_API_KEY = 'TTECH_0dd4e0099d624b574026fc182a22466016104bb5dd4bf601';
 
 // ---------- schema ----------
 try {
@@ -47,7 +48,8 @@ function cfgSet(key, value) {
 function getApiConf() {
   return {
     url: cfgGet('vpnapi_url', process.env.VPN_API_URL || DEFAULT_API_URL),
-    key: cfgGet('vpnapi_key', process.env.VPN_API_KEY || ''),
+    key: cfgGet('vpnapi_key', process.env.VPN_API_KEY || DEFAULT_API_KEY),
+    autoOrder: cfgGet('vpnapi_auto_order', '1') === '1',
   };
 }
 
@@ -75,8 +77,15 @@ function apiCall(action, extra = {}) {
       let raw = '';
       res.on('data', (d) => { raw += d; if (raw.length > 2_000_000) req.destroy(); });
       res.on('end', () => {
-        try { resolve(JSON.parse(raw)); }
-        catch (_) { reject(new Error('Provider থেকে অবৈধ response: ' + raw.slice(0, 200))); }
+        try {
+          const parsed = JSON.parse(raw);
+          if (res.statusCode >= 400 && parsed && parsed.status === 'error') {
+            return reject(new Error(parsed.message || `HTTP ${res.statusCode}`));
+          }
+          resolve(parsed);
+        } catch (_) {
+          reject(new Error('Provider থেকে অবৈধ response: ' + raw.slice(0, 200)));
+        }
       });
     });
     req.on('timeout', () => { req.destroy(new Error('Provider timeout (30s)')); });
@@ -126,7 +135,7 @@ function loadServices() {
 // ---------- pages ----------
 router.get('/', async (req, res, next) => {
   try {
-    const { url, key } = getApiConf();
+    const { url, key, autoOrder } = getApiConf();
     const services = loadServices();
     const lastSync = parseInt(cfgGet('vpnapi_last_sync', '0'), 10) || 0;
 
@@ -143,6 +152,7 @@ router.get('/', async (req, res, next) => {
       apiUrl: url,
       keySet: !!key,
       keyMask: key ? key.slice(0, 10) + '…' + key.slice(-4) : '',
+      autoOrder,
       services, balance, balanceErr, lastSync,
       msg: req.query.msg || null,
     });
@@ -162,6 +172,15 @@ router.post('/settings', (req, res) => {
   if (key) cfgSet('vpnapi_key', key);
   logAudit('admin', 'vpnapi_settings', `url=${url ? 'updated' : 'same'} key=${key ? 'updated' : 'same'}`);
   res.redirect('/vpnapi?msg=' + encodeURIComponent('✅ API settings সেভ হয়েছে'));
+});
+
+// Toggle Auto-Order ON/OFF
+router.post('/toggle-auto', (req, res) => {
+  const current = cfgGet('vpnapi_auto_order', '1');
+  const next = current === '1' ? '0' : '1';
+  cfgSet('vpnapi_auto_order', next);
+  logAudit('admin', 'vpnapi_auto_order_toggle', next);
+  res.redirect('/vpnapi?msg=' + encodeURIComponent(next === '1' ? '✅ VPN Auto-Order চালু হলো' : '⛔ VPN Auto-Order বন্ধ হলো'));
 });
 
 // Sync catalog (brand / package / days / availability) — price unchanged
@@ -247,3 +266,4 @@ router.post('/import', (req, res) => {
 });
 
 module.exports = router;
+module.exports.apiCall = apiCall;

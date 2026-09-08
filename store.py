@@ -19,6 +19,9 @@ import sys
 import uuid
 import re
 import os
+import json
+import urllib.request
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandObject
@@ -274,6 +277,25 @@ def init_db():
     cursor.execute('CREATE TABLE IF NOT EXISTS vpn_brands (vpn_id TEXT PRIMARY KEY, vpn_name TEXT)')
     cursor.execute('CREATE TABLE IF NOT EXISTS vpn_packages (vpn_id TEXT, pkg_id TEXT, price INTEGER)')
 
+    # VPN Provider API Services Catalog
+    cursor.execute('''CREATE TABLE IF NOT EXISTS vpn_api_services (
+      service          TEXT PRIMARY KEY,
+      name             TEXT,
+      category         TEXT,
+      type             TEXT,
+      days             INTEGER,
+      pkg_id           TEXT,
+      vpn_id           TEXT,
+      rate             REAL,
+      original_rate    REAL,
+      discount_percent REAL,
+      min_qty          INTEGER,
+      max_qty          INTEGER,
+      available        INTEGER DEFAULT 1,
+      raw              TEXT,
+      updated_at       INTEGER
+    )''')
+
     # Safe Migrations
     columns = [
         ("user_id", "INTEGER"), ("username", "TEXT"), ("amount", "INTEGER"),
@@ -282,6 +304,14 @@ def init_db():
     ]
     for col_name, col_type in columns:
         try: cursor.execute(f"ALTER TABLE payment_logs ADD COLUMN {col_name} {col_type}")
+        except: pass
+        
+    vpn_cols = [
+        ("api_order_id", "TEXT"), ("api_service", "TEXT"),
+        ("api_status", "TEXT"), ("api_response", "TEXT")
+    ]
+    for c_name, c_type in vpn_cols:
+        try: cursor.execute(f"ALTER TABLE vpn_orders ADD COLUMN {c_name} {c_type}")
         except: pass
         
     try: cursor.execute("ALTER TABLE sales ADD COLUMN time TEXT")
@@ -329,6 +359,12 @@ def init_db():
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_bmig', '50')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_bmfb', '60')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_tempid', '15')")
+    # VPN Provider API Defaults
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_url', 'https://vpn.sajeebtechonline.top/api.php')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_key', 'TTECH_0dd4e0099d624b574026fc182a22466016104bb5dd4bf601')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_auto_order', '1')")
+    cursor.execute("INSERT OR IGNORE INTO vpn_brands (vpn_id, vpn_name) VALUES ('potato', 'Potato VPN')")
+    cursor.execute("INSERT OR IGNORE INTO vpn_packages (vpn_id, pkg_id, price) VALUES ('potato', '7d', 30)")
     cursor.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (OWNER_ID,))
 
     conn.commit()
@@ -1385,7 +1421,159 @@ async def admin_stats_weekly(message: types.Message, state: FSMContext):
     except Exception as e:
         await message.answer(f"❌ Error computing weekly stats: {e}")
 
+# --- VPN PROVIDER API CLIENT & AUTOMATION HELPERS ---
+VPN_API_DEFAULT_URL = "https://vpn.sajeebtechonline.top/api.php"
+VPN_API_DEFAULT_KEY = "TTECH_0dd4e0099d624b574026fc182a22466016104bb5dd4bf601"
+
+def _sync_vpn_api_call(action: str, **kwargs):
+    conn = _dbc()
+    try:
+        url_row = conn.execute("SELECT value FROM config WHERE key='vpnapi_url'").fetchone()
+        key_row = conn.execute("SELECT value FROM config WHERE key='vpnapi_key'").fetchone()
+        url = url_row[0] if url_row and url_row[0] else VPN_API_DEFAULT_URL
+        key = key_row[0] if key_row and key_row[0] else VPN_API_DEFAULT_KEY
+    except Exception:
+        url = VPN_API_DEFAULT_URL
+        key = VPN_API_DEFAULT_KEY
+    finally:
+        conn.close()
+
+    data = {"action": action, "key": key}
+    data.update(kwargs)
+    encoded = urllib.parse.urlencode(data).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=encoded,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasictrickStore/2.0"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw)
+    except urllib.error.HTTPError as e:
+        try:
+            err_raw = e.read().decode("utf-8")
+            return json.loads(err_raw)
+        except Exception:
+            return {"status": "error", "message": f"HTTP {e.code}: {e.reason}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+async def vpn_api_call(action: str, **kwargs):
+    return await asyncio.to_thread(_sync_vpn_api_call, action, **kwargs)
+
+async def vpn_api_get_balance():
+    return await vpn_api_call("balance")
+
+async def vpn_api_place_order(service_code: str, quantity: int = 1):
+    return await vpn_api_call("order", service=service_code, quantity=quantity)
+
+async def vpn_api_get_order_status(api_order_id: str):
+    return await vpn_api_call("status", order=api_order_id)
+
+async def vpn_api_sync_catalog():
+    res = await vpn_api_call("services")
+    if res.get("status") != "success" or not isinstance(res.get("services"), list):
+        return 0, res.get("message", "Invalid services response")
+
+    services = res["services"]
+    now_ts = int(datetime.now().timestamp())
+    conn = _dbc()
+    seen = []
+    try:
+        for s in services:
+            code = str(s.get("service", "")).strip()
+            if not code: continue
+            seen.append(code)
+            name = str(s.get("name", code)).strip()
+            cat = str(s.get("category", "")).strip()
+            stype = str(s.get("type", "vpn")).strip()
+            rate = float(s.get("rate", 0))
+            orig_rate = float(s.get("original_rate", rate))
+            disc = float(s.get("discount_percent", 0))
+            min_q = int(s.get("min", 1) or 1)
+            max_q = int(s.get("max", 1) or 1)
+            avail = 1 if s.get("available") else 0
+            raw_str = json.dumps(s)
+
+            # parse duration
+            days, pkg_id = None, None
+            combined_text = f"{cat} {name}".lower()
+            m_day = re.search(r'(\d+)\s*(day|days|d)\b', combined_text)
+            if m_day:
+                days = int(m_day.group(1))
+                pkg_id = f"{days}d"
+            else:
+                m_mo = re.search(r'(\d+)\s*(month|months|mo|m)\b', combined_text)
+                if m_mo:
+                    days = int(m_mo.group(1)) * 30
+                    pkg_id = f"{int(m_mo.group(1))}m"
+
+            v_id = re.sub(r'[^a-z0-9]', '', name.lower().replace('vpn', ''))[:20] or 'vpn'
+
+            conn.execute("""
+                INSERT INTO vpn_api_services
+                  (service, name, category, type, days, pkg_id, vpn_id, rate, original_rate, discount_percent, min_qty, max_qty, available, raw, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(service) DO UPDATE SET
+                  name=excluded.name, category=excluded.category, type=excluded.type,
+                  days=excluded.days, pkg_id=excluded.pkg_id, vpn_id=excluded.vpn_id,
+                  rate=excluded.rate, original_rate=excluded.original_rate,
+                  discount_percent=excluded.discount_percent,
+                  min_qty=excluded.min_qty, max_qty=excluded.max_qty,
+                  available=excluded.available, raw=excluded.raw, updated_at=excluded.updated_at
+            """, (code, name, cat, stype, days, pkg_id, v_id, rate, orig_rate, disc, min_q, max_q, avail, raw_str, now_ts))
+
+            # Auto add brand & package if not exist
+            conn.execute("INSERT OR IGNORE INTO vpn_brands (vpn_id, vpn_name) VALUES (?, ?)", (v_id, f"{name} VPN" if "vpn" not in name.lower() else name))
+            if pkg_id:
+                existing_pkg = conn.execute("SELECT price FROM vpn_packages WHERE vpn_id=? AND pkg_id=?", (v_id, pkg_id)).fetchone()
+                if not existing_pkg:
+                    default_sell_price = int(rate + 15) if rate > 0 else 30
+                    conn.execute("INSERT INTO vpn_packages (vpn_id, pkg_id, price) VALUES (?, ?, ?)", (v_id, pkg_id, default_sell_price))
+
+        conn.commit()
+        return len(seen), None
+    except Exception as e:
+        return 0, str(e)
+    finally:
+        conn.close()
+
 # --- VPN ADMIN COMMANDS ---
+
+@dp.message(Command("vpnbal"))
+async def admin_vpn_balance(message: types.Message):
+    if not is_admin(message.from_user.id): return
+    status_msg = await message.answer("🔄 API ব্যালেন্স চেক করা হচ্ছে...")
+    res = await vpn_api_call("balance")
+    if res.get("status") == "success":
+        bal = res.get("balance", 0)
+        curr = res.get("currency", "BDT")
+        await status_msg.edit_text(
+            f"💰 **VPN Provider Live Balance:**\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"💵 ব্যালেন্স: **{bal} {curr}**\n"
+            f"🔌 প্রোভাইডার: `vpn.sajeebtechonline.top`\n"
+            f"⚡ স্ট্যাটাস: **Active**",
+            parse_mode="Markdown"
+        )
+    else:
+        err = res.get("message", "Unknown error")
+        await status_msg.edit_text(f"❌ ব্যালেন্স চেক ব্যর্থ: `{err}`")
+
+@dp.message(Command("vpnsync"))
+async def admin_vpn_sync(message: types.Message):
+    if not is_admin(message.from_user.id): return
+    status_msg = await message.answer("🔄 প্রোভাইডার থেকে VPN সার্ভিস সিঙ্ক করা হচ্ছে...")
+    count, err = await vpn_api_sync_catalog()
+    if err:
+        await status_msg.edit_text(f"❌ সিঙ্ক ব্যর্থ: `{err}`")
+    else:
+        await status_msg.edit_text(
+            f"✅ **VPN সার্ভিস সিঙ্ক সফল!**\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"📦 মোট সিঙ্ক হয়েছে: **{count}** টি সার্ভিস।\n"
+            f"💡 ক্যাটালগ ও প্যাকেজে নতুন সার্ভিস যুক্ত হয়েছে।",
+            parse_mode="Markdown"
+        )
 
 @dp.message(Command("listvpn"))
 async def admin_list_vpn(message: types.Message, state: FSMContext):
@@ -2319,6 +2507,210 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
             return
     # === END NORD_AUTO_DELIVER_V5 ===
 
+    # === VPN_PROVIDER_API_AUTO_ORDER ===
+    try:
+        auto_cfg = conn.execute("SELECT value FROM config WHERE key='vpnapi_auto_order'").fetchone()
+        is_auto_on = (auto_cfg[0].strip() == '1') if auto_cfg and auto_cfg[0] else True
+    except Exception:
+        is_auto_on = True
+
+    api_service_row = None
+    if is_auto_on:
+        days_num = None
+        m_d = re.search(r'(\d+)', pkg_id)
+        if m_d:
+            days_num = int(m_d.group(1))
+            if 'm' in pkg_id: days_num *= 30
+            elif 'y' in pkg_id: days_num *= 365
+
+        try:
+            api_service_row = conn.execute(
+                """SELECT service, name, category, rate, available FROM vpn_api_services
+                   WHERE (vpn_id = ? OR LOWER(name) LIKE ?)
+                     AND (pkg_id = ? OR days = ?)
+                   ORDER BY available DESC LIMIT 1""",
+                (vpn_id, f"%{vpn_id}%", pkg_id, days_num)
+            ).fetchone()
+        except Exception:
+            api_service_row = None
+
+    if is_auto_on and api_service_row:
+        s_code, s_name, s_cat, s_rate, s_avail = api_service_row
+        order_id = str(uuid.uuid4())[:8]
+        username_display = f"@{c.from_user.username}" if c.from_user.username else "No Username"
+        real_name = c.from_user.first_name
+        current_time = datetime.now(timezone(timedelta(hours=6))).strftime("%I:%M %p")
+        now_ts = int(datetime.now().timestamp())
+
+        conn.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (price, c.from_user.id))
+        conn.commit()
+
+        # Place order on Provider API
+        api_order_resp = await vpn_api_place_order(service_code=s_code, quantity=1)
+        api_status_code = api_order_resp.get("status")
+        api_err_msg = api_order_resp.get("message", "Unknown error")
+        api_order_id = str(api_order_resp.get("order") or api_order_resp.get("order_id") or "")
+
+        if api_status_code == "success" and api_order_id:
+            account_data = (
+                api_order_resp.get("data")
+                or api_order_resp.get("account")
+                or api_order_resp.get("credentials")
+                or api_order_resp.get("code")
+                or api_order_resp.get("text")
+            )
+
+            # Fast retry status polling
+            if not account_data:
+                for _ in range(3):
+                    await asyncio.sleep(2)
+                    st_resp = await vpn_api_get_order_status(api_order_id)
+                    account_data = (
+                        st_resp.get("data")
+                        or st_resp.get("account")
+                        or st_resp.get("credentials")
+                        or st_resp.get("code")
+                        or st_resp.get("text")
+                    )
+                    if account_data:
+                        break
+
+            if account_data:
+                # INSTANT DELIVERY SUCCESS
+                conn.execute(
+                    """INSERT INTO vpn_orders
+                       (order_id, user_id, vpn_name, duration, price, status, date, admin_name, api_order_id, api_service, api_status, api_response)
+                       VALUES (?, ?, ?, ?, ?, 'delivered', ?, 'API-AUTO', ?, ?, 'completed', ?)""",
+                    (order_id, c.from_user.id, vpn_name, pkg_name, price, datetime.now().strftime("%Y-%m-%d"),
+                     api_order_id, s_code, str(account_data))
+                )
+                conn.execute(
+                    "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (c.from_user.id, username_display, f"VPN: {vpn_name}", 1, price, datetime.now().strftime("%Y-%m-%d"), current_time)
+                )
+                try:
+                    conn.execute(
+                        "INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (None, c.from_user.id, (f"@{c.from_user.username}" if c.from_user.username else None),
+                         f"VPN: {vpn_name}", None, str(account_data), 'api-auto', now_ts)
+                    )
+                except Exception:
+                    pass
+                conn.commit()
+                conn.close()
+
+                # Deliver to user
+                user_delivery_msg = (
+                    f"🎉 **আপনার VPN অর্ডার ডেলিভারি সম্পন্ন হয়েছে!** 🎉\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"{emoji} **ব্র্যান্ড:** {vpn_name}\n"
+                    f"📦 **প্যাকেজ:** {pkg_name}\n"
+                    f"⚡ **ডেলিভারি মেথড:** Instant API Delivery\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🔐 **আপনার অ্যাকাউন্ট ডিটেইলস:**\n"
+                    f"```text\n{account_data}\n```\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🆔 Order: `{order_id}` | API Ref: `#{api_order_id}`\n"
+                    f"💡 *(কপি করতে ওপরের বক্সে ক্লিক করুন)*\n"
+                    f"💙 ধন্যবাদ আমাদের সাথে থাকার জন্য!"
+                )
+                try:
+                    await c.message.answer(user_delivery_msg, parse_mode="Markdown")
+                except Exception:
+                    await c.message.answer(user_delivery_msg)
+
+                # Notify admins
+                try:
+                    _c2 = _dbc()
+                    admins = _c2.execute("SELECT user_id FROM admins").fetchall()
+                    _c2.close()
+                except Exception:
+                    admins = []
+
+                admin_alert = (
+                    f"⚡ **VPN AUTO-DELIVERED VIA API** ⚡\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"👤 **Customer:** {real_name} ({username_display})\n"
+                    f"🆔 **User ID:** `{c.from_user.id}`\n"
+                    f"{emoji} **Product:** {vpn_name} — {pkg_name}\n"
+                    f"💰 **Sold For:** {price}৳ | **API Cost:** {s_rate}৳\n"
+                    f"🆔 **Order:** `{order_id}` | **API Order:** `#{api_order_id}`\n"
+                    f"✅ **Status:** Instant Delivered"
+                )
+                for a in admins:
+                    try: await bot.send_message(a[0], admin_alert)
+                    except: pass
+                return
+
+            else:
+                # API Order Placed, awaiting credentials in background
+                conn.execute(
+                    """INSERT INTO vpn_orders
+                       (order_id, user_id, vpn_name, duration, price, status, date, admin_name, api_order_id, api_service, api_status, api_response)
+                       VALUES (?, ?, ?, ?, ?, 'api_pending', ?, 'API-PENDING', ?, ?, 'processing', ?)""",
+                    (order_id, c.from_user.id, vpn_name, pkg_name, price, datetime.now().strftime("%Y-%m-%d"),
+                     api_order_id, s_code, json.dumps(api_order_resp))
+                )
+                conn.commit()
+                conn.close()
+
+                await c.message.answer(
+                    f"⏳ **আপনার VPN অর্ডারটি প্রসেসিং হচ্ছে!**\n━━━━━━━━━━━━━━━━━━━━\n"
+                    f"{emoji} **ব্র্যান্ড:** {vpn_name} ({pkg_name})\n"
+                    f"🆔 **অর্ডার আইডি:** `{order_id}`\n\n"
+                    f"প্রোভাইডার সার্ভার থেকে অ্যাকাউন্ট প্রস্তুত হওয়ামাত্র বট স্বয়ংক্রিয়ভাবে আপনাকে ইনবক্সে পাঠিয়ে দেবে। অনুগ্রহ করে ১-২ মিনিট অপেক্ষা করুন।"
+                )
+                asyncio.create_task(poll_and_deliver_api_vpn_order(order_id, api_order_id, c.from_user.id, vpn_name, pkg_name, emoji, price))
+                return
+
+        else:
+            # API Order Failed (e.g. 402 Insufficient Balance or provider error) -> fallback to manual admin queue
+            conn.execute(
+                """INSERT INTO vpn_orders
+                   (order_id, user_id, vpn_name, duration, price, status, date, admin_name, api_service, api_status, api_response)
+                   VALUES (?, ?, ?, ?, ?, 'pending', ?, 'None', ?, 'failed', ?)""",
+                (order_id, c.from_user.id, vpn_name, pkg_name, price, datetime.now().strftime("%Y-%m-%d"),
+                 s_code, api_err_msg)
+            )
+            conn.commit()
+            admins = conn.execute("SELECT user_id FROM admins").fetchall()
+            conn.close()
+
+            user_msg = (
+                f"✅ **অর্ডার গ্রহণ করা হয়েছে!**\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"{emoji} **ব্র্যান্ড:** {vpn_name} — {pkg_name}\n"
+                f"🆔 **অর্ডার আইডি:** `{order_id}`\n\n"
+                f"⏳ অ্যাকাউন্ট প্রস্তুত করে আপনাকে শীঘ্রই ইনবক্সে পাঠানো হচ্ছে।"
+            )
+            await c.message.answer(user_msg)
+
+            admin_alert = (
+                f"┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+                f"┣ ⚠️ **VPN API FAILED ➔ MANUAL QUEUE**\n"
+                f"┗━━━━━━━━━━━━━━━━━━━━━┛\n"
+                f"❌ **API Error:** `{api_err_msg}`\n"
+                f"👤 **Name:** {real_name}\n"
+                f"🔗 **User:** {username_display}\n"
+                f"🆔 **ID:** `{c.from_user.id}`\n\n"
+                f"{emoji} **Brand:** {vpn_name}\n"
+                f"📦 **Package:** {pkg_name}\n"
+                f"💰 **Price:** {price} BDT (Cost: {s_rate}৳)\n"
+                f"🆔 **Order:** `{order_id}`\n\n"
+                f"👉 প্রোভাইডারে ব্যালেন্স রিচার্জ করে নিচের '⚡ Retry via API' অথবা '📦 Deliver' দিন।"
+            )
+            kb = InlineKeyboardBuilder()
+            kb.row(types.InlineKeyboardButton(text="⚡ Retry via API", callback_data=f"vpn_apiretry_{order_id}"))
+            kb.row(types.InlineKeyboardButton(text="📦 Deliver", callback_data=f"vpn_deliv_{order_id}"),
+                   types.InlineKeyboardButton(text="❌ Stock Out", callback_data=f"vpn_out_{order_id}"))
+
+            for admin in admins:
+                try: await bot.send_message(admin[0], admin_alert, reply_markup=kb.as_markup())
+                except: pass
+
+            asyncio.create_task(vpn_delivery_reminder(order_id, admins, admin_alert))
+            return
+
     conn.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (price, c.from_user.id))
         
     order_id = str(uuid.uuid4())[:8]
@@ -2389,6 +2781,127 @@ async def vpn_delivery_reminder(order_id, admins, original_msg):
             for admin in admins:
                 try: await bot.send_message(admin[0], urgent_msg, reply_markup=kb.as_markup())
                 except: pass
+
+async def poll_and_deliver_api_vpn_order(order_id, api_order_id, user_id, vpn_name, pkg_name, emoji, price):
+    # Check status every 15 seconds up to 10 minutes (40 attempts)
+    for _ in range(40):
+        await asyncio.sleep(15)
+        st_resp = await vpn_api_get_order_status(api_order_id)
+        if not st_resp: continue
+        account_data = (
+            st_resp.get("data")
+            or st_resp.get("account")
+            or st_resp.get("credentials")
+            or st_resp.get("code")
+            or st_resp.get("text")
+        )
+        if account_data:
+            conn = _dbc()
+            order_row = conn.execute("SELECT status FROM vpn_orders WHERE order_id=?", (order_id,)).fetchone()
+            if not order_row or order_row[0] == "delivered":
+                conn.close()
+                return
+            now_ts = int(datetime.now().timestamp())
+            cur_time = datetime.now(timezone(timedelta(hours=6))).strftime("%I:%M %p")
+            conn.execute(
+                "UPDATE vpn_orders SET status='delivered', admin_name='API-AUTO', api_status='completed', api_response=? WHERE order_id=?",
+                (str(account_data), order_id)
+            )
+            conn.execute(
+                "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, f"User {user_id}", f"VPN: {vpn_name}", 1, price, datetime.now().strftime("%Y-%m-%d"), cur_time)
+            )
+            try:
+                conn.execute(
+                    "INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (None, user_id, None, f"VPN: {vpn_name}", None, str(account_data), 'api-auto', now_ts)
+                )
+            except Exception:
+                pass
+            conn.commit()
+            conn.close()
+
+            user_msg = (
+                f"🎉 **আপনার VPN অর্ডার ডেলিভারি সম্পন্ন হয়েছে!** 🎉\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"{emoji} **ব্র্যান্ড:** {vpn_name}\n"
+                f"📦 **প্যাকেজ:** {pkg_name}\n"
+                f"⚡ **ডেলিভারি মেথড:** Automated API Delivery\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"🔐 **আপনার একাউন্ট ডিটেইলস:**\n"
+                f"```text\n{account_data}\n```\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"🆔 Order: `{order_id}` | API Ref: `#{api_order_id}`\n"
+                f"💡 *(কপি করতে ওপরের বক্সে ক্লিক করুন)*"
+            )
+            try:
+                await bot.send_message(user_id, user_msg, parse_mode="Markdown")
+            except Exception:
+                try: await bot.send_message(user_id, user_msg)
+                except: pass
+            return
+
+@dp.callback_query(F.data.startswith("vpn_apiretry_"))
+async def retry_vpn_api_delivery(c: types.CallbackQuery):
+    await c.answer("🔄 Retrying API order...")
+    order_id = c.data.split("_")[2]
+    conn = _dbc()
+    order = conn.execute("SELECT user_id, price, vpn_name, duration, status, api_service FROM vpn_orders WHERE order_id=?", (order_id,)).fetchone()
+    if not order:
+        conn.close()
+        return await c.message.answer("❌ Order not found.")
+    user_id, price, vpn_name, duration, status, api_service = order
+    if status == 'delivered':
+        conn.close()
+        return await c.message.answer("⚠️ Order already delivered!")
+
+    # Find service code if not set
+    s_code = api_service
+    if not s_code:
+        v_id = re.sub(r'[^a-z0-9]', '', vpn_name.lower().replace('vpn', ''))[:20]
+        row = conn.execute("SELECT service FROM vpn_api_services WHERE vpn_id=? OR LOWER(name) LIKE ? LIMIT 1", (v_id, f"%{v_id}%")).fetchone()
+        if row: s_code = row[0]
+    conn.close()
+
+    if not s_code:
+        return await c.message.answer("❌ No matching API service found for this VPN.")
+
+    resp = await vpn_api_place_order(service_code=s_code, quantity=1)
+    if resp.get("status") == "success":
+        api_order_id = str(resp.get("order") or resp.get("order_id") or "")
+        account_data = resp.get("data") or resp.get("account") or resp.get("credentials") or resp.get("code")
+        if not account_data:
+            await asyncio.sleep(2)
+            st = await vpn_api_get_order_status(api_order_id)
+            account_data = st.get("data") or st.get("account") or st.get("credentials") or st.get("code")
+
+        if account_data:
+            conn = _dbc()
+            conn.execute("UPDATE vpn_orders SET status='delivered', admin_name='API-RETRY', api_order_id=?, api_status='completed', api_response=? WHERE order_id=?", (api_order_id, str(account_data), order_id))
+            conn.commit(); conn.close()
+            emoji = next((v for k, v in VPN_EMOJIS.items() if k.lower() in vpn_name.lower()), "⚛️")
+            user_msg = (
+                f"🎉 **আপনার VPN অর্ডার ডেলিভারি সম্পন্ন হয়েছে!** 🎉\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"{emoji} **ব্র্যান্ড:** {vpn_name}\n"
+                f"📦 **প্যাকেজ:** {duration}\n"
+                f"⚡ **ডেলিভারি মেথড:** API Delivery\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"🔐 **আপনার একাউন্ট ডিটেইলস:**\n"
+                f"```text\n{account_data}\n```\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"🆔 Order: `{order_id}` | API Ref: `#{api_order_id}`"
+            )
+            try: await bot.send_message(user_id, user_msg, parse_mode="Markdown")
+            except: await bot.send_message(user_id, user_msg)
+            try: await c.message.edit_text(f"{c.message.text}\n\n✅ **Delivered via API Retry by {c.from_user.first_name}!**")
+            except: pass
+            await c.message.answer("✅ Successfully placed order on API and delivered to user!")
+        else:
+            await c.message.answer(f"⏳ Order placed on API (#{api_order_id}), processing in background.")
+    else:
+        err = resp.get("message", "Unknown error")
+        await c.message.answer(f"❌ API Retry failed: `{err}`")
 
 @dp.callback_query(F.data.startswith("vpn_deliv_"))
 async def start_vpn_delivery(c: types.CallbackQuery, state: FSMContext):
@@ -3598,6 +4111,11 @@ except Exception as _e_chk:
 
 
 async def main():
+    init_db()
+    try:
+        asyncio.create_task(vpn_api_sync_catalog())
+    except Exception as _e_sync:
+        print("[vpn_api_sync] startup sync error:", _e_sync)
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
