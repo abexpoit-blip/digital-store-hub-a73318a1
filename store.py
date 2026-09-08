@@ -1,5 +1,6 @@
 import asyncio
 import sqlite3
+import time
 
 # === DB CONNECT HELPER (busy_timeout fix) ===
 def _dbc(path='/root/store.db'):
@@ -1524,6 +1525,59 @@ async def vpn_api_place_order(service_code: str, quantity: int = 1):
 async def vpn_api_get_order_status(api_order_id: str):
     return await vpn_api_call("status", order=api_order_id)
 
+def extract_vpn_account_data(resp):
+    if not isinstance(resp, dict):
+        return None
+    candidates = [
+        resp.get("data"),
+        resp.get("details"),
+        resp.get("account"),
+        resp.get("credentials"),
+        resp.get("code"),
+        resp.get("text"),
+        resp.get("response"),
+    ]
+    order_obj = resp.get("order")
+    if isinstance(order_obj, dict):
+        candidates.extend([
+            order_obj.get("details"),
+            order_obj.get("data"),
+            order_obj.get("account"),
+            order_obj.get("credentials"),
+            order_obj.get("code"),
+            order_obj.get("text"),
+        ])
+    for item in candidates:
+        if not item:
+            continue
+        if isinstance(item, dict):
+            lines = [f"{k}: {v}" for k, v in item.items() if v]
+            if lines:
+                return "\n".join(lines)
+        elif isinstance(item, list):
+            return "\n".join(str(x) for x in item)
+        elif isinstance(item, str) and item.strip():
+            try:
+                parsed = json.loads(item)
+                if isinstance(parsed, dict):
+                    lines = [f"{k}: {v}" for k, v in parsed.items() if v]
+                    if lines:
+                        return "\n".join(lines)
+            except Exception:
+                pass
+            return item.strip()
+    return None
+
+def extract_api_order_id(resp):
+    if not isinstance(resp, dict):
+        return ""
+    val = resp.get("order")
+    if isinstance(val, dict):
+        return str(val.get("order") or val.get("order_id") or val.get("id") or "")
+    if val:
+        return str(val)
+    return str(resp.get("order_id") or resp.get("id") or "")
+
 async def vpn_api_sync_catalog():
     res = await vpn_api_call("services")
     if res.get("status") != "success" or not isinstance(res.get("services"), list):
@@ -1777,27 +1831,15 @@ async def vpn_auto_fulfill_worker():
                 conn.close()
                 api_order_resp = await vpn_api_place_order(svc_code, 1)
                 if api_order_resp.get("status") == "success":
-                    api_oid = str(api_order_resp.get("order") or api_order_resp.get("order_id") or "")
-                    account_data = (
-                        api_order_resp.get("data")
-                        or api_order_resp.get("account")
-                        or api_order_resp.get("credentials")
-                        or api_order_resp.get("code")
-                        or api_order_resp.get("text")
-                    )
+                    api_oid = extract_api_order_id(api_order_resp)
+                    account_data = extract_vpn_account_data(api_order_resp)
 
                     if not account_data and api_oid:
                         for _ in range(3):
                             await asyncio.sleep(2)
                             st_resp = await vpn_api_get_order_status(api_oid)
                             if st_resp:
-                                account_data = (
-                                    st_resp.get("data")
-                                    or st_resp.get("account")
-                                    or st_resp.get("credentials")
-                                    or st_resp.get("code")
-                                    or st_resp.get("text")
-                                )
+                                account_data = extract_vpn_account_data(st_resp)
                                 if account_data: break
 
                     if account_data:
@@ -1842,6 +1884,13 @@ async def vpn_auto_fulfill_worker():
                             except: pass
                         bal -= svc_rate
                     elif api_oid:
+                        conn = _dbc()
+                        conn.execute(
+                            "UPDATE vpn_orders SET api_order_id=?, api_service=?, api_status='processing' WHERE order_id=?",
+                            (api_oid, svc_code, p_oid)
+                        )
+                        conn.commit()
+                        conn.close()
                         asyncio.create_task(poll_and_deliver_api_vpn_order(p_oid, api_oid, p_uid, p_vname, p_dur, "🌐", p_price))
                 else:
                     err_msg = api_order_resp.get("message", "API Error")
@@ -2981,29 +3030,17 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
         api_order_resp = await vpn_api_place_order(service_code=s_code, quantity=1)
         api_status_code = api_order_resp.get("status")
         api_err_msg = api_order_resp.get("message", "Unknown error")
-        api_order_id = str(api_order_resp.get("order") or api_order_resp.get("order_id") or "")
+        api_order_id = extract_api_order_id(api_order_resp)
 
         if api_status_code == "success" and api_order_id:
-            account_data = (
-                api_order_resp.get("data")
-                or api_order_resp.get("account")
-                or api_order_resp.get("credentials")
-                or api_order_resp.get("code")
-                or api_order_resp.get("text")
-            )
+            account_data = extract_vpn_account_data(api_order_resp)
 
             # Fast retry status polling
             if not account_data:
                 for _ in range(3):
                     await asyncio.sleep(2)
                     st_resp = await vpn_api_get_order_status(api_order_id)
-                    account_data = (
-                        st_resp.get("data")
-                        or st_resp.get("account")
-                        or st_resp.get("credentials")
-                        or st_resp.get("code")
-                        or st_resp.get("text")
-                    )
+                    account_data = extract_vpn_account_data(st_resp)
                     if account_data:
                         break
 
@@ -3231,13 +3268,7 @@ async def poll_and_deliver_api_vpn_order(order_id, api_order_id, user_id, vpn_na
         await asyncio.sleep(15)
         st_resp = await vpn_api_get_order_status(api_order_id)
         if not st_resp: continue
-        account_data = (
-            st_resp.get("data")
-            or st_resp.get("account")
-            or st_resp.get("credentials")
-            or st_resp.get("code")
-            or st_resp.get("text")
-        )
+        account_data = extract_vpn_account_data(st_resp)
         if account_data:
             conn = _dbc()
             order_row = conn.execute("SELECT status FROM vpn_orders WHERE order_id=?", (order_id,)).fetchone()
@@ -3333,18 +3364,50 @@ async def retry_vpn_api_delivery(c: types.CallbackQuery):
 
     resp = await vpn_api_place_order(service_code=s_code, quantity=1)
     if resp.get("status") == "success":
-        api_order_id = str(resp.get("order") or resp.get("order_id") or "")
-        account_data = resp.get("data") or resp.get("account") or resp.get("credentials") or resp.get("code")
-        if not account_data:
+        api_order_id = extract_api_order_id(resp)
+        account_data = extract_vpn_account_data(resp)
+        if not account_data and api_order_id:
             await asyncio.sleep(2)
             st = await vpn_api_get_order_status(api_order_id)
-            account_data = st.get("data") or st.get("account") or st.get("credentials") or st.get("code")
+            account_data = extract_vpn_account_data(st)
 
+        emoji = next((v for k, v in VPN_EMOJIS.items() if k.lower() in vpn_name.lower()), "⚛️")
         if account_data:
             conn = _dbc()
-            conn.execute("UPDATE vpn_orders SET status='delivered', admin_name='API-RETRY', api_order_id=?, api_status='completed', api_response=? WHERE order_id=?", (api_order_id, str(account_data), order_id))
+            # Save into slot sharing pool
+            v_id = re.sub(r'[^a-z0-9]', '', vpn_name.lower().replace('vpn', ''))[:20] or 'vpn'
+            pkg_id_clean = duration.lower().replace(' ', '')
+            m_d = re.search(r'(\d+)\s*(d|day|m|mo|month)', pkg_id_clean)
+            if m_d:
+                num = m_d.group(1)
+                unit = 'm' if 'm' in m_d.group(2) else 'd'
+                pkg_id_clean = f"{num}{unit}"
+            now_ts = int(time.time())
+            cur_time = datetime.now(timezone(timedelta(hours=6))).strftime("%I:%M %p")
+            try:
+                cur = conn.execute(
+                    "INSERT INTO vpn_stock_pool (vpn_id, pkg_id, service_code, data, delivered_count, api_order_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+                    (v_id, pkg_id_clean, s_code, str(account_data), api_order_id, now_ts)
+                )
+                new_pool_id = cur.lastrowid
+                conn.execute("INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)", (new_pool_id, user_id, order_id, now_ts))
+            except Exception as _e_pool:
+                print(f"[vpn_retry_pool] error: {_e_pool}")
+
+            conn.execute("UPDATE vpn_orders SET status='delivered', admin_name='API-RETRY', api_order_id=?, api_service=?, api_status='completed', api_response=? WHERE order_id=?", (api_order_id, s_code, str(account_data), order_id))
+            conn.execute(
+                "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, 1, ?, ?, ?)",
+                (user_id, f"User {user_id}", f"VPN: {vpn_name}", price, datetime.now().strftime("%Y-%m-%d"), cur_time)
+            )
+            try:
+                conn.execute(
+                    "INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (None, user_id, None, f"VPN: {vpn_name}", None, str(account_data), 'api-retry', now_ts)
+                )
+            except Exception:
+                pass
             conn.commit(); conn.close()
-            emoji = next((v for k, v in VPN_EMOJIS.items() if k.lower() in vpn_name.lower()), "⚛️")
+
             user_msg = (
                 f"🎉 **আপনার VPN অর্ডার ডেলিভারি সম্পন্ন হয়েছে!** 🎉\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -3355,15 +3418,27 @@ async def retry_vpn_api_delivery(c: types.CallbackQuery):
                 f"🔐 **আপনার একাউন্ট ডিটেইলস:**\n"
                 f"```text\n{account_data}\n```\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"🆔 Order: `{order_id}` | API Ref: `#{api_order_id}`"
+                f"🆔 Order: `{order_id}` | API Ref: `#{api_order_id}`\n"
+                f"💡 *(কপি করতে ওপরের বক্সে ক্লিক করুন)*\n"
+                f"💙 ধন্যবাদ আমাদের সাথে থাকার জন্য!"
             )
             try: await bot.send_message(user_id, user_msg, parse_mode="Markdown")
-            except: await bot.send_message(user_id, user_msg)
+            except:
+                try: await bot.send_message(user_id, user_msg)
+                except: pass
             try: await c.message.edit_text(f"{c.message.text}\n\n✅ **Delivered via API Retry by {c.from_user.first_name}!**")
             except: pass
             await c.message.answer("✅ Successfully placed order on API and delivered to user!")
         else:
-            await c.message.answer(f"⏳ Order placed on API (#{api_order_id}), processing in background.")
+            conn = _dbc()
+            conn.execute(
+                "UPDATE vpn_orders SET api_order_id=?, api_service=?, api_status='processing' WHERE order_id=?",
+                (api_order_id, s_code, order_id)
+            )
+            conn.commit()
+            conn.close()
+            asyncio.create_task(poll_and_deliver_api_vpn_order(order_id, api_order_id, user_id, vpn_name, duration, emoji, price))
+            await c.message.answer(f"⏳ Order placed on API (#{api_order_id}). Monitoring in background for delivery!")
     else:
         err = resp.get("message", "Unknown error")
         await c.message.answer(f"❌ API Retry failed: `{err}`")
@@ -4587,11 +4662,31 @@ except Exception as _e_chk:
     print("checkpay handler load failed:", _e_chk)
 
 
+async def resume_pending_api_vpn_orders():
+    await asyncio.sleep(5)
+    conn = _dbc()
+    try:
+        rows = conn.execute("""
+            SELECT order_id, api_order_id, user_id, vpn_name, duration, price
+            FROM vpn_orders
+            WHERE (status IN ('api_pending', 'pending')) AND api_order_id IS NOT NULL AND api_status = 'processing'
+        """).fetchall()
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+    for r in rows:
+        order_id, api_order_id, user_id, vpn_name, duration, price = r
+        emoji = next((v for k, v in VPN_EMOJIS.items() if k.lower() in (vpn_name or "").lower()), "⚛️")
+        print(f"[vpn_resume] Resuming pending API order {order_id} (#{api_order_id})")
+        asyncio.create_task(poll_and_deliver_api_vpn_order(order_id, api_order_id, user_id, vpn_name, duration, emoji, price))
+
 async def main():
     init_db()
     try:
         asyncio.create_task(vpn_api_sync_catalog())
         asyncio.create_task(vpn_auto_fulfill_worker())
+        asyncio.create_task(resume_pending_api_vpn_orders())
     except Exception as _e_sync:
         print("[vpn_api_sync] startup sync error:", _e_sync)
     await bot.delete_webhook(drop_pending_updates=True)
