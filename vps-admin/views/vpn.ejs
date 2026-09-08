@@ -27,6 +27,36 @@
   </div>
 </div>
 
+<!-- 1 VPN 2 Users Sharing Pool Widget -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <div class="bg-white border border-sky-200 rounded-2xl p-4 shadow-xs">
+    <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">📦 Pooled Accounts</div>
+    <div class="text-2xl font-black text-slate-900 mt-1"><%= poolStats.total %></div>
+    <div class="text-[11px] text-slate-400 mt-0.5">Total API accounts managed</div>
+  </div>
+
+  <div class="bg-gradient-to-br from-emerald-50 to-white border border-emerald-200 rounded-2xl p-4 shadow-xs">
+    <div class="text-[11px] font-bold text-emerald-800 uppercase tracking-wider flex items-center justify-between">
+      <span>💎 Slot 2/2 Ready (100% Margin)</span>
+      <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+    </div>
+    <div class="text-2xl font-black text-emerald-700 mt-1"><%= poolStats.slot1Available %></div>
+    <div class="text-[11px] text-emerald-600 mt-0.5 font-medium">Ready for 2nd distinct customer (0৳ API cost!)</div>
+  </div>
+
+  <div class="bg-white border border-sky-200 rounded-2xl p-4 shadow-xs">
+    <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">👥 Fully Shared (2/2)</div>
+    <div class="text-2xl font-black text-slate-900 mt-1"><%= poolStats.completed %></div>
+    <div class="text-[11px] text-slate-400 mt-0.5">Delivered to 2 different users</div>
+  </div>
+
+  <div class="bg-white border border-sky-200 rounded-2xl p-4 shadow-xs">
+    <div class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">⚙️ Configured Packages</div>
+    <div class="text-2xl font-black text-sky-700 mt-1"><%= totalPkgs %></div>
+    <div class="text-[11px] text-slate-400 mt-0.5"><%= brands.length %> Active Brands</div>
+  </div>
+</div>
+
 <!-- Add / Update Package Form Card -->
 <div class="commercial-card rounded-2xl p-5 bg-white border border-sky-200 shadow-xs mb-6">
   <div class="flex items-center justify-between mb-4 pb-3 border-b border-sky-100">

@@ -68,8 +68,19 @@ router.get('/', (req, res) => {
   const svcVal = svcRow ? String(svcRow.value).toLowerCase() : 'on';
   const serviceOn = !['0', 'off', 'false', 'no', 'closed', 'disabled'].includes(svcVal);
   const totalPkgs = brands.reduce((a, b) => a + b.items.length, 0);
+
+  let poolStats = { total: 0, slot1Available: 0, completed: 0 };
+  try {
+    const pRows = db.prepare('SELECT delivered_count, COUNT(*) as c FROM vpn_stock_pool GROUP BY delivered_count').all();
+    for (const p of pRows) {
+      poolStats.total += p.c;
+      if (p.delivered_count === 1) poolStats.slot1Available += p.c;
+      if (p.delivered_count >= 2) poolStats.completed += p.c;
+    }
+  } catch (_) {}
+
   res.render('vpn', {
-    brands, serviceOn, totalPkgs,
+    brands, serviceOn, totalPkgs, poolStats,
     msg: req.query.msg || null,
   });
 });

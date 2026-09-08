@@ -325,6 +325,36 @@ def init_db():
     try: cursor.execute("ALTER TABLE support_tickets ADD COLUMN admin_response TEXT")
     except: pass
 
+    # Safe Migrations for Seller Tracking
+    for col_tbl in [("stock", "seller_name"), ("delivery_archive", "seller_name"), ("uid_history", "seller_name")]:
+        try: cursor.execute(f"ALTER TABLE {col_tbl[0]} ADD COLUMN {col_tbl[1]} TEXT")
+        except: pass
+    for col in ["detected_uids", "seller_name"]:
+        try: cursor.execute(f"ALTER TABLE replace_requests ADD COLUMN {col} TEXT")
+        except: pass
+
+    # 1 VPN 2 Users Slot Sharing Pool
+    cursor.execute('''CREATE TABLE IF NOT EXISTS vpn_stock_pool (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vpn_id TEXT NOT NULL,
+        pkg_id TEXT NOT NULL,
+        service_code TEXT,
+        data TEXT NOT NULL,
+        delivered_count INTEGER DEFAULT 0,
+        api_order_id TEXT,
+        created_at INTEGER NOT NULL
+    )''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vpn_pool_lookup ON vpn_stock_pool(vpn_id, pkg_id, delivered_count)')
+
+    cursor.execute('''CREATE TABLE IF NOT EXISTS vpn_pool_deliveries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stock_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        order_id TEXT,
+        delivered_at INTEGER NOT NULL
+    )''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vpn_pool_deliv ON vpn_pool_deliveries(stock_id, user_id)')
+
     # Set Default Bot Status
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_status', 'open')")
 
@@ -1224,13 +1254,23 @@ async def admin_unban(message: types.Message, command: CommandObject, state: FSM
 async def admin_add_stock(message: types.Message, command: CommandObject, state: FSMContext):
     await state.clear()
     if not is_admin(message.from_user.id): return
-    if not command.args: return await message.answer("❌ `/add fb61 data` or `/add tempid data`")
+    if not command.args: return await message.answer("❌ ব্যবহার: `/add fb1000 data` অথবা `/add fb1000 seller=Rahim data`")
     try:
-        parts = command.args.split(maxsplit=1)
+        parts = command.args.split(maxsplit=2)
         category = parts[0].lower()
-        blocks = parts[1].split("###")
+        seller_name = None
+        data_text = ""
+        if len(parts) >= 3 and (parts[1].lower().startswith("seller=") or not any(c in parts[1] for c in [";", "@", "=", " "])):
+            seller_name = parts[1].split("=", 1)[1] if "=" in parts[1] else parts[1]
+            data_text = parts[2]
+        else:
+            subparts = command.args.split(maxsplit=1)
+            data_text = subparts[1]
+
+        blocks = data_text.split("###")
         conn = _dbc(); cursor = conn.cursor()
         count = 0
+        now_ts = int(time.time())
         for b in blocks:
             b = b.strip()
             if not b: continue 
@@ -1243,11 +1283,24 @@ async def admin_add_stock(message: types.Message, command: CommandObject, state:
                 else:
                      formatted = f"🆔 **FB ID:** `{tokens[0]}`\n🔑 **PASS:** `{tokens[1]}`\n🍪 **COOKIE:** `{' '.join(tokens[2:])}`"
                 
-                cursor.execute("INSERT INTO stock (category, data) VALUES (?, ?)", (category, formatted))
+                cursor.execute("INSERT INTO stock (category, data, seller_name) VALUES (?, ?, ?)", (category, formatted, seller_name))
+                try:
+                    cursor.execute("""
+                        INSERT INTO uid_history (uid, category, seller_name, first_uploaded_at, last_seen_at, upload_count)
+                        VALUES (?, ?, ?, ?, ?, 1)
+                        ON CONFLICT(uid) DO UPDATE SET
+                            seller_name = COALESCE(excluded.seller_name, uid_history.seller_name),
+                            last_seen_at = excluded.last_seen_at,
+                            upload_count = uid_history.upload_count + 1
+                    """, (tokens[0], category, seller_name, now_ts, now_ts))
+                except Exception:
+                    pass
                 count += 1
         conn.commit(); conn.close()
-        await message.answer(f"✅ Added {count} items to {category}")
-    except: await message.answer("❌ Error")
+        seller_msg = f" (Seller: `{seller_name}`)" if seller_name else ""
+        await message.answer(f"✅ Added {count} items to {category}{seller_msg}")
+    except Exception as e:
+        await message.answer(f"❌ Error: {e}")
 
 @dp.message(Command("addbm"))
 async def admin_add_bm_stock(message: types.Message, command: CommandObject, state: FSMContext):
@@ -1539,6 +1592,267 @@ async def vpn_api_sync_catalog():
     finally:
         conn.close()
 
+# --- SELLER TRACKING & UID EXTRACTION HELPERS ---
+
+def extract_uids_from_text(text: str) -> list[str]:
+    if not text:
+        return []
+    found = []
+    # Match standard FB UIDs (1000xxx, 615xxx, etc.) or general 9-18 digit IDs
+    matches = re.findall(r'\b(1000\d{7,13}|615\d{7,13}|61\d{8,13}|\d{10,18})\b', text)
+    for m in matches:
+        if m not in found:
+            found.append(m)
+    for line in text.splitlines():
+        line = line.strip()
+        if not line: continue
+        parts = re.split(r'[\s:,|]+', line)
+        first_token = parts[0].strip("`*#")
+        if first_token.isdigit() and 9 <= len(first_token) <= 18 and first_token not in found:
+            found.append(first_token)
+    return found
+
+def find_sellers_for_uids(uids: list[str]) -> dict[str, str]:
+    if not uids:
+        return {}
+    seller_map = {}
+    conn = _dbc()
+    try:
+        # 1. uid_history
+        for uid in uids:
+            row = conn.execute("SELECT seller_name FROM uid_history WHERE uid=? AND seller_name IS NOT NULL AND seller_name != '' LIMIT 1", (uid,)).fetchone()
+            if row and row[0]:
+                seller_map[uid] = row[0]
+        # 2. delivery_archive for missing
+        missing = [u for u in uids if u not in seller_map]
+        for uid in missing:
+            row = conn.execute("SELECT seller_name FROM delivery_archive WHERE data LIKE ? AND seller_name IS NOT NULL AND seller_name != '' ORDER BY id DESC LIMIT 1", (f"%{uid}%",)).fetchone()
+            if row and row[0]:
+                seller_map[uid] = row[0]
+        # 3. stock for any still missing
+        still_missing = [u for u in uids if u not in seller_map]
+        for uid in still_missing:
+            row = conn.execute("SELECT seller_name FROM stock WHERE data LIKE ? AND seller_name IS NOT NULL AND seller_name != '' ORDER BY id DESC LIMIT 1", (f"%{uid}%",)).fetchone()
+            if row and row[0]:
+                seller_map[uid] = row[0]
+    except Exception as e:
+        print(f"[find_sellers_for_uids] error: {e}")
+    finally:
+        conn.close()
+    return seller_map
+
+# --- VPN BALANCE ALERT & AUTO-FULFILLMENT WORKER ---
+
+_last_vpn_bal_alert = 0
+
+async def check_and_warn_vpn_balance(current_bal=None):
+    global _last_vpn_bal_alert
+    now = time.time()
+    try:
+        if current_bal is None:
+            res = await vpn_api_get_balance()
+            if res.get("status") == "success":
+                current_bal = float(res.get("balance", 0))
+            else:
+                return
+        if current_bal <= 50 and (now - _last_vpn_bal_alert) > 1800:
+            _last_vpn_bal_alert = now
+            conn = _dbc()
+            admins = conn.execute("SELECT user_id FROM admins").fetchall()
+            conn.close()
+            msg = (
+                f"⚠️ **VPN প্রোভাইডার ব্যালেন্স সতর্কবার্তা!** ⚠️\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 বর্তমান ব্যালেন্স: **{current_bal} BDT**\n"
+                f"🔌 প্রোভাইডার: `vpn.sajeebtechonline.top`\n\n"
+                f"⚠️ ব্যালেন্স কমে এসেছে বা শেষ হয়ে গেছে। অনুগ্রহ করে প্রোভাইডার অ্যাকাউন্টে ব্যালেন্স রিলোড করুন যাতে কাস্টমারদের অর্ডার আটকে না থাকে।"
+            )
+            for a in admins:
+                try: await bot.send_message(a[0], msg, parse_mode="Markdown")
+                except: pass
+    except Exception as e:
+        print(f"[vpn_bal_warn] error: {e}")
+
+async def vpn_auto_fulfill_worker():
+    await asyncio.sleep(15) # initial delay on boot
+    while True:
+        try:
+            await asyncio.sleep(60)
+            bal_res = await vpn_api_get_balance()
+            if bal_res.get("status") != "success":
+                continue
+            bal = float(bal_res.get("balance", 0))
+            if bal <= 50:
+                await check_and_warn_vpn_balance(bal)
+
+            conn = _dbc()
+            pending_orders = conn.execute(
+                """SELECT order_id, user_id, vpn_name, duration, price, api_service
+                   FROM vpn_orders
+                   WHERE status = 'pending' AND (admin_name IS NULL OR admin_name = 'None' OR admin_name = '' OR admin_name = 'API-PENDING')
+                   ORDER BY rowid ASC LIMIT 10"""
+            ).fetchall()
+            conn.close()
+
+            if not pending_orders:
+                continue
+
+            for p_order in pending_orders:
+                p_oid, p_uid, p_vname, p_dur, p_price, p_scode = p_order
+                conn = _dbc()
+                check = conn.execute("SELECT status, admin_name FROM vpn_orders WHERE order_id = ?", (p_oid,)).fetchone()
+                if not check or check[0] != 'pending' or (check[1] and check[1] not in ('None', '', 'API-PENDING')):
+                    conn.close()
+                    continue
+
+                v_id = re.sub(r'[^a-z0-9]', '', p_vname.lower().replace('vpn', ''))[:20] or 'vpn'
+                pkg_id = p_dur.lower().replace(' ', '')
+                m_d = re.search(r'(\d+)\s*(d|day|m|mo|month)', pkg_id)
+                unit = 'd'
+                if m_d:
+                    num = m_d.group(1)
+                    unit = 'm' if 'm' in m_d.group(2) else 'd'
+                    pkg_id = f"{num}{unit}"
+
+                now_ts = int(time.time())
+
+                # 1. First check slot sharing pool (1 VPN to 2 distinct users)
+                pool_row = conn.execute("""
+                    SELECT id, data, delivered_count FROM vpn_stock_pool
+                    WHERE vpn_id = ? AND pkg_id = ? AND delivered_count < 2
+                      AND id NOT IN (SELECT stock_id FROM vpn_pool_deliveries WHERE user_id = ?)
+                    ORDER BY delivered_count DESC, id ASC LIMIT 1
+                """, (v_id, pkg_id, p_uid)).fetchone()
+
+                if pool_row:
+                    pool_id, acc_data, deliv_count = pool_row
+                    conn.execute("UPDATE vpn_stock_pool SET delivered_count = delivered_count + 1 WHERE id = ?", (pool_id,))
+                    conn.execute("INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)", (pool_id, p_uid, p_oid, now_ts))
+                    conn.execute(
+                        "UPDATE vpn_orders SET status='delivered', admin_name='API-POOL-AUTO', api_status='completed', api_response=? WHERE order_id=?",
+                        (str(acc_data), p_oid)
+                    )
+                    conn.commit()
+                    conn.close()
+
+                    user_msg = (
+                        f"🎉 **আপনার VPN অর্ডার ডেলিভারি সম্পন্ন হয়েছে!** 🎉\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"🌐 **ব্র্যান্ড:** {p_vname}\n"
+                        f"📦 **প্যাকেজ:** {p_dur}\n"
+                        f"⚡ **ডেলিভারি মেথড:** Auto-Fulfilled\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"🔐 **আপনার একাউন্ট ডিটেইলস:**\n"
+                        f"```text\n{acc_data}\n```\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"🆔 Order: `{p_oid}`\n"
+                        f"💡 *(কপি করতে ওপরের বক্সে ক্লিক করুন)*"
+                    )
+                    try: await bot.send_message(p_uid, user_msg, parse_mode="Markdown")
+                    except:
+                        try: await bot.send_message(p_uid, user_msg)
+                        except: pass
+                    continue
+
+                # 2. Check if provider API has enough balance
+                svc_row = None
+                if p_scode:
+                    svc_row = conn.execute("SELECT service, rate, name FROM vpn_api_services WHERE service=?", (p_scode,)).fetchone()
+                if not svc_row:
+                    svc_row = conn.execute(
+                        "SELECT service, rate, name FROM vpn_api_services WHERE (vpn_id=? OR LOWER(name) LIKE ?) AND (pkg_id=? OR days=?) LIMIT 1",
+                        (v_id, f"%{v_id}%", pkg_id, int(m_d.group(1)) if m_d and unit == 'd' else 0)
+                    ).fetchone()
+
+                if not svc_row:
+                    conn.close()
+                    continue
+
+                svc_code, svc_rate, svc_name = svc_row
+                if bal < svc_rate:
+                    conn.close()
+                    await check_and_warn_vpn_balance(bal)
+                    break
+
+                conn.close()
+                api_order_resp = await vpn_api_place_order(svc_code, 1)
+                if api_order_resp.get("status") == "success":
+                    api_oid = str(api_order_resp.get("order") or api_order_resp.get("order_id") or "")
+                    account_data = (
+                        api_order_resp.get("data")
+                        or api_order_resp.get("account")
+                        or api_order_resp.get("credentials")
+                        or api_order_resp.get("code")
+                        or api_order_resp.get("text")
+                    )
+
+                    if not account_data and api_oid:
+                        for _ in range(3):
+                            await asyncio.sleep(2)
+                            st_resp = await vpn_api_get_order_status(api_oid)
+                            if st_resp:
+                                account_data = (
+                                    st_resp.get("data")
+                                    or st_resp.get("account")
+                                    or st_resp.get("credentials")
+                                    or st_resp.get("code")
+                                    or st_resp.get("text")
+                                )
+                                if account_data: break
+
+                    if account_data:
+                        conn = _dbc()
+                        cur = conn.execute(
+                            "INSERT INTO vpn_stock_pool (vpn_id, pkg_id, service_code, data, delivered_count, api_order_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+                            (v_id, pkg_id, svc_code, str(account_data), api_oid, now_ts)
+                        )
+                        new_pool_id = cur.lastrowid
+                        conn.execute("INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)", (new_pool_id, p_uid, p_oid, now_ts))
+                        conn.execute(
+                            "UPDATE vpn_orders SET status='delivered', admin_name='API-AUTO', api_order_id=?, api_service=?, api_status='completed', api_response=? WHERE order_id=?",
+                            (api_oid, svc_code, str(account_data), p_oid)
+                        )
+                        conn.commit()
+                        conn.close()
+
+                        user_msg = (
+                            f"🎉 **আপনার VPN অর্ডার ডেলিভারি সম্পন্ন হয়েছে!** 🎉\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                            f"🌐 **ব্র্যান্ড:** {p_vname}\n"
+                            f"📦 **প্যাকেজ:** {p_dur}\n"
+                            f"⚡ **ডেলিভারি মেথড:** Auto-Fulfilled via API\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                            f"🔐 **আপনার একাউন্ট ডিটেইলস:**\n"
+                            f"```text\n{account_data}\n```\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                            f"🆔 Order: `{p_oid}` | API Ref: `#{api_oid}`\n"
+                            f"💡 *(কপি করতে ওপরের বক্সে ক্লিক করুন)*"
+                        )
+                        try: await bot.send_message(p_uid, user_msg, parse_mode="Markdown")
+                        except:
+                            try: await bot.send_message(p_uid, user_msg)
+                            except: pass
+
+                        admin_note = f"⚡ **Pending VPN Order Auto-Delivered!**\nOrder `{p_oid}` for User `{p_uid}` ({p_vname} {p_dur}) was fulfilled via API after balance recharge."
+                        conn = _dbc()
+                        admins = conn.execute("SELECT user_id FROM admins").fetchall()
+                        conn.close()
+                        for a in admins:
+                            try: await bot.send_message(a[0], admin_note)
+                            except: pass
+                        bal -= svc_rate
+                    elif api_oid:
+                        asyncio.create_task(poll_and_deliver_api_vpn_order(p_oid, api_oid, p_uid, p_vname, p_dur, "🌐", p_price))
+                else:
+                    err_msg = api_order_resp.get("message", "API Error")
+                    print(f"[vpn_auto_fulfill] API failed for {p_oid}: {err_msg}")
+                    if "balance" in err_msg.lower():
+                        await check_and_warn_vpn_balance(0)
+                        break
+
+        except Exception as e:
+            print(f"[vpn_auto_fulfill_worker] error: {e}")
+
 # --- VPN ADMIN COMMANDS ---
 
 @dp.message(Command("vpnbal"))
@@ -1574,6 +1888,48 @@ async def admin_vpn_sync(message: types.Message):
             f"💡 ক্যাটালগ ও প্যাকেজে নতুন সার্ভিস যুক্ত হয়েছে।",
             parse_mode="Markdown"
         )
+
+@dp.message(Command("sellerreport"))
+async def admin_seller_report_cmd(message: types.Message, state: FSMContext):
+    await state.clear()
+    if not is_admin(message.from_user.id): return
+
+    conn = _dbc()
+    pending = conn.execute("SELECT id, old_data, seller_name FROM replace_requests WHERE status='pending'").fetchall()
+    conn.close()
+
+    if not pending:
+        return await message.answer("✅ বর্তমানে কোনো পেন্ডিং রিপ্লেস রিকোয়েস্ট নেই!")
+
+    all_uids = []
+    pairs = []
+    for r_id, old_data, s_name in pending:
+        uids = extract_uids_from_text(old_data)
+        for u in uids:
+            all_uids.append(u)
+            pairs.append((u, s_name))
+
+    s_map = find_sellers_for_uids(all_uids)
+    grouped = {}
+    for u, fallback in pairs:
+        seller = s_map.get(u) or fallback or "Unassigned"
+        if seller not in grouped:
+            grouped[seller] = []
+        if u not in grouped[seller]:
+            grouped[seller].append(u)
+
+    msg = "📋 **Seller-wise Broken UIDs Report** 📋\n━━━━━━━━━━━━━━━━━━━━\n"
+    for s_name, u_list in sorted(grouped.items(), key=lambda x: len(x[1]), reverse=True):
+        msg += f"👤 **Seller: {s_name}** ({len(u_list)} pcs)\n"
+        for u in u_list:
+            msg += f"`{u}`\n"
+        msg += "\n"
+
+    if len(msg) > 4000:
+        for x in range(0, len(msg), 4000):
+            await message.answer(msg[x:x+4000], parse_mode="Markdown")
+    else:
+        await message.answer(msg, parse_mode="Markdown")
 
 @dp.message(Command("listvpn"))
 async def admin_list_vpn(message: types.Message, state: FSMContext):
@@ -1836,7 +2192,7 @@ async def process_buy(m: types.Message, state: FSMContext):
             return
 
         conn = _dbc(); cursor = conn.cursor()
-        items = cursor.execute("SELECT id, data FROM stock WHERE category=? LIMIT ?", (cat, qty)).fetchall()
+        items = cursor.execute("SELECT id, data, seller_name FROM stock WHERE category=? LIMIT ?", (cat, qty)).fetchall()
         if len(items) < qty: conn.close(); return await m.answer(f"❌ স্টক নেই! আছে: {len(items)}টি")
 
         # [BUYLIMIT_HOOK] 10 pcs / 10 min (FB 1000xx only)
@@ -1874,10 +2230,11 @@ async def process_buy(m: types.Message, state: FSMContext):
         for i in items:
             cursor.execute("DELETE FROM stock WHERE id = ?", (i[0],))
             _delivered.append((i[0], i[1]))
+            s_name = i[2] if len(i) > 2 else None
             try:
                 conn.execute(
-                    "INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (_sale_id, m.from_user.id, _uname, cat, i[0], i[1], 'bot', _now_ts),
+                    "INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at, seller_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (_sale_id, m.from_user.id, _uname, cat, i[0], i[1], 'bot', _now_ts, s_name),
                 )
             except Exception:
                 pass
@@ -2545,7 +2902,82 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
         conn.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (price, c.from_user.id))
         conn.commit()
 
-        # Place order on Provider API
+        # === 1 VPN 2 USERS SLOT SHARING POOL CHECK ===
+        # Deliver slot 2 if an account exists that was not given to this user
+        pool_row = conn.execute("""
+            SELECT id, data, delivered_count, api_order_id FROM vpn_stock_pool
+            WHERE vpn_id = ? AND pkg_id = ? AND delivered_count < 2
+              AND id NOT IN (SELECT stock_id FROM vpn_pool_deliveries WHERE user_id = ?)
+            ORDER BY delivered_count DESC, id ASC LIMIT 1
+        """, (vpn_id, pkg_id, c.from_user.id)).fetchone()
+
+        if pool_row:
+            pool_id, account_data, deliv_count, pool_api_oid = pool_row
+            conn.execute("UPDATE vpn_stock_pool SET delivered_count = delivered_count + 1 WHERE id = ?", (pool_id,))
+            conn.execute("INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)",
+                         (pool_id, c.from_user.id, order_id, now_ts))
+            conn.execute(
+                """INSERT INTO vpn_orders
+                   (order_id, user_id, vpn_name, duration, price, status, date, admin_name, api_order_id, api_service, api_status, api_response)
+                   VALUES (?, ?, ?, ?, ?, 'delivered', ?, 'API-POOL-2/2', ?, ?, 'completed', ?)""",
+                (order_id, c.from_user.id, vpn_name, pkg_name, price, datetime.now().strftime("%Y-%m-%d"),
+                 pool_api_oid or 'POOLED', s_code, str(account_data))
+            )
+            conn.execute(
+                "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (c.from_user.id, username_display, f"VPN: {vpn_name}", 1, price, datetime.now().strftime("%Y-%m-%d"), current_time)
+            )
+            try:
+                conn.execute(
+                    "INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (None, c.from_user.id, (f"@{c.from_user.username}" if c.from_user.username else None),
+                     f"VPN: {vpn_name}", None, str(account_data), 'vpn-pool-2/2', now_ts)
+                )
+            except Exception:
+                pass
+            conn.commit()
+            conn.close()
+
+            # Deliver to user
+            user_delivery_msg = (
+                f"🎉 **আপনার VPN অর্ডার ডেলিভারি সম্পন্ন হয়েছে!** 🎉\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"{emoji} **ব্র্যান্ড:** {vpn_name}\n"
+                f"📦 **প্যাকেজ:** {pkg_name}\n"
+                f"⚡ **ডেলিভারি মেথড:** Instant Verified Delivery\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"🔐 **আপনার একাউন্ট ডিটেইলস:**\n"
+                f"```text\n{account_data}\n```\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"🆔 Order: `{order_id}`\n"
+                f"💡 *(কপি করতে ওপরের বক্সে ক্লিক করুন)*\n"
+                f"💙 ধন্যবাদ আমাদের সাথে থাকার জন্য!"
+            )
+            try: await c.message.answer(user_delivery_msg, parse_mode="Markdown")
+            except: await c.message.answer(user_delivery_msg)
+
+            # Notify admins of pool delivery (zero provider API cost)
+            try:
+                _c2 = _dbc()
+                admins = _c2.execute("SELECT user_id FROM admins").fetchall()
+                _c2.close()
+            except: admins = []
+            admin_alert = (
+                f"💎 **VPN DELIVERED FROM POOL (Slot 2/2 — 100% Margin)** 💎\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"👤 **Customer:** {real_name} ({username_display})\n"
+                f"🆔 **User ID:** `{c.from_user.id}`\n"
+                f"{emoji} **Product:** {vpn_name} — {pkg_name}\n"
+                f"💰 **Sold For:** {price}৳ | **API Cost:** 0৳ (Shared 2nd Slot)\n"
+                f"🆔 **Order:** `{order_id}`\n"
+                f"✅ **Status:** Instant Delivered (Zero Cost!)"
+            )
+            for a in admins:
+                try: await bot.send_message(a[0], admin_alert)
+                except: pass
+            return
+
+        # Place order on Provider API (Slot 1)
         api_order_resp = await vpn_api_place_order(service_code=s_code, quantity=1)
         api_status_code = api_order_resp.get("status")
         api_err_msg = api_order_resp.get("message", "Unknown error")
@@ -2576,11 +3008,22 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                         break
 
             if account_data:
-                # INSTANT DELIVERY SUCCESS
+                # INSTANT DELIVERY SUCCESS -> SAVE TO POOL (delivered_count = 1)
+                try:
+                    cur = conn.execute(
+                        "INSERT INTO vpn_stock_pool (vpn_id, pkg_id, service_code, data, delivered_count, api_order_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+                        (vpn_id, pkg_id, s_code, str(account_data), api_order_id, now_ts)
+                    )
+                    new_pool_id = cur.lastrowid
+                    conn.execute("INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)",
+                                 (new_pool_id, c.from_user.id, order_id, now_ts))
+                except Exception as _ep:
+                    print(f"[vpn_pool_insert] error: {_ep}")
+
                 conn.execute(
                     """INSERT INTO vpn_orders
                        (order_id, user_id, vpn_name, duration, price, status, date, admin_name, api_order_id, api_service, api_status, api_response)
-                       VALUES (?, ?, ?, ?, ?, 'delivered', ?, 'API-AUTO', ?, ?, 'completed', ?)""",
+                       VALUES (?, ?, ?, ?, ?, 'delivered', ?, 'API-POOL-1/2', ?, ?, 'completed', ?)""",
                     (order_id, c.from_user.id, vpn_name, pkg_name, price, datetime.now().strftime("%Y-%m-%d"),
                      api_order_id, s_code, str(account_data))
                 )
@@ -2803,8 +3246,30 @@ async def poll_and_deliver_api_vpn_order(order_id, api_order_id, user_id, vpn_na
                 return
             now_ts = int(datetime.now().timestamp())
             cur_time = datetime.now(timezone(timedelta(hours=6))).strftime("%I:%M %p")
+
+            # Save into 2-user slot sharing pool
+            v_id = re.sub(r'[^a-z0-9]', '', vpn_name.lower().replace('vpn', ''))[:20] or 'vpn'
+            pkg_id_clean = pkg_name.lower().replace(' ', '')
+            m_d = re.search(r'(\d+)\s*(d|day|m|mo|month)', pkg_id_clean)
+            if m_d:
+                num = m_d.group(1)
+                unit = 'm' if 'm' in m_d.group(2) else 'd'
+                pkg_id_clean = f"{num}{unit}"
+            try:
+                cur = conn.execute(
+                    "INSERT INTO vpn_stock_pool (vpn_id, pkg_id, service_code, data, delivered_count, api_order_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+                    (v_id, pkg_id_clean, None, str(account_data), api_order_id, now_ts)
+                )
+                new_pool_id = cur.lastrowid
+                conn.execute(
+                    "INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)",
+                    (new_pool_id, user_id, order_id, now_ts)
+                )
+            except Exception as _epool:
+                print(f"[vpn_pool_poll] save failed: {_epool}")
+
             conn.execute(
-                "UPDATE vpn_orders SET status='delivered', admin_name='API-AUTO', api_status='completed', api_response=? WHERE order_id=?",
+                "UPDATE vpn_orders SET status='delivered', admin_name='API-POOL-1/2', api_status='completed', api_response=? WHERE order_id=?",
                 (str(account_data), order_id)
             )
             conn.execute(
@@ -3375,9 +3840,17 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         _rep_uname = f"@{m.from_user.username}" if m.from_user.username else (m.from_user.first_name or f"User_{m.from_user.id}")
         rep_cat = st_data.get("replace_cat", "fb1000")
         db_cat_label = "1000xxx PC clon{Content Used}" if (rep_cat == "fb1000_used" or "used" in str(rep_cat).lower()) else ({"fb61":"FB 61","fb1000":"FB 1000 Fresh","tempid":"Temp ID"}.get(rep_cat, rep_cat))
+
+        # Extract UIDs and find sellers
+        detected_uids = extract_uids_from_text(user_data_text)
+        uid_seller_map = find_sellers_for_uids(detected_uids)
+        detected_sellers = list(set(uid_seller_map.values()))
+        seller_summary = ", ".join(detected_sellers) if detected_sellers else None
+        detected_uids_str = ",".join(detected_uids) if detected_uids else None
+
         conn.execute(
-            "INSERT INTO replace_requests (user_id, username, category, old_data, reason, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
-            (m.from_user.id, _rep_uname, db_cat_label, user_data_text, f"Ticket #{ticket_id} ({order_ref})", _rep_ts)
+            "INSERT INTO replace_requests (user_id, username, category, old_data, reason, status, created_at, detected_uids, seller_name) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
+            (m.from_user.id, _rep_uname, db_cat_label, user_data_text, f"Ticket #{ticket_id} ({order_ref})", _rep_ts, detected_uids_str, seller_summary)
         )
         conn.commit()
     except Exception as e:
@@ -3392,11 +3865,15 @@ async def process_replace_request(m: types.Message, state: FSMContext):
     short_text = user_data_text[:60] + "..." if len(user_data_text) > 60 else user_data_text
     is_used_cat = (rep_cat == "fb1000_used" or "used" in str(rep_cat).lower())
     cat_badge = "🎬 **Category: 1000xxx PC clon{Content Used}**\n⚠️ *[Content Used Section — 2h Limit]*\n" if is_used_cat else f"🏷️ **Category:** {db_cat_label}\n"
-    
+    seller_line = f"👤 **Seller:** `{seller_summary}`\n" if seller_summary else ""
+    uid_line = f"🆔 **Detected UIDs:** `{', '.join(detected_uids[:4])}{'...' if len(detected_uids)>4 else ''}`\n" if detected_uids else ""
+
     admin_msg = (
         f"🚨 **NEW REPLACE REQUEST • {BOT_VERSION}** 🚨\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"{cat_badge}"
+        f"{seller_line}"
+        f"{uid_line}"
         f"📦 **{order_ref}** ({qty} pcs | Tier: {allowed_h}h)\n"
         f"👤 **Name:** {m.from_user.first_name}\n"
         f"🔗 **User:** {username_display}\n"
@@ -4114,6 +4591,7 @@ async def main():
     init_db()
     try:
         asyncio.create_task(vpn_api_sync_catalog())
+        asyncio.create_task(vpn_auto_fulfill_worker())
     except Exception as _e_sync:
         print("[vpn_api_sync] startup sync error:", _e_sync)
     await bot.delete_webhook(drop_pending_updates=True)

@@ -49,6 +49,73 @@ async function sendDocumentToUser(userId, buffer, filename, caption = '') {
   }
 }
 
+function extractUidsFromText(text) {
+  if (!text) return [];
+  const found = new Set();
+  const re = /\b(1000\d{7,13}|615\d{7,13}|61\d{8,13}|\d{10,18})\b/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    found.add(m[1]);
+  }
+  const lines = text.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const parts = trimmed.split(/[\s:,|]+/);
+    const firstToken = (parts[0] || '').replace(/[`*#]/g, '');
+    if (/^\d{9,18}$/.test(firstToken)) {
+      found.add(firstToken);
+    }
+  }
+  return Array.from(found);
+}
+
+function findSellersForUids(uids) {
+  if (!uids || !uids.length) return new Map();
+  const sellerMap = new Map();
+  
+  // 1. Check uid_history
+  const placeholders = uids.map(() => '?').join(',');
+  try {
+    const histRows = db.prepare(
+      `SELECT uid, seller_name FROM uid_history WHERE uid IN (${placeholders}) AND seller_name IS NOT NULL AND seller_name != ''`
+    ).all(...uids);
+    for (const r of histRows) {
+      if (r.seller_name) sellerMap.set(r.uid, r.seller_name);
+    }
+  } catch (_) {}
+
+  // 2. Check delivery_archive for missing ones
+  const missingFromHist = uids.filter(u => !sellerMap.has(u));
+  if (missingFromHist.length) {
+    try {
+      const delivStmt = db.prepare(
+        `SELECT seller_name FROM delivery_archive WHERE data LIKE ? AND seller_name IS NOT NULL AND seller_name != '' ORDER BY id DESC LIMIT 1`
+      );
+      for (const uid of missingFromHist) {
+        const row = delivStmt.get(`%${uid}%`);
+        if (row && row.seller_name) sellerMap.set(uid, row.seller_name);
+      }
+    } catch (_) {}
+  }
+
+  // 3. Check stock for any still missing
+  const stillMissing = uids.filter(u => !sellerMap.has(u));
+  if (stillMissing.length) {
+    try {
+      const stockStmt = db.prepare(
+        `SELECT seller_name FROM stock WHERE data LIKE ? AND seller_name IS NOT NULL AND seller_name != '' ORDER BY id DESC LIMIT 1`
+      );
+      for (const uid of stillMissing) {
+        const row = stockStmt.get(`%${uid}%`);
+        if (row && row.seller_name) sellerMap.set(uid, row.seller_name);
+      }
+    } catch (_) {}
+  }
+
+  return sellerMap;
+}
+
 // GET list of replace requests
 router.get('/', (req, res) => {
   const status = req.query.status || 'pending';
@@ -72,6 +139,53 @@ router.get('/', (req, res) => {
   sql += ' ORDER BY created_at DESC LIMIT 500';
 
   const rows = db.prepare(sql).all(...params);
+
+  // Extract UIDs and find sellers for visible rows
+  const allRowUids = [];
+  rows.forEach(r => {
+    r.detectedUids = extractUidsFromText(r.old_data);
+    allRowUids.push(...r.detectedUids);
+  });
+  const rowSellerMap = findSellersForUids(allRowUids);
+  rows.forEach(r => {
+    const foundSellers = Array.from(new Set(r.detectedUids.map(u => rowSellerMap.get(u)).filter(Boolean)));
+    r.sellers = foundSellers.length ? foundSellers : (r.seller_name ? [r.seller_name] : []);
+    r.primarySeller = r.sellers[0] || r.seller_name || null;
+  });
+
+  // Build aggregate Seller-wise Replace Report across all pending requests
+  const pendingRequests = db.prepare("SELECT id, old_data, seller_name FROM replace_requests WHERE status='pending'").all();
+  const allPendingUids = [];
+  const reqUidPairs = [];
+  pendingRequests.forEach(req => {
+    const uids = extractUidsFromText(req.old_data);
+    uids.forEach(uid => {
+      allPendingUids.push(uid);
+      reqUidPairs.push({ reqId: req.id, uid, fallbackSeller: req.seller_name });
+    });
+  });
+  const pendingSellerMap = findSellersForUids(allPendingUids);
+
+  const sellerGroups = {};
+  reqUidPairs.forEach(({ reqId, uid, fallbackSeller }) => {
+    const sName = pendingSellerMap.get(uid) || fallbackSeller || 'Unassigned (সেলার ছাড়া)';
+    if (!sellerGroups[sName]) {
+      sellerGroups[sName] = { seller: sName, uids: [], requestIds: new Set() };
+    }
+    if (!sellerGroups[sName].uids.includes(uid)) {
+      sellerGroups[sName].uids.push(uid);
+    }
+    sellerGroups[sName].requestIds.add(reqId);
+  });
+
+  const sellerReports = Object.values(sellerGroups).map(g => ({
+    seller: g.seller,
+    count: g.uids.length,
+    uids: g.uids,
+    uidsText: g.uids.join('\n'),
+    requestCount: g.requestIds.size,
+  })).sort((a, b) => b.count - a.count);
+
   const counts = {
     pending: db.prepare("SELECT COUNT(*) AS c FROM replace_requests WHERE status='pending'").get().c,
     replaced: db.prepare("SELECT COUNT(*) AS c FROM replace_requests WHERE status='replaced'").get().c,
@@ -84,7 +198,7 @@ router.get('/', (req, res) => {
     fb1000: db.prepare("SELECT COUNT(*) AS c FROM stock WHERE category='fb1000'").get().c,
     fb61: db.prepare("SELECT COUNT(*) AS c FROM stock WHERE category='fb61'").get().c,
   };
-  res.render('replace', { rows, status, counts, q, cat, stockCounts, msg: req.query.msg || null });
+  res.render('replace', { rows, status, counts, q, cat, stockCounts, sellerReports, msg: req.query.msg || null });
 });
 
 // GET full data by ID (for modal viewer to avoid HTML attribute escaping issues)

@@ -44,12 +44,19 @@
     </div>
     <div class="max-h-64 overflow-y-auto bg-slate-950 rounded p-2 mb-3">
       <table class="w-full text-xs">
-        <thead><tr><th>#</th><th>Category</th><th>UID Status</th><th>Data (UID PASS COOKIES)</th></tr></thead>
+        <thead><tr><th>#</th><th>Category</th><th>Seller</th><th>UID Status</th><th>Data (UID PASS COOKIES)</th></tr></thead>
         <tbody>
           <% preview.forEach(function(p, i){ %>
             <tr>
               <td class="text-slate-500"><%= i+1 %></td>
               <td class="text-cyan-400"><%= p.category %></td>
+              <td>
+                <% if (p.seller_name) { %>
+                  <span class="bg-indigo-900/60 border border-indigo-700 text-indigo-200 px-1.5 py-0.5 rounded text-[10px] font-bold">👤 <%= p.seller_name %></span>
+                <% } else { %>
+                  <span class="text-slate-600 text-[10px]">—</span>
+                <% } %>
+              </td>
               <td>
                 <% if (p.previouslyUploaded) { %>
                   <span class="bg-orange-900/60 border border-orange-700 text-orange-200 px-1.5 py-0.5 rounded text-[10px]" title="First uploaded: <%= new Date(p.firstUploadedAt).toLocaleString() %>">⚠ OLD ×<%= p.uploadCount %></span>
@@ -93,6 +100,10 @@
       <% }) %>
     </select>
 
+    <label class="text-xs text-slate-400 block mb-1">👤 Seller Name (সেলার নাম - ঐচ্ছিক):</label>
+    <input type="text" name="seller_name" placeholder="যেমন: Arif, Rahim, Seller-1"
+      class="w-full bg-slate-800 border border-slate-700 text-slate-200 placeholder-slate-500 rounded px-3 py-2 text-sm mb-3 outline-none focus:border-cyan-500"/>
+
     <input type="file" name="file" accept=".xlsx,.xls" required
       class="w-full text-sm text-slate-300 file:mr-3 file:bg-cyan-600 file:text-white file:border-0 file:px-3 file:py-1.5 file:rounded mb-3"/>
     <button class="w-full bg-cyan-600 hover:bg-cyan-500 py-2 rounded text-sm font-semibold">Upload & Preview</button>
@@ -113,7 +124,11 @@
       <% }) %>
     </select>
 
-    <textarea name="data" required rows="8"
+    <label class="text-xs text-slate-400 block mb-1">👤 Seller Name (সেলার নাম - ঐচ্ছিক):</label>
+    <input type="text" name="seller_name" placeholder="যেমন: Arif, Rahim, Seller-1"
+      class="w-full bg-slate-800 border border-slate-700 text-slate-200 placeholder-slate-500 rounded px-3 py-2 text-sm mb-3 outline-none focus:border-cyan-500"/>
+
+    <textarea name="data" required rows="6"
       placeholder="100011382171459 Sabbir@25 datr=ODPsaT...; c_user=100011382171459; xs=33%3A...&#10;100011382171460 OtherPass cookies-here..."
       class="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-xs font-mono mb-3"></textarea>
 
@@ -201,10 +216,21 @@
     <div class="px-4 py-3 border-b border-slate-800 text-sm font-semibold">📜 Recent Stock</div>
     <div class="max-h-96 overflow-y-auto">
       <table class="w-full text-xs">
-        <thead><tr><th>ID</th><th>Cat</th><th>Preview</th></tr></thead>
+        <thead><tr><th>ID</th><th>Cat</th><th>Seller</th><th>Preview</th></tr></thead>
         <tbody>
           <% recent.forEach(function(r){ %>
-            <tr><td class="text-slate-500">#<%= r.id %></td><td class="text-cyan-400"><%= r.category %></td><td class="font-mono text-slate-400"><%= r.preview %></td></tr>
+            <tr>
+              <td class="text-slate-500">#<%= r.id %></td>
+              <td class="text-cyan-400"><%= r.category %></td>
+              <td>
+                <% if (r.seller_name) { %>
+                  <span class="bg-indigo-900/40 border border-indigo-700/60 text-indigo-200 px-1.5 py-0.5 rounded text-[10px] font-bold">👤 <%= r.seller_name %></span>
+                <% } else { %>
+                  <span class="text-slate-600 text-[10px]">—</span>
+                <% } %>
+              </td>
+              <td class="font-mono text-slate-400"><%= r.preview %></td>
+            </tr>
           <% }) %>
         </tbody>
       </table>

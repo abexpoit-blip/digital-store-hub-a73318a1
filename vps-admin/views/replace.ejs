@@ -69,6 +69,74 @@
   </a>
 </div>
 
+<!-- SELLER-WISE REPLACE REPORT (সেলারভিত্তিক নষ্ট অ্যাকাউন্টের UID লিস্ট) -->
+<% if (typeof sellerReports !== 'undefined' && sellerReports.length) { %>
+  <div class="bg-gradient-to-r from-sky-50 to-indigo-50/60 border border-sky-200/80 rounded-2xl p-5 mb-6 shadow-xs">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+      <div>
+        <h2 class="text-base font-extrabold text-slate-900 flex items-center gap-2">
+          <span>📋</span>
+          <span>Seller-wise Replace Report (সেলারভিত্তিক নষ্ট আইডি লিস্ট)</span>
+          <span class="bg-sky-600 text-white text-[11px] font-bold px-2 py-0.5 rounded-full">
+            <%= sellerReports.length %> Sellers
+          </span>
+        </h2>
+        <p class="text-xs text-slate-600 mt-0.5">
+          Pending ক্লেইমগুলো থেকে UID স্বয়ংক্রিয়ভাবে ডিটেক্ট করে সেলারভিত্তিক আলাদা করা হয়েছে। এক ক্লিকে UID কপি করে সরাসরি সেলারকে রিপোর্ট দিন।
+        </p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <% sellerReports.forEach(function(sr, sIdx){ %>
+        <div class="bg-white border border-sky-200 rounded-xl p-4 shadow-xs hover:border-sky-300 transition flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm shrink-0">
+                  <%= sr.seller.slice(0, 1).toUpperCase() %>
+                </span>
+                <div class="min-w-0">
+                  <div class="font-extrabold text-slate-900 text-sm truncate" title="<%= sr.seller %>">
+                    <%= sr.seller %>
+                  </div>
+                  <div class="text-[11px] text-slate-500 font-medium">
+                    <%= sr.requestCount %> Claims • <span class="text-indigo-600 font-bold"><%= sr.count %> Broken UIDs</span>
+                  </div>
+                </div>
+              </div>
+              <span class="bg-rose-50 text-rose-700 border border-rose-200 text-xs font-mono font-bold px-2 py-0.5 rounded-md">
+                <%= sr.count %> pcs
+              </span>
+            </div>
+
+            <!-- UIDs Preview Box -->
+            <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 max-h-32 overflow-y-auto mb-3 font-mono text-[11px] text-slate-700 select-all">
+              <% sr.uids.forEach(function(u){ %>
+                <div class="hover:text-sky-700 hover:font-bold"><%= u %></div>
+              <% }) %>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 pt-2 border-t border-slate-100">
+            <button type="button"
+                    onclick="copySellerUids('<%= sr.seller.replace(/'/g, "\\'") %>', <%= JSON.stringify(sr.uidsText) %>)"
+                    class="flex-1 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-bold py-2 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-xs transition">
+              <span>📋</span> Copy All <%= sr.count %> UIDs
+            </button>
+            <button type="button"
+                    onclick="downloadSellerUids('<%= sr.seller.replace(/'/g, "\\'") %>', <%= JSON.stringify(sr.uidsText) %>)"
+                    class="bg-white border border-sky-300 hover:bg-sky-50 text-sky-800 font-bold py-2 px-3 rounded-lg text-xs flex items-center justify-center gap-1 shadow-xs transition"
+                    title="Download as .txt">
+              <span>💾</span>
+            </button>
+          </div>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+<% } %>
+
 <form id="bulkActionForm" method="post" action="/replace/bulk/delete-selected">
 <!-- Bulk Action Toolbar & Search Bar -->
 <div class="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -160,10 +228,29 @@
             <% } %>
           </td>
           <td class="py-3 px-4 align-top">
+            <% if (r.primarySeller) { %>
+              <div class="inline-flex items-center gap-1 bg-indigo-50 border border-indigo-200 text-indigo-800 text-[10px] font-bold px-2 py-0.5 rounded-md mb-1.5 shadow-2xs">
+                <span>👤</span> Seller: <%= r.sellers.join(', ') %>
+              </div>
+            <% } %>
             <div class="font-mono text-xs text-slate-700 max-w-xs md:max-w-sm truncate">
               <%= (r.old_data || '-').split('\n')[0].slice(0, 55) %>
             </div>
-            <button type="button" class="mt-1 text-[11px] text-sky-600 hover:text-sky-800 font-bold flex items-center gap-1"
+            <% if (r.detectedUids && r.detectedUids.length) { %>
+              <div class="flex flex-wrap gap-1 mt-1.5">
+                <% r.detectedUids.slice(0, 3).forEach(function(u){ %>
+                  <span class="bg-slate-100 hover:bg-sky-50 text-slate-700 hover:text-sky-700 border border-slate-200 font-mono text-[10px] px-1.5 py-0.2 rounded cursor-pointer transition"
+                        onclick="navigator.clipboard.writeText('<%= u %>'); alert('Copied UID: <%= u %>');"
+                        title="Click to copy UID">
+                    <%= u %>
+                  </span>
+                <% }) %>
+                <% if (r.detectedUids.length > 3) { %>
+                  <span class="text-[10px] text-slate-400 font-medium">+<%= r.detectedUids.length - 3 %> more</span>
+                <% } %>
+              </div>
+            <% } %>
+            <button type="button" class="mt-1.5 text-[11px] text-sky-600 hover:text-sky-800 font-bold flex items-center gap-1"
                     onclick="openViewer(<%= r.id %>)">
               <span>🔍</span> See Full Details (<%= (r.old_data || '').split('\n').filter(Boolean).length %> accounts)
             </button>
@@ -494,6 +581,44 @@
   function copyViewerText() {
     var text = document.getElementById('viewerContent').textContent;
     navigator.clipboard.writeText(text).then(function(){ alert('Copied to clipboard ✅'); });
+  }
+
+  function copySellerUids(sellerName, uidsText) {
+    if (!uidsText) return alert('কোনো UID পাওয়া যায়নি');
+    var count = uidsText.split('\n').filter(Boolean).length;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(uidsText).then(function(){
+        alert('✅ ' + sellerName + ' এর ' + count + ' টি UID ক্লিপবোর্ডে কপি করা হয়েছে!');
+      }).catch(function(){
+        fallbackCopyText(uidsText, sellerName, count);
+      });
+    } else {
+      fallbackCopyText(uidsText, sellerName, count);
+    }
+  }
+
+  function fallbackCopyText(text, sellerName, count) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    alert('✅ ' + sellerName + ' এর ' + count + ' টি UID ক্লিপবোর্ডে কপি করা হয়েছে!');
+  }
+
+  function downloadSellerUids(sellerName, uidsText) {
+    if (!uidsText) return alert('কোনো UID পাওয়া যায়নি');
+    var blob = new Blob([uidsText], { type: 'text/plain;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    var safeName = sellerName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    a.href = url;
+    a.download = 'broken_uids_' + safeName + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   document.addEventListener('keydown', function(e){

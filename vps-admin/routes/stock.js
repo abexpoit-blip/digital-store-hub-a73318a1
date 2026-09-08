@@ -25,19 +25,21 @@ function findHistoryMatches(uids) {
   return new Map(rows.map(r => [r.uid, r]));
 }
 
-function recordUidHistory(items) {
+function recordUidHistory(items, defaultSeller = null) {
   const now = Date.now();
   const up = db.prepare(`
-    INSERT INTO uid_history (uid, category, first_uploaded_at, last_seen_at, upload_count)
-    VALUES (?, ?, ?, ?, 1)
+    INSERT INTO uid_history (uid, category, seller_name, first_uploaded_at, last_seen_at, upload_count)
+    VALUES (?, ?, ?, ?, ?, 1)
     ON CONFLICT(uid) DO UPDATE SET
+      seller_name = COALESCE(excluded.seller_name, uid_history.seller_name),
       last_seen_at = excluded.last_seen_at,
       upload_count = uid_history.upload_count + 1
   `);
   const tx = db.transaction((arr) => {
     for (const it of arr) {
       const uid = extractUid(it.data || it);
-      if (uid) up.run(uid, it.category || null, now, now);
+      const seller = it.seller_name || defaultSeller || null;
+      if (uid) up.run(uid, it.category || null, seller, now, now);
     }
   });
   tx(items);
@@ -50,7 +52,7 @@ function getCategoryStats() {
 
 function renderPage(extra = {}) {
   const byCategory = getCategoryStats();
-  const recent = db.prepare('SELECT id, category, substr(data,1,80) AS preview FROM stock ORDER BY id DESC LIMIT 50').all();
+  const recent = db.prepare('SELECT id, category, seller_name, substr(data,1,80) AS preview FROM stock ORDER BY id DESC LIMIT 50').all();
   // Show ALL allowed categories even if 0 count, so admin sees full list
   const statsMap = Object.fromEntries(byCategory.map(c => [c.category, c.c]));
   const fullCategoryList = ALLOWED_CATEGORIES.map(cat => ({ category: cat, c: statsMap[cat] || 0 }));
@@ -110,6 +112,7 @@ router.post('/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.redirect('/stock?msg=No+file');
 
   const targetCategory = (req.body.category || '').trim();
+  const sellerName = (req.body.seller_name || '').trim();
   if (!ALLOWED_CATEGORIES.includes(targetCategory)) {
     return res.redirect('/stock?msg=' + encodeURIComponent(
       `❌ Invalid category. শুধু এগুলো allowed: ${ALLOWED_CATEGORIES.join(', ')}`
@@ -126,14 +129,14 @@ router.post('/upload', upload.single('file'), (req, res) => {
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
   // Skip header row if first cell looks like a label
-  const headerRe = /^(uid|pass|password|cookies?|data|id|category)$/i;
+  const headerRe = /^(uid|pass|password|cookies?|data|id|category|seller)$/i;
   let startIdx = 0;
   if (rows.length && rows[0].some(c => c && headerRe.test(String(c).trim()))) startIdx = 1;
 
   const items = [];
   for (let i = startIdx; i < rows.length; i++) {
     const dataStr = parseExcelRow(rows[i]);
-    if (dataStr) items.push({ category: targetCategory, data: dataStr });
+    if (dataStr) items.push({ category: targetCategory, data: dataStr, seller_name: sellerName || null });
   }
 
   if (!items.length) {
@@ -169,6 +172,7 @@ router.post('/upload', upload.single('file'), (req, res) => {
   req.session.pendingStock = unique;
 
   const msgParts = [];
+  if (sellerName) msgParts.push(`👤 Seller: ${sellerName}`);
   if (duplicates) msgParts.push(`ℹ️ ${duplicates} duplicate (stock-এ already আছে) skip`);
   if (historyMatches) msgParts.push(`⚠️ ${historyMatches} UID আগে upload হয়েছিল (preview-তে badge দেখুন)`);
 
@@ -176,6 +180,7 @@ router.post('/upload', upload.single('file'), (req, res) => {
     preview: unique.slice(0, 200),
     previewCount: unique.length,
     previewByCat,
+    sellerName,
     duplicates,
     historyMatches,
     msg: msgParts.join(' • ') || null,
@@ -186,20 +191,26 @@ router.post('/confirm', (req, res) => {
   const pending = req.session.pendingStock || [];
   if (!pending.length) return res.redirect('/stock?msg=Nothing+to+confirm');
 
-  const insert = db.prepare('INSERT INTO stock (category, data) VALUES (?, ?)');
-  const tx = db.transaction((items) => { for (const it of items) insert.run(it.category, it.data); });
+  const insert = db.prepare('INSERT INTO stock (category, data, seller_name) VALUES (?, ?, ?)');
+  const tx = db.transaction((items) => {
+    for (const it of items) insert.run(it.category, it.data, it.seller_name || null);
+  });
   tx(pending);
 
   // Record UID history
   try { recordUidHistory(pending); } catch (e) { console.warn('uid_history record failed:', e.message); }
 
   const breakdown = {};
-  pending.forEach(p => { breakdown[p.category] = (breakdown[p.category] || 0) + 1; });
+  let detectedSeller = null;
+  pending.forEach(p => {
+    breakdown[p.category] = (breakdown[p.category] || 0) + 1;
+    if (p.seller_name) detectedSeller = p.seller_name;
+  });
   const summary = Object.entries(breakdown).map(([k, v]) => `${k}:${v}`).join(', ');
 
-  logAudit('admin', 'stock_upload', `total=${pending.length} (${summary})`);
+  logAudit('admin', 'stock_upload', `total=${pending.length} (${summary}) seller=${detectedSeller || 'none'}`);
   req.session.pendingStock = null;
-  res.redirect('/stock?msg=' + encodeURIComponent(`✅ ${pending.length} items added (${summary})`));
+  res.redirect('/stock?msg=' + encodeURIComponent(`✅ ${pending.length} items added (${summary})${detectedSeller ? ' • Seller: ' + detectedSeller : ''}`));
 });
 
 router.post('/cancel', (req, res) => {
@@ -210,6 +221,7 @@ router.post('/cancel', (req, res) => {
 // Manual textarea — supports newline OR ### separator, exactly like bot
 router.post('/manual', (req, res) => {
   const category = (req.body.category || '').trim();
+  const sellerName = (req.body.seller_name || '').trim();
   if (!ALLOWED_CATEGORIES.includes(category)) {
     return res.redirect('/stock?msg=' + encodeURIComponent(
       `❌ Invalid category. শুধু এগুলো allowed: ${ALLOWED_CATEGORIES.join(', ')}`
@@ -235,18 +247,21 @@ router.post('/manual', (req, res) => {
     return res.redirect('/stock?msg=' + encodeURIComponent(`❌ সব ${items.length} item আগে থেকেই আছে`));
   }
 
-  const insert = db.prepare('INSERT INTO stock (category, data) VALUES (?, ?)');
-  const tx = db.transaction((arr) => { for (const d of arr) insert.run(category, d); });
+  const insert = db.prepare('INSERT INTO stock (category, data, seller_name) VALUES (?, ?, ?)');
+  const tx = db.transaction((arr) => {
+    for (const d of arr) insert.run(category, d, sellerName || null);
+  });
   tx(unique);
 
   // History check + record
   const uids = unique.map(extractUid).filter(Boolean);
   const histMap = findHistoryMatches(uids);
   const historyMatches = uids.filter(u => histMap.has(u)).length;
-  try { recordUidHistory(unique.map(d => ({ category, data: d }))); } catch (e) {}
+  try { recordUidHistory(unique.map(d => ({ category, data: d, seller_name: sellerName || null }))); } catch (e) {}
 
-  logAudit('admin', 'stock_manual', `category=${category} added=${unique.length} dup=${duplicates} hist=${historyMatches}`);
+  logAudit('admin', 'stock_manual', `category=${category} added=${unique.length} seller=${sellerName || 'none'} dup=${duplicates} hist=${historyMatches}`);
   const parts = [`✅ ${unique.length} items added to ${category}`];
+  if (sellerName) parts.push(`👤 Seller: ${sellerName}`);
   if (duplicates) parts.push(`${duplicates} duplicate skipped`);
   if (historyMatches) parts.push(`⚠️ ${historyMatches} UID আগে upload হয়েছিল`);
   res.redirect('/stock?msg=' + encodeURIComponent(parts.join(' • ')));
@@ -316,7 +331,7 @@ router.post('/sell', (req, res) => {
   try {
     rows = db.transaction(() => {
       const picked = db.prepare(
-        'SELECT id, data FROM stock WHERE category = ? ORDER BY id ASC LIMIT ?'
+        'SELECT id, data, seller_name FROM stock WHERE category = ? ORDER BY id ASC LIMIT ?'
       ).all(category, qty);
       if (picked.length < qty) {
         const e = new Error(`Insufficient stock — ${category} এ মাত্র ${picked.length} টা আছে, চাওয়া হয়েছে ${qty}`);
@@ -347,12 +362,12 @@ router.post('/sell', (req, res) => {
   // Archive delivered items so admin can see exactly what each user received
   try {
     const archive = db.prepare(
-      `INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'admin', ?)`
+      `INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at, seller_name)
+       VALUES (?, ?, ?, ?, ?, ?, 'admin', ?, ?)`
     );
     const ts = Date.now();
     const tx = db.transaction((items) => {
-      for (const r of items) archive.run(saleId, 0, buyer, category, r.id, r.data, ts);
+      for (const r of items) archive.run(saleId, 0, buyer, category, r.id, r.data, ts, r.seller_name || null);
     });
     tx(rows);
   } catch (e) { /* table missing on first run */ }

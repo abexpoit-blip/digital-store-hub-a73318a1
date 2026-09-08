@@ -28,8 +28,13 @@ db.exec(`
 ` );
 
 // Ensure columns exist on older databases
-['replacement_data TEXT', 'replacement_file TEXT', 'resolved_by TEXT', 'resolved_at INTEGER'].forEach(c => {
+['replacement_data TEXT', 'replacement_file TEXT', 'resolved_by TEXT', 'resolved_at INTEGER', 'detected_uids TEXT', 'seller_name TEXT'].forEach(c => {
   try { db.exec(`ALTER TABLE replace_requests ADD COLUMN ${c}`); } catch (_) {}
+});
+['seller_name TEXT'].forEach(c => {
+  try { db.exec(`ALTER TABLE stock ADD COLUMN ${c}`); } catch (_) {}
+  try { db.exec(`ALTER TABLE delivery_archive ADD COLUMN ${c}`); } catch (_) {}
+  try { db.exec(`ALTER TABLE uid_history ADD COLUMN ${c}`); } catch (_) {}
 });
 
 db.exec(`
@@ -78,11 +83,33 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS uid_history (
     uid TEXT PRIMARY KEY,
     category TEXT,
+    seller_name TEXT,
     first_uploaded_at INTEGER NOT NULL,
     last_seen_at INTEGER NOT NULL,
     upload_count INTEGER DEFAULT 1
   );
   CREATE INDEX IF NOT EXISTS idx_uid_history_last_seen ON uid_history(last_seen_at);
+
+  CREATE TABLE IF NOT EXISTS vpn_stock_pool (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vpn_id TEXT NOT NULL,
+    pkg_id TEXT NOT NULL,
+    service_code TEXT,
+    data TEXT NOT NULL,
+    delivered_count INTEGER DEFAULT 0,
+    api_order_id TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_vpn_pool_lookup ON vpn_stock_pool(vpn_id, pkg_id, delivered_count);
+
+  CREATE TABLE IF NOT EXISTS vpn_pool_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stock_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    order_id TEXT,
+    delivered_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_vpn_pool_deliv ON vpn_pool_deliveries(stock_id, user_id);
 
   CREATE TABLE IF NOT EXISTS polls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
