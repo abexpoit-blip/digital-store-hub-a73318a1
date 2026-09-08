@@ -30,7 +30,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile, WebAppInfo
 from poll_handler import register_poll_handlers
 from dotenv import load_dotenv
 load_dotenv()
@@ -277,6 +277,15 @@ def init_db():
     # Dynamic VPN Management Tables
     cursor.execute('CREATE TABLE IF NOT EXISTS vpn_brands (vpn_id TEXT PRIMARY KEY, vpn_name TEXT)')
     cursor.execute('CREATE TABLE IF NOT EXISTS vpn_packages (vpn_id TEXT, pkg_id TEXT, price INTEGER)')
+    try:
+        cursor.execute("""
+            DELETE FROM vpn_packages WHERE rowid NOT IN (
+                SELECT MIN(rowid) FROM vpn_packages GROUP BY vpn_id, pkg_id
+            )
+        """)
+        cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_vpn_packages_unique ON vpn_packages (vpn_id, pkg_id)")
+    except Exception:
+        pass
 
     # VPN Provider API Services Catalog
     cursor.execute('''CREATE TABLE IF NOT EXISTS vpn_api_services (
@@ -1637,7 +1646,7 @@ async def vpn_api_sync_catalog():
                 existing_pkg = conn.execute("SELECT price FROM vpn_packages WHERE vpn_id=? AND pkg_id=?", (v_id, pkg_id)).fetchone()
                 if not existing_pkg:
                     default_sell_price = int(rate + 15) if rate > 0 else 30
-                    conn.execute("INSERT INTO vpn_packages (vpn_id, pkg_id, price) VALUES (?, ?, ?)", (v_id, pkg_id, default_sell_price))
+                    conn.execute("INSERT OR IGNORE INTO vpn_packages (vpn_id, pkg_id, price) VALUES (?, ?, ?)", (v_id, pkg_id, default_sell_price))
 
         conn.commit()
         return len(seen), None
@@ -1862,12 +1871,12 @@ async def vpn_auto_fulfill_worker():
                             f"━━━━━━━━━━━━━━━━━━━━\n"
                             f"🌐 **ব্র্যান্ড:** {p_vname}\n"
                             f"📦 **প্যাকেজ:** {p_dur}\n"
-                            f"⚡ **ডেলিভারি মেথড:** Auto-Fulfilled via API\n"
+                            f"⚡ **ডেলিভারি মেথড:** Auto-Fulfilled\n"
                             f"━━━━━━━━━━━━━━━━━━━━\n"
                             f"🔐 **আপনার একাউন্ট ডিটেইলস:**\n"
                             f"```text\n{account_data}\n```\n"
                             f"━━━━━━━━━━━━━━━━━━━━\n"
-                            f"🆔 Order: `{p_oid}` | API Ref: `#{api_oid}`\n"
+                            f"🆔 Order: `{p_oid}`\n"
                             f"💡 *(কপি করতে ওপরের বক্সে ক্লিক করুন)*"
                         )
                         try: await bot.send_message(p_uid, user_msg, parse_mode="Markdown")
@@ -2436,14 +2445,15 @@ async def dep_amt(m: types.Message, state: FSMContext):
             await state.clear()
             return
         kb = InlineKeyboardBuilder()
-        kb.row(types.InlineKeyboardButton(text=f"💳 এখনই পেমেন্ট করুন — {amt}৳", url=payment_url))
+        kb.row(types.InlineKeyboardButton(text=f"⚡ পেমেন্ট করুন (In-App) — {amt}৳", web_app=WebAppInfo(url=payment_url)))
+        kb.row(types.InlineKeyboardButton(text="🌐 ব্রাউজারে ওপেন করুন", url=payment_url))
         await m.answer(
-            f"✨ *পেমেন্ট লিংক রেডি* ✨\n\n"
+            f"✨ *পেমেন্ট লিংক প্রস্তুত* ✨\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"💰 Amount: *{amt}৳*\n"
-            f"⚡ Method: bKash / Nagad (Auto)\n"
+            f"⚡ Method: bKash / Nagad (Auto Deposit)\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🔗 নিচের বোতামে ট্যাপ করুন — সরাসরি পেমেন্ট পেজে চলে যাবেন।\n\n"
+            f"📱 নিচের *'পেমেন্ট করুন (In-App)'* বাটনে চাপ দিলে সরাসরি টেলিগ্রামের ভেতরে পেমেন্ট পপআপ স্ক্রিন ওপেন হবে।\n\n"
             f"✅ পেমেন্ট সফল হলে *১০-৩০ সেকেন্ডে* ব্যালেন্স অটো যোগ হবে।\n"
             f"🔔 কোনো screenshot বা confirmation message পাঠাতে হবে না।",
             reply_markup=kb.as_markup(),
@@ -2625,7 +2635,7 @@ async def show_vpn_packages(c: types.CallbackQuery):
     
     conn = _dbc()
     brand = conn.execute("SELECT vpn_name FROM vpn_brands WHERE vpn_id=?", (vpn_id,)).fetchone()
-    pkgs = conn.execute("SELECT pkg_id, price FROM vpn_packages WHERE vpn_id=?", (vpn_id,)).fetchall()
+    pkgs = conn.execute("SELECT DISTINCT pkg_id, price FROM vpn_packages WHERE vpn_id=? GROUP BY pkg_id", (vpn_id,)).fetchall()
     conn.close()
     
     if not brand: return await c.message.edit_text("❌ VPN not found.")
@@ -3085,12 +3095,12 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"{emoji} **ব্র্যান্ড:** {vpn_name}\n"
                     f"📦 **প্যাকেজ:** {pkg_name}\n"
-                    f"⚡ **ডেলিভারি মেথড:** Instant API Delivery\n"
+                    f"⚡ **ডেলিভারি মেথড:** Instant Auto-Delivery\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"🔐 **আপনার অ্যাকাউন্ট ডিটেইলস:**\n"
                     f"```text\n{account_data}\n```\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"🆔 Order: `{order_id}` | API Ref: `#{api_order_id}`\n"
+                    f"🆔 Order: `{order_id}`\n"
                     f"💡 *(কপি করতে ওপরের বক্সে ক্লিক করুন)*\n"
                     f"💙 ধন্যবাদ আমাদের সাথে থাকার জন্য!"
                 )
@@ -3138,7 +3148,7 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                     f"⏳ **আপনার VPN অর্ডারটি প্রসেসিং হচ্ছে!**\n━━━━━━━━━━━━━━━━━━━━\n"
                     f"{emoji} **ব্র্যান্ড:** {vpn_name} ({pkg_name})\n"
                     f"🆔 **অর্ডার আইডি:** `{order_id}`\n\n"
-                    f"প্রোভাইডার সার্ভার থেকে অ্যাকাউন্ট প্রস্তুত হওয়ামাত্র বট স্বয়ংক্রিয়ভাবে আপনাকে ইনবক্সে পাঠিয়ে দেবে। অনুগ্রহ করে ১-২ মিনিট অপেক্ষা করুন।"
+                    f"অ্যাকাউন্ট প্রস্তুত হওয়ামাত্র বট স্বয়ংক্রিয়ভাবে আপনাকে ইনবক্সে পাঠিয়ে দেবে। অনুগ্রহ করে ১-২ মিনিট অপেক্ষা করুন।"
                 )
                 asyncio.create_task(poll_and_deliver_api_vpn_order(order_id, api_order_id, c.from_user.id, vpn_name, pkg_name, emoji, price))
                 return
@@ -3322,12 +3332,12 @@ async def poll_and_deliver_api_vpn_order(order_id, api_order_id, user_id, vpn_na
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"{emoji} **ব্র্যান্ড:** {vpn_name}\n"
                 f"📦 **প্যাকেজ:** {pkg_name}\n"
-                f"⚡ **ডেলিভারি মেথড:** Automated API Delivery\n"
+                f"⚡ **ডেলিভারি মেথড:** Instant Delivery\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"🔐 **আপনার একাউন্ট ডিটেইলস:**\n"
                 f"```text\n{account_data}\n```\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"🆔 Order: `{order_id}` | API Ref: `#{api_order_id}`\n"
+                f"🆔 Order: `{order_id}`\n"
                 f"💡 *(কপি করতে ওপরের বক্সে ক্লিক করুন)*"
             )
             try:
@@ -3413,12 +3423,12 @@ async def retry_vpn_api_delivery(c: types.CallbackQuery):
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"{emoji} **ব্র্যান্ড:** {vpn_name}\n"
                 f"📦 **প্যাকেজ:** {duration}\n"
-                f"⚡ **ডেলিভারি মেথড:** API Delivery\n"
+                f"⚡ **ডেলিভারি মেথড:** Instant Delivery\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"🔐 **আপনার একাউন্ট ডিটেইলস:**\n"
                 f"```text\n{account_data}\n```\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"🆔 Order: `{order_id}` | API Ref: `#{api_order_id}`\n"
+                f"🆔 Order: `{order_id}`\n"
                 f"💡 *(কপি করতে ওপরের বক্সে ক্লিক করুন)*\n"
                 f"💙 ধন্যবাদ আমাদের সাথে থাকার জন্য!"
             )
