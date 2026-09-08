@@ -30,7 +30,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import FSInputFile, WebAppInfo
+from aiogram.types import FSInputFile, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 from poll_handler import register_poll_handlers
 from dotenv import load_dotenv
 load_dotenv()
@@ -488,6 +488,30 @@ def get_user_data(user_id, username=None, first_name="Unknown"):
 
 # --- UI ---
 
+def get_main_reply_keyboard():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="👤 Profile", style="success"),
+                KeyboardButton(text="🛡️ Buy VPN", style="primary")
+            ],
+            [
+                KeyboardButton(text="🛒 Buy ID", style="success"),
+                KeyboardButton(text="💼 Buy BM", style="primary")
+            ],
+            [
+                KeyboardButton(text="💳 Deposit", style="success"),
+                KeyboardButton(text="🎧 Support", style="danger")
+            ],
+            [
+                KeyboardButton(text="🔄 Replace", style="danger"),
+                KeyboardButton(text="📜 Terms", style="primary")
+            ]
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Choose an option..."
+    )
+
 async def show_dashboard_ui(user_id, first_name, bot_instance, chat_id):
     bal, uname, banned = get_user_data(user_id, None, first_name)
     if banned:
@@ -512,16 +536,16 @@ async def show_dashboard_ui(user_id, first_name, bot_instance, chat_id):
     )
 
     kb = InlineKeyboardBuilder()
-    kb.row(types.InlineKeyboardButton(text="🛒 আইডি কিনুন", callback_data="catalog"),
-           types.InlineKeyboardButton(text="💼 BM কিনুন", callback_data="bm_catalog"))
+    kb.row(types.InlineKeyboardButton(text="🛒 আইডি কিনুন", callback_data="catalog", style="success"),
+           types.InlineKeyboardButton(text="💼 BM কিনুন", callback_data="bm_catalog", style="primary"))
 
-    kb.row(types.InlineKeyboardButton(text="💳 ব্যালেন্স অ্যাড", callback_data="deposit"),
-           types.InlineKeyboardButton(text="👤 প্রোফাইল", callback_data="profile"))
+    kb.row(types.InlineKeyboardButton(text="💳 ব্যালেন্স অ্যাড", callback_data="deposit", style="success"),
+           types.InlineKeyboardButton(text="👤 প্রোফাইল", callback_data="profile", style="primary"))
 
-    kb.row(types.InlineKeyboardButton(text="🌐 VPN Services", callback_data="vpn_catalog"),
-           types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
+    kb.row(types.InlineKeyboardButton(text="🌐 VPN Services", callback_data="vpn_catalog", style="primary"),
+           types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy", style="primary"))
 
-    kb.row(types.InlineKeyboardButton(text="📞 সাপোর্ট ও হেল্প", callback_data="support_menu"),
+    kb.row(types.InlineKeyboardButton(text="📞 সাপোর্ট ও হেল্প", callback_data="support_menu", style="danger"),
            types.InlineKeyboardButton(text="📢 কমিউনিটি গ্রুপ", url=GROUP_LINK))
 
     await bot_instance.send_message(chat_id, dashboard, reply_markup=kb.as_markup())
@@ -2100,7 +2124,176 @@ async def cmd_start(message: types.Message, state: FSMContext):
         return await message.answer("⚠️ **Notice:**\nCurrently, the bot is closed for new members. Please try again later.")
 
     get_user_data(message.from_user.id, message.from_user.username, message.from_user.first_name)
+    try:
+        await message.answer("✨ **BasicTrick Digital Store** এ স্বাগতম! ✨\n👇 নিচের প্রিমিয়াম কিবোর্ড বাটনগুলো থেকে আপনার কাঙ্ক্ষিত অপশন বেছে নিন:", reply_markup=get_main_reply_keyboard())
+    except Exception:
+        pass
     await show_dashboard_ui(message.from_user.id, message.from_user.first_name, bot, message.chat.id)
+
+@dp.message(F.text.in_([
+    "👤 Profile", "👤 প্রোফাইল",
+    "🛡️ Buy VPN", "🌐 VPN Services",
+    "🛒 Buy ID", "🛒 আইডি কিনুন",
+    "💼 Buy BM", "💼 BM কিনুন",
+    "💳 Deposit", "💳 ডিপোজিট", "💳 ব্যালেন্স অ্যাড",
+    "🎧 Support", "📞 সাপোর্ট", "📞 সাপোর্ট ও হেল্প",
+    "🔄 Replace", "🔄 রিপ্লেস", "🔄 রিপ্লেস আইডি",
+    "📜 Terms", "📜 শর্তাবলী", "📜 Terms & Policy"
+]))
+async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
+    await state.clear()
+    text = m.text
+    if text in ["👤 Profile", "👤 প্রোফাইল"]:
+        bal, _, _ = get_user_data(m.from_user.id, m.from_user.username, m.from_user.first_name)
+        conn = _dbc()
+        order_stat = conn.execute(
+            "SELECT count(*), coalesce(sum(total),0) FROM sales WHERE user_id=?",
+            (m.from_user.id,)
+        ).fetchone()
+        conn.close()
+        total_orders = order_stat[0] if order_stat else 0
+        total_spent = order_stat[1] if order_stat else 0
+        kb = InlineKeyboardBuilder()
+        kb.row(types.InlineKeyboardButton(text="📦 আমার অর্ডারসমূহ (Order History)", callback_data="my_orders", style="primary"))
+        kb.row(types.InlineKeyboardButton(text="🔙 ব্যাক", callback_data="back_home"))
+        p_text = (
+            f"👤 **ইউজার প্রোফাইল**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🆔 **আইডি:** `{m.from_user.id}`\n"
+            f"👤 **নাম:** {m.from_user.first_name}\n"
+            f"💰 **বর্তমান ব্যালেন্স:** `{bal}৳`\n"
+            f"🛍️ **মোট অর্ডার:** `{total_orders}টি`\n"
+            f"💵 **মোট খরচ:** `{total_spent}৳`\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"ℹ️ যেকোনো সমস্যায় সাপোর্টে যোগাযোগ করুন।"
+        )
+        await m.answer(p_text, reply_markup=kb.as_markup(), parse_mode="Markdown")
+
+    elif text in ["🛡️ Buy VPN", "🌐 VPN Services"]:
+        conn = _dbc()
+        brands = conn.execute("SELECT DISTINCT v.vpn_id, v.vpn_name FROM vpn_brands v JOIN vpn_packages p ON v.vpn_id = p.vpn_id").fetchall()
+        conn.close()
+        kb = InlineKeyboardBuilder()
+        row_buttons = []
+        for vpn_id, vpn_name in brands:
+            emoji = VPN_EMOJIS.get(vpn_id, "⚛️")
+            row_buttons.append(types.InlineKeyboardButton(text=f"{emoji} {vpn_name}", callback_data=f"vpn_sel_{vpn_id}", style="primary"))
+            if len(row_buttons) == 2:
+                kb.row(*row_buttons)
+                row_buttons = []
+        if row_buttons:
+            kb.row(*row_buttons)
+        kb.row(types.InlineKeyboardButton(text="❌ Close", callback_data="back_home"))
+        msg = "🌐 **ভিপিএন ব্র্যান্ড সিলেক্ট করুন:**\n━━━━━━━━━━━━━━━━━━━━\n👇 আপনার পছন্দের ভিপিএন এর উপর ক্লিক করুন:"
+        await m.answer(msg, reply_markup=kb.as_markup())
+
+    elif text in ["🛒 Buy ID", "🛒 আইডি কিনুন"]:
+        if not is_service_enabled("buy_service_enabled") and not is_admin(m.from_user.id):
+            return await m.answer("🛒 **আইডি ক্রয় সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।", parse_mode="Markdown")
+        conn = _dbc()
+        f1 = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb1000'").fetchone()[0]
+        f_used = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb1000_used'").fetchone()[0]
+        f6 = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb61'").fetchone()[0]
+        t_id = conn.execute("SELECT COUNT(*) FROM stock WHERE category='tempid'").fetchone()[0]
+        p1 = get_price('fb1000')
+        p_used = get_price('fb1000_used')
+        p6 = get_price('fb61')
+        pt = get_price('tempid')
+        conn.close()
+        kb = InlineKeyboardBuilder()
+        kb.row(types.InlineKeyboardButton(text=f"🆔 FB 1000 Fresh ({f1}) ➜ {p1}৳", callback_data="buy_fb1000", style="success"))
+        kb.row(types.InlineKeyboardButton(text=f"🎬 1000xxx PC clon{{Content Used}} ({f_used}) ➜ {p_used}৳", callback_data="used_terms", style="primary"))
+        kb.row(types.InlineKeyboardButton(text=f"🆔 FB 61 ({f6}) ➜ {p6}৳", callback_data="buy_fb61", style="primary"))
+        kb.row(types.InlineKeyboardButton(text=f"🆔 Temp ID ({t_id}) ➜ {pt}৳", callback_data="buy_tempid", style="primary"))
+        kb.row(types.InlineKeyboardButton(text="🔙 ফিরে যান", callback_data="back_home"))
+        await m.answer("📥 **আইডি ক্যাটাগরি মেনু**", reply_markup=kb.as_markup())
+
+    elif text in ["💼 Buy BM", "💼 BM কিনুন"]:
+        if not is_service_enabled("buy_service_enabled") and not is_admin(m.from_user.id):
+            return await m.answer("🛒 **আইডি/বিএম ক্রয় সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।", parse_mode="Markdown")
+        conn = _dbc()
+        ig = conn.execute("SELECT COUNT(*) FROM stock WHERE category='bmig'").fetchone()[0]
+        fb = conn.execute("SELECT COUNT(*) FROM stock WHERE category='bmfb'").fetchone()[0]
+        pig = get_price('bmig')
+        pfb = get_price('bmfb')
+        conn.close()
+        kb = InlineKeyboardBuilder()
+        kb.row(types.InlineKeyboardButton(text=f"📸 Instagram BM ({ig}) ➜ {pig}৳", callback_data="buy_bmig", style="success"))
+        kb.row(types.InlineKeyboardButton(text=f"📘 Facebook BM ({fb}) ➜ {pfb}৳", callback_data="buy_bmfb", style="primary"))
+        kb.row(types.InlineKeyboardButton(text="🔙 ফিরে যান", callback_data="back_home"))
+        await m.answer("💼 **BM ক্যাটাগরি মেনু**", reply_markup=kb.as_markup())
+
+    elif text in ["💳 Deposit", "💳 ডিপোজিট", "💳 ব্যালেন্স অ্যাড"]:
+        if not is_service_enabled("deposit_service_enabled") and not is_admin(m.from_user.id):
+            return await m.answer("💰 **ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।", parse_mode="Markdown")
+        kb = InlineKeyboardBuilder()
+        kb.row(types.InlineKeyboardButton(text="⚡ Auto Payment (bKash / Nagad)", callback_data="dep_auto", style="success"))
+        kb.row(types.InlineKeyboardButton(text="💎 Binance USDT", callback_data="dep_binance", style="primary"))
+        await m.answer(
+            "🌟 *ডিপোজিট পদ্ধতি বাছাই করুন* 🌟\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "⚡ *Auto Payment* — সবচেয়ে দ্রুত ও সহজ\n"
+            "   ▸ bKash / Nagad সাপোর্ট\n"
+            "   ▸ এক ক্লিকে ইন-অ্যাপ পপআপ পেমেন্ট\n"
+            "   ▸ ১০-৩০ সেকেন্ডে ব্যালেন্স যোগ\n"
+            "   ▸ মিনিমাম ১০৳\n\n"
+            "💎 *Binance USDT* — ডলারে পেমেন্ট\n"
+            "   ▸ Rate: *$1 = 125৳* (fixed)\n"
+            "   ▸ Screenshot পাঠাবেন\n"
+            "   ▸ Admin ম্যানুয়ালি অ্যাপ্রুভ করবে\n"
+            "   ▸ মিনিমাম 1$\n"
+            "━━━━━━━━━━━━━━━━━━━━━",
+            reply_markup=kb.as_markup(),
+            parse_mode="Markdown"
+        )
+
+    elif text in ["🎧 Support", "📞 সাপোর্ট", "📞 সাপোর্ট ও হেল্প"]:
+        kb = InlineKeyboardBuilder()
+        kb.row(types.InlineKeyboardButton(text="🔄 Replace PC Clone ID", callback_data="sup_replace", style="danger"))
+        kb.row(types.InlineKeyboardButton(text="📝 Complain", callback_data="sup_complain", style="primary"))
+        kb.row(types.InlineKeyboardButton(text="📜 শর্তাবলী ও পলিসি (Terms)", callback_data="terms_policy", style="primary"))
+        kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="back_home"))
+        msg = (
+            f"📞 **সাপোর্ট ও হেল্প সেন্টার • {BOT_VERSION}**\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "আপনার যেকোনো সমস্যা বা সার্ভিসের জন্য নিচের অপশন সিলেক্ট করুন:\n\n"
+            "💡 *নষ্ট আইডি রিপ্লেসের জন্য 'Replace PC Clone ID' এ ক্লিক করুন।*"
+        )
+        await m.answer(msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
+
+    elif text in ["🔄 Replace", "🔄 রিপ্লেস", "🔄 রিপ্লেস আইডি"]:
+        conn = _dbc()
+        user_sales = conn.execute("""
+            SELECT id, category, qty, total, date, time 
+            FROM sales 
+            WHERE user_id=? AND category NOT LIKE 'VPN%'
+            ORDER BY id DESC LIMIT 6
+        """, (m.from_user.id,)).fetchall()
+        conn.close()
+        if not user_sales:
+            kb = InlineKeyboardBuilder()
+            kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy", style="primary"))
+            kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
+            no_order_msg = (
+                "🚫 **কোনো সক্রিয় অর্ডার পাওয়া যায়নি!**\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                "⚠️ আপনার অ্যাকাউন্টে পূর্বে ক্রয়কৃত কোনো আইডি পাওয়া যায়নি।\n\n"
+                "📌 **পলিসি নির্দেশিকা:**\n"
+                "▫️ শুধুমাত্র আমাদের স্টোর থেকে সরাসরি ক্রয়কৃত আইডির ক্ষেত্রেই অটো রিপ্লেস গ্যারান্টি প্রযোজ্য।"
+            )
+            return await m.answer(no_order_msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
+        kb = InlineKeyboardBuilder()
+        for sale in user_sales:
+            s_id, s_cat, s_qty, s_tot, s_date, s_time = sale
+            lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx Used","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(s_cat, s_cat.upper())
+            btn_text = f"📦 #{s_id} | {lbl} ({s_qty} pcs)"
+            kb.row(types.InlineKeyboardButton(text=btn_text, callback_data=f"rep_ord_{s_id}", style="primary"))
+        kb.row(types.InlineKeyboardButton(text="📜 শর্তাবলী ও নিয়ম (Terms)", callback_data="terms_policy", style="primary"))
+        kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
+        await m.answer("🔄 **যে অর্ডারের আইডি রিপ্লেস করতে চান তা নির্বাচন করুন:**", reply_markup=kb.as_markup(), parse_mode="Markdown")
+
+    elif text in ["📜 Terms", "📜 শর্তাবলী", "📜 Terms & Policy"]:
+        await show_terms_policy(m)
 
 @dp.callback_query(F.data == "back_home")
 async def back_home(c: types.CallbackQuery, state: FSMContext):
