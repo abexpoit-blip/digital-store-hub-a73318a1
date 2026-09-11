@@ -38,6 +38,22 @@ db.exec(`
 });
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS seller_uid_collector (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    seller_name TEXT NOT NULL,
+    uid TEXT NOT NULL,
+    category TEXT,
+    user_id INTEGER,
+    request_id INTEGER,
+    submitted_at INTEGER,
+    status TEXT DEFAULT 'active',
+    cleared_at INTEGER DEFAULT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_suc_seller_status ON seller_uid_collector(seller_name, status);
+  CREATE INDEX IF NOT EXISTS idx_suc_uid ON seller_uid_collector(uid);
+`);
+
+db.exec(`
 
   CREATE TABLE IF NOT EXISTS manual_credits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -21,6 +21,7 @@ import uuid
 import re
 import os
 import json
+import hashlib
 import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta, timezone
@@ -364,6 +365,21 @@ def init_db():
         delivered_at INTEGER NOT NULL
     )''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vpn_pool_deliv ON vpn_pool_deliveries(stock_id, user_id)')
+
+    # Seller UID Collector Pool
+    cursor.execute('''CREATE TABLE IF NOT EXISTS seller_uid_collector (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        seller_name TEXT NOT NULL,
+        uid TEXT NOT NULL,
+        category TEXT,
+        user_id INTEGER,
+        request_id INTEGER,
+        submitted_at INTEGER,
+        status TEXT DEFAULT 'active',
+        cleared_at INTEGER DEFAULT NULL
+    )''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_suc_seller_status ON seller_uid_collector(seller_name, status)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_suc_uid ON seller_uid_collector(uid)')
 
     # Set Default Bot Status
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('bot_status', 'open')")
@@ -1728,6 +1744,41 @@ def find_sellers_for_uids(uids: list[str]) -> dict[str, str]:
         conn.close()
     return seller_map
 
+def backfill_seller_uid_collector():
+    conn = _dbc()
+    try:
+        c = conn.execute("SELECT COUNT(*) FROM seller_uid_collector").fetchone()[0]
+        if c == 0:
+            old_reqs = conn.execute("SELECT id, user_id, category, old_data, seller_name, created_at, detected_uids FROM replace_requests").fetchall()
+            for r_id, u_id, cat, old_data, s_name, c_at, det_uids in old_reqs:
+                if det_uids:
+                    uids = [u.strip() for u in det_uids.split(",") if u.strip()]
+                elif old_data:
+                    uids = extract_uids_from_text(old_data)
+                else:
+                    uids = []
+                s_map = find_sellers_for_uids(uids)
+                sub_at = int(c_at / 1000) if (c_at and c_at > 100000000000) else (c_at or int(time.time()))
+                for uid in uids:
+                    seller = s_map.get(uid) or s_name or "Unassigned"
+                    try:
+                        conn.execute(
+                            "INSERT INTO seller_uid_collector (seller_name, uid, category, user_id, request_id, submitted_at, status) VALUES (?, ?, ?, ?, ?, ?, 'active')",
+                            (seller, uid, cat, u_id, r_id, sub_at)
+                        )
+                    except Exception:
+                        pass
+            conn.commit()
+    except Exception as e:
+        print(f"[backfill_seller_uid_collector] notice: {e}")
+    finally:
+        conn.close()
+
+try:
+    backfill_seller_uid_collector()
+except Exception:
+    pass
+
 # --- VPN BALANCE ALERT & AUTO-FULFILLMENT WORKER ---
 
 _last_vpn_bal_alert = 0
@@ -1977,41 +2028,181 @@ async def admin_seller_report_cmd(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id): return
 
     conn = _dbc()
-    pending = conn.execute("SELECT id, old_data, seller_name FROM replace_requests WHERE status='pending'").fetchall()
+    rows = conn.execute("SELECT seller_name, uid FROM seller_uid_collector WHERE status='active' ORDER BY id DESC").fetchall()
     conn.close()
 
-    if not pending:
-        return await message.answer("✅ বর্তমানে কোনো পেন্ডিং রিপ্লেস রিকোয়েস্ট নেই!")
+    if not rows:
+        return await message.answer(
+            "✅ **বর্তমানে কোনো সেলারের আনক্লিয়ারড ব্রোকেন UID নেই!**\n\n"
+            "ইউজাররা রিপ্লেস রিকোয়েস্ট পাঠালে সেলার অনুযায়ী ব্রোকেন UID এখানে স্বয়ংক্রিয়ভাবে জমা হবে।"
+        )
 
-    all_uids = []
-    pairs = []
-    for r_id, old_data, s_name in pending:
-        uids = extract_uids_from_text(old_data)
-        for u in uids:
-            all_uids.append(u)
-            pairs.append((u, s_name))
-
-    s_map = find_sellers_for_uids(all_uids)
     grouped = {}
-    for u, fallback in pairs:
-        seller = s_map.get(u) or fallback or "Unassigned"
-        if seller not in grouped:
-            grouped[seller] = []
-        if u not in grouped[seller]:
-            grouped[seller].append(u)
+    for s_name, uid in rows:
+        s_name = s_name or "Unassigned"
+        if s_name not in grouped:
+            grouped[s_name] = []
+        if uid not in grouped[s_name]:
+            grouped[s_name].append(uid)
 
-    msg = "📋 **Seller-wise Broken UIDs Report** 📋\n━━━━━━━━━━━━━━━━━━━━\n"
+    msg = (
+        "📋 **Seller-wise Broken UIDs Report** 📋\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "💡 *ইউজারদের রিপ্লেস থেকে সংগৃহীত UID তালিকা:*\n\n"
+    )
+
+    kb = InlineKeyboardBuilder()
     for s_name, u_list in sorted(grouped.items(), key=lambda x: len(x[1]), reverse=True):
         msg += f"👤 **Seller: {s_name}** ({len(u_list)} pcs)\n"
-        for u in u_list:
+        preview = u_list[:8]
+        for u in preview:
             msg += f"`{u}`\n"
+        if len(u_list) > 8:
+            msg += f"_... আরও {len(u_list) - 8}টি UID_\n"
         msg += "\n"
+
+        s_hash = hashlib.md5(s_name.encode("utf-8")).hexdigest()[:10]
+        kb.row(
+            types.InlineKeyboardButton(text=f"📋 Copy {s_name} ({len(u_list)})", callback_data=f"cpsel_{s_hash}"),
+            types.InlineKeyboardButton(text=f"🗑️ Clear {s_name}", callback_data=f"clsel_{s_hash}")
+        )
+    kb.row(types.InlineKeyboardButton(text="🗑️ Clear All Sellers", callback_data="clsel_all"))
 
     if len(msg) > 4000:
         for x in range(0, len(msg), 4000):
             await message.answer(msg[x:x+4000], parse_mode="Markdown")
+        await message.answer("👇 **অ্যাকশন বাটনসমূহ:**", reply_markup=kb.as_markup())
     else:
-        await message.answer(msg, parse_mode="Markdown")
+        await message.answer(msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
+
+@dp.callback_query(F.data.startswith("cpsel_"))
+async def copy_seller_uids_cb(call: types.CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return await call.answer("Access denied", show_alert=True)
+    target_hash = call.data[6:]
+    conn = _dbc()
+    rows = conn.execute("SELECT seller_name, uid FROM seller_uid_collector WHERE status='active' ORDER BY id ASC").fetchall()
+    conn.close()
+
+    target_seller = None
+    uids = []
+    for s_name, uid in rows:
+        s_name = s_name or "Unassigned"
+        h = hashlib.md5(s_name.encode("utf-8")).hexdigest()[:10]
+        if h == target_hash:
+            target_seller = s_name
+            if uid not in uids:
+                uids.append(uid)
+
+    if not target_seller or not uids:
+        return await call.answer("❌ কোনো সক্রিয় UID পাওয়া যায়নি বা ইতিমধ্যে ক্লিয়ার করা হয়েছে!", show_alert=True)
+
+    uid_block = "\n".join(uids)
+    resp = (
+        f"📋 **Seller: {target_seller}** ({len(uids)} pcs)\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"👇 *নিচের কোডব্লকে সিঙ্গেল ট্যাপ/ক্লিক করলেই সম্পূর্ণ তালিকা কপি হয়ে যাবে:*\n\n"
+        f"```text\n{uid_block}\n```"
+    )
+    if len(resp) > 4000:
+        await call.message.answer(f"📋 **Seller: {target_seller}** ({len(uids)} pcs)\n━━━━━━━━━━━━━━━━━━━━\n👇 *কপি করুন:*")
+        for chunk in [uids[i:i+150] for i in range(0, len(uids), 150)]:
+            await call.message.answer("```text\n" + "\n".join(chunk) + "\n```", parse_mode="Markdown")
+    else:
+        await call.message.answer(resp, parse_mode="Markdown")
+    await call.answer("📋 UIDs নিচে পাঠানো হয়েছে! ট্যাপ করে কপি করুন।")
+
+@dp.callback_query(F.data.startswith("clsel_"))
+async def clear_seller_confirm_cb(call: types.CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return await call.answer("Access denied", show_alert=True)
+    target_hash = call.data[6:]
+
+    if target_hash == "all":
+        kb = InlineKeyboardBuilder()
+        kb.row(
+            types.InlineKeyboardButton(text="✅ হ্যাঁ, সবগুলো Clear করুন", callback_data="cfcl_all"),
+            types.InlineKeyboardButton(text="❌ বাতিল", callback_data="cancel_clsel")
+        )
+        return await call.message.answer(
+            "⚠️ **আপনি কি নিশ্চিত যে সকল সেলারের জমানো UID ক্লিয়ার করতে চান?**\n\n"
+            "ক্লিয়ার করলে লিস্ট খালি হয়ে যাবে। পরবর্তীতে নতুন রিপ্লেস আসলে তা আবার জমা হবে।",
+            reply_markup=kb.as_markup()
+        )
+
+    conn = _dbc()
+    rows = conn.execute("SELECT DISTINCT seller_name FROM seller_uid_collector WHERE status='active'").fetchall()
+    conn.close()
+
+    target_seller = None
+    for (s_name,) in rows:
+        s_name = s_name or "Unassigned"
+        if hashlib.md5(s_name.encode("utf-8")).hexdigest()[:10] == target_hash:
+            target_seller = s_name
+            break
+
+    if not target_seller:
+        return await call.answer("❌ সেলার পাওয়া যায়নি বা ইতিমধ্যে ক্লিয়ার হয়েছে!", show_alert=True)
+
+    kb = InlineKeyboardBuilder()
+    kb.row(
+        types.InlineKeyboardButton(text=f"✅ হ্যাঁ, Clear করুন", callback_data=f"cfcl_{target_hash}"),
+        types.InlineKeyboardButton(text="❌ বাতিল", callback_data="cancel_clsel")
+    )
+    await call.message.answer(
+        f"⚠️ **আপনি কি Seller `{target_seller}` এর সকল UID ক্লিয়ার করতে চান?**\n\n"
+        f"কপি করা হয়ে থাকলে ক্লিয়ার করুন। পরবর্তীতে এই সেলারের নতুন রিপ্লেস আসলে তা আবার জমা হবে।",
+        reply_markup=kb.as_markup(),
+        parse_mode="Markdown"
+    )
+    await call.answer()
+
+@dp.callback_query(F.data.startswith("cfcl_"))
+async def clear_seller_execute_cb(call: types.CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return await call.answer("Access denied", show_alert=True)
+    target_hash = call.data[5:]
+    now_epoch = int(time.time())
+    conn = _dbc()
+
+    if target_hash == "all":
+        res = conn.execute("UPDATE seller_uid_collector SET status='cleared', cleared_at=? WHERE status='active'", (now_epoch,))
+        cleared_count = res.rowcount
+        conn.commit()
+        conn.close()
+        try: await call.message.delete()
+        except: pass
+        return await call.message.answer(f"✅ **সকল সেলারের মোট {cleared_count}টি UID সফলভাবে ক্লিয়ার করা হয়েছে!**\nনতুন রিপ্লেস আসলে আবার জমা হবে।")
+
+    rows = conn.execute("SELECT DISTINCT seller_name FROM seller_uid_collector WHERE status='active'").fetchall()
+    target_seller = None
+    for (s_name,) in rows:
+        s_name = s_name or "Unassigned"
+        if hashlib.md5(s_name.encode("utf-8")).hexdigest()[:10] == target_hash:
+            target_seller = s_name
+            break
+
+    if not target_seller:
+        conn.close()
+        try: await call.message.delete()
+        except: pass
+        return await call.answer("❌ ইতিমধ্যে ক্লিয়ার করা হয়েছে!", show_alert=True)
+
+    res = conn.execute("UPDATE seller_uid_collector SET status='cleared', cleared_at=? WHERE seller_name=? AND status='active'", (now_epoch, target_seller))
+    cleared_count = res.rowcount
+    conn.commit()
+    conn.close()
+
+    try: await call.message.delete()
+    except: pass
+    await call.message.answer(f"✅ **Seller `{target_seller}` এর {cleared_count}টি UID সফলভাবে ক্লিয়ার করা হয়েছে!**\nনতুন রিপ্লেস আসলে আবার জমা হবে।", parse_mode="Markdown")
+    await call.answer(f"✅ Cleared {cleared_count} UIDs!", show_alert=True)
+
+@dp.callback_query(F.data == "cancel_clsel")
+async def cancel_clear_seller_cb(call: types.CallbackQuery):
+    try: await call.message.delete()
+    except: pass
+    await call.answer("❌ বাতিল করা হয়েছে।")
 
 @dp.message(Command("listvpn"))
 async def admin_list_vpn(message: types.Message, state: FSMContext):
@@ -4126,10 +4317,26 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         seller_summary = ", ".join(detected_sellers) if detected_sellers else None
         detected_uids_str = ",".join(detected_uids) if detected_uids else None
 
-        conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "INSERT INTO replace_requests (user_id, username, category, old_data, reason, status, created_at, detected_uids, seller_name) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
             (m.from_user.id, _rep_uname, db_cat_label, user_data_text, f"Ticket #{ticket_id} ({order_ref})", _rep_ts, detected_uids_str, seller_summary)
         )
+        rep_req_id = cursor.lastrowid
+
+        # Accumulate into persistent Seller UID Collector
+        now_epoch = int(time.time())
+        for uid in detected_uids:
+            s_name = uid_seller_map.get(uid) or seller_summary or "Unassigned"
+            exists = cursor.execute(
+                "SELECT 1 FROM seller_uid_collector WHERE seller_name=? AND uid=? AND status='active' LIMIT 1",
+                (s_name, uid)
+            ).fetchone()
+            if not exists:
+                cursor.execute(
+                    "INSERT INTO seller_uid_collector (seller_name, uid, category, user_id, request_id, submitted_at, status) VALUES (?, ?, ?, ?, ?, ?, 'active')",
+                    (s_name, uid, db_cat_label, m.from_user.id, rep_req_id, now_epoch)
+                )
         conn.commit()
     except Exception as e:
         print(f"[replace] insert error: {e}", flush=True)

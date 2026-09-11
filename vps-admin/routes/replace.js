@@ -153,29 +153,52 @@ router.get('/', (req, res) => {
     r.primarySeller = r.sellers[0] || r.seller_name || null;
   });
 
-  // Build aggregate Seller-wise Replace Report across all pending requests
-  const pendingRequests = db.prepare("SELECT id, old_data, seller_name FROM replace_requests WHERE status='pending'").all();
-  const allPendingUids = [];
-  const reqUidPairs = [];
-  pendingRequests.forEach(req => {
-    const uids = extractUidsFromText(req.old_data);
-    uids.forEach(uid => {
-      allPendingUids.push(uid);
-      reqUidPairs.push({ reqId: req.id, uid, fallbackSeller: req.seller_name });
-    });
-  });
-  const pendingSellerMap = findSellersForUids(allPendingUids);
+  // Build aggregate Seller-wise Replace Report from persistent collector
+  try {
+    const totalCollected = db.prepare("SELECT COUNT(*) AS c FROM seller_uid_collector").get().c;
+    if (totalCollected === 0) {
+      // Auto-backfill from replace_requests so historical claims appear
+      const oldReqs = db.prepare("SELECT id, user_id, category, old_data, seller_name, created_at, detected_uids FROM replace_requests").all();
+      const insertSuc = db.prepare(`
+        INSERT INTO seller_uid_collector (seller_name, uid, category, user_id, request_id, submitted_at, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'active')
+      `);
+      oldReqs.forEach(req => {
+        let uids = [];
+        if (req.detected_uids) {
+          uids = req.detected_uids.split(',').map(u => u.trim()).filter(Boolean);
+        } else if (req.old_data) {
+          uids = extractUidsFromText(req.old_data);
+        }
+        const sMap = findSellersForUids(uids);
+        const subAt = req.created_at && req.created_at > 100000000000 ? Math.floor(req.created_at / 1000) : (req.created_at || Math.floor(Date.now() / 1000));
+        uids.forEach(u => {
+          const s = sMap.get(u) || req.seller_name || 'Unassigned';
+          try {
+            insertSuc.run(s, u, req.category, req.user_id, req.id, subAt);
+          } catch (_) {}
+        });
+      });
+    }
+  } catch (_) {}
+
+  const activeCollectorRows = db.prepare(`
+    SELECT seller_name, uid, request_id 
+    FROM seller_uid_collector 
+    WHERE status = 'active'
+    ORDER BY id DESC
+  `).all();
 
   const sellerGroups = {};
-  reqUidPairs.forEach(({ reqId, uid, fallbackSeller }) => {
-    const sName = pendingSellerMap.get(uid) || fallbackSeller || 'Unassigned (সেলার ছাড়া)';
+  activeCollectorRows.forEach(row => {
+    const sName = row.seller_name || 'Unassigned (সেলার ছাড়া)';
     if (!sellerGroups[sName]) {
       sellerGroups[sName] = { seller: sName, uids: [], requestIds: new Set() };
     }
-    if (!sellerGroups[sName].uids.includes(uid)) {
-      sellerGroups[sName].uids.push(uid);
+    if (!sellerGroups[sName].uids.includes(row.uid)) {
+      sellerGroups[sName].uids.push(row.uid);
     }
-    sellerGroups[sName].requestIds.add(reqId);
+    if (row.request_id) sellerGroups[sName].requestIds.add(row.request_id);
   });
 
   const sellerReports = Object.values(sellerGroups).map(g => ({
@@ -415,6 +438,26 @@ router.post('/bulk/dedupe', (req, res) => {
   `).run();
   logAudit('admin', 'replace_dedupe', `removed=${r.changes}`);
   res.redirect('/replace?msg=' + encodeURIComponent(`🧹 ${r.changes} duplicate entries removed`));
+});
+
+// Seller UID Collector: Clear specific seller UIDs
+router.post('/seller-uids/clear', (req, res) => {
+  const sellerName = (req.body.seller_name || '').trim();
+  if (!sellerName) {
+    return res.redirect('/replace?msg=' + encodeURIComponent('❌ Invalid seller name'));
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const result = db.prepare("UPDATE seller_uid_collector SET status = 'cleared', cleared_at = ? WHERE seller_name = ? AND status = 'active'").run(now, sellerName);
+  logAudit(req.session && req.session.adminUser ? req.session.adminUser : 'admin', 'seller_uids_cleared', `Cleared ${result.changes} UIDs for seller: ${sellerName}`);
+  res.redirect('/replace?msg=' + encodeURIComponent(`✅ Seller "${sellerName}"-এর ${result.changes}টি UID সফলভাবে ক্লিয়ার করা হয়েছে!`));
+});
+
+// Seller UID Collector: Clear all active seller UIDs
+router.post('/seller-uids/clear-all', (req, res) => {
+  const now = Math.floor(Date.now() / 1000);
+  const result = db.prepare("UPDATE seller_uid_collector SET status = 'cleared', cleared_at = ? WHERE status = 'active'").run(now);
+  logAudit(req.session && req.session.adminUser ? req.session.adminUser : 'admin', 'seller_uids_cleared_all', `Cleared all ${result.changes} active UIDs`);
+  res.redirect('/replace?msg=' + encodeURIComponent(`✅ সকল সেলারের ${result.changes}টি UID সফলভাবে ক্লিয়ার করা হয়েছে!`));
 });
 
 module.exports = router;

@@ -72,18 +72,25 @@
 <!-- SELLER-WISE REPLACE REPORT (সেলারভিত্তিক নষ্ট অ্যাকাউন্টের UID লিস্ট) -->
 <% if (typeof sellerReports !== 'undefined' && sellerReports.length) { %>
   <div class="bg-gradient-to-r from-sky-50 to-indigo-50/60 border border-sky-200/80 rounded-2xl p-5 mb-6 shadow-xs">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
       <div>
         <h2 class="text-base font-extrabold text-slate-900 flex items-center gap-2">
           <span>📋</span>
-          <span>Seller-wise Replace Report (সেলারভিত্তিক নষ্ট আইডি লিস্ট)</span>
+          <span>Seller-wise Replace Report (সেলারভিত্তিক ব্রোকেন আইডি রিপোর্ট)</span>
           <span class="bg-sky-600 text-white text-[11px] font-bold px-2 py-0.5 rounded-full">
             <%= sellerReports.length %> Sellers
           </span>
         </h2>
         <p class="text-xs text-slate-600 mt-0.5">
-          Pending ক্লেইমগুলো থেকে UID স্বয়ংক্রিয়ভাবে ডিটেক্ট করে সেলারভিত্তিক আলাদা করা হয়েছে। এক ক্লিকে UID কপি করে সরাসরি সেলারকে রিপোর্ট দিন।
+          ইউজারদের সাবমিট করা ব্রোকেন UID সেলার অনুযায়ী এখানে জমা থাকে। কপি করে সেলারকে দেওয়ার পর <strong>Remove</strong> বাটনে ক্লিক করে লিস্ট ক্লিয়ার করুন। পরবর্তীতে নতুন রিপ্লেস আসলে তা আবার স্বয়ংক্রিয়ভাবে জমা হবে।
         </p>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <form method="post" action="/replace/seller-uids/clear-all" onsubmit="return confirm('⚠️ আপনি কি নিশ্চিত যে সকল সেলারের জমানো UID ক্লিয়ার করতে চান?');" class="inline m-0">
+          <button type="submit" class="text-xs bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 hover:border-rose-200 font-bold px-3 py-1.5 rounded-xl shadow-xs transition flex items-center gap-1.5">
+            <span>🗑️</span> Clear All Sellers
+          </button>
+        </form>
       </div>
     </div>
 
@@ -122,14 +129,22 @@
             <button type="button"
                     onclick="copySellerUids('<%= sr.seller.replace(/'/g, "\\'") %>', <%= JSON.stringify(sr.uidsText) %>)"
                     class="flex-1 bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-bold py-2 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-xs transition">
-              <span>📋</span> Copy All <%= sr.count %> UIDs
+              <span>📋</span> Copy All (<%= sr.count %>)
             </button>
             <button type="button"
                     onclick="downloadSellerUids('<%= sr.seller.replace(/'/g, "\\'") %>', <%= JSON.stringify(sr.uidsText) %>)"
-                    class="bg-white border border-sky-300 hover:bg-sky-50 text-sky-800 font-bold py-2 px-3 rounded-lg text-xs flex items-center justify-center gap-1 shadow-xs transition"
+                    class="bg-white border border-sky-300 hover:bg-sky-50 text-sky-800 font-bold py-2 px-2.5 rounded-lg text-xs flex items-center justify-center gap-1 shadow-xs transition"
                     title="Download as .txt">
               <span>💾</span>
             </button>
+            <form method="post" action="/replace/seller-uids/clear" onsubmit="return confirm('⚠️ আপনি কি নিশ্চিত যে <%= sr.seller.replace(/'/g, "\\'") %> এর <%= sr.count %>টি UID রিমুভ/ক্লিয়ার করতে চান?\n\nকপি করা হয়ে থাকলে রিমুভ করুন। ভবিষ্যতে নতুন রিপ্লেস আসলে তা আবার এখানে জমা হবে।');" class="inline m-0">
+              <input type="hidden" name="seller_name" value="<%= sr.seller %>" />
+              <button type="submit"
+                      class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 hover:border-rose-300 font-bold py-2 px-2.5 rounded-lg text-xs flex items-center justify-center gap-1 shadow-xs transition"
+                      title="Clear / Remove this seller's UIDs">
+                <span>🗑️</span> Remove
+              </button>
+            </form>
           </div>
         </div>
       <% }) %>
