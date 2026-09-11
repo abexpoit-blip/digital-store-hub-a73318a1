@@ -317,13 +317,25 @@ router.post('/:id/resolve', upload.single('replace_file'), async (req, res) => {
     id
   );
 
-  // 4. Sync support_tickets table if corresponding ticket exists
+  // 4. Sync support_tickets table ONLY for this specific ticket
   try {
-    db.prepare(`
-      UPDATE support_tickets
-      SET status = 'processed', admin_response = ?
-      WHERE user_id = ? AND type = 'replace' AND status = 'pending'
-    `).run(replaceText || `[File: ${file ? file.originalname : 'sent'}]`, row.user_id);
+    const tMatch = (row.reason || '').match(/Ticket\s*#([a-zA-Z0-9_-]+)/i);
+    if (tMatch && tMatch[1]) {
+      db.prepare(`
+        UPDATE support_tickets
+        SET status = 'processed', admin_response = ?
+        WHERE ticket_id = ?
+      `).run(replaceText || `[File: ${file ? file.originalname : 'sent'}]`, tMatch[1]);
+    } else {
+      const pendingT = db.prepare("SELECT ticket_id FROM support_tickets WHERE user_id = ? AND type = 'replace' AND status = 'pending' ORDER BY id ASC LIMIT 1").get(row.user_id);
+      if (pendingT) {
+        db.prepare(`
+          UPDATE support_tickets
+          SET status = 'processed', admin_response = ?
+          WHERE ticket_id = ?
+        `).run(replaceText || `[File: ${file ? file.originalname : 'sent'}]`, pendingT.ticket_id);
+      }
+    }
   } catch (_) {}
 
   logAudit('admin', 'replace_resolved', `id=${id} user=${row.user_id} file=${file ? file.originalname : 'none'}`);
@@ -360,12 +372,23 @@ router.post('/:id/reject', async (req, res) => {
     .run(Date.now(), id);
   logAudit('admin', 'replace_rejected', `id=${id} user=${row.user_id}`);
 
-  // Sync support_tickets
+  // Sync support_tickets ONLY for this specific ticket
   try {
-    db.prepare(`
-      UPDATE support_tickets SET status = 'ignored'
-      WHERE user_id = ? AND type = 'replace' AND status = 'pending'
-    `).run(row.user_id);
+    const tMatch = (row.reason || '').match(/Ticket\s*#([a-zA-Z0-9_-]+)/i);
+    if (tMatch && tMatch[1]) {
+      db.prepare(`
+        UPDATE support_tickets SET status = 'ignored'
+        WHERE ticket_id = ?
+      `).run(tMatch[1]);
+    } else {
+      const pendingT = db.prepare("SELECT ticket_id FROM support_tickets WHERE user_id = ? AND type = 'replace' AND status = 'pending' ORDER BY id ASC LIMIT 1").get(row.user_id);
+      if (pendingT) {
+        db.prepare(`
+          UPDATE support_tickets SET status = 'ignored'
+          WHERE ticket_id = ?
+        `).run(pendingT.ticket_id);
+      }
+    }
   } catch (_) {}
 
   const reasonText = rejectReason ? `\n\n📌 *কারণ:* ${rejectReason}` : '';

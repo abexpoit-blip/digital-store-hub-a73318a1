@@ -4299,7 +4299,62 @@ async def process_replace_request(m: types.Message, state: FSMContext):
     username_display = f"@{m.from_user.username}" if m.from_user.username else "No Username"
     utc_now_ts = datetime.now(timezone.utc).timestamp()
     
+    # Extract UIDs
+    detected_uids = extract_uids_from_text(user_data_text)
+    if not detected_uids:
+        return await m.answer("❌ টেক্সট থেকে কোনো বৈধ UID সনাক্ত করা যায়নি। অনুগ্রহ করে UID PASSWORD COOKIES ফরম্যাটে দিন।")
+
+    # 1. Check for duplicate UIDs within the submitted message itself
+    seen_in_msg = set()
+    dupes_in_msg = []
+    for u in detected_uids:
+        if u in seen_in_msg:
+            dupes_in_msg.append(u)
+        else:
+            seen_in_msg.add(u)
+    if dupes_in_msg:
+        dupe_str = ", ".join([f"`{u}`" for u in set(dupes_in_msg)])
+        return await m.answer(
+            f"🚫 **একই মেসেজে ডুপ্লিকেট UID পাওয়া গেছে!**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"আপনার দেওয়া টেক্সটে নিচের UID একাধিকবার রয়েছে:\n{dupe_str}\n\n"
+            f"⚠️ প্রতিটি নষ্ট আইডি একবারই সাবমিট করতে পারবেন। ডুপ্লিকেট লাইনগুলো বাদ দিয়ে পুনরায় টেক্সট পাঠান অথবা /cancel দিন।",
+            parse_mode="Markdown"
+        )
+
+    # 2. Check database to ensure no duplicate / double replacement on the same UID
     conn = _dbc()
+    already_replaced = []
+    for u in detected_uids:
+        rep = conn.execute(
+            "SELECT id, status FROM replace_requests WHERE (detected_uids LIKE ? OR old_data LIKE ?) AND status IN ('pending', 'replaced') LIMIT 1",
+            (f"%{u}%", f"%{u}%")
+        ).fetchone()
+        if rep:
+            status_desc = "বর্তমানে পেন্ডিং ক্লেইমে আছে" if rep[1] == 'pending' else "ইতিমধ্যে রিপ্লেস দেওয়া হয়েছে"
+            already_replaced.append((u, status_desc))
+            continue
+
+        suc = conn.execute(
+            "SELECT id, status FROM seller_uid_collector WHERE uid=? LIMIT 1",
+            (u,)
+        ).fetchone()
+        if suc:
+            already_replaced.append((u, "পূর্বে এই UID-এর রিপ্লেস সম্পন্ন হয়েছে"))
+            continue
+
+    if already_replaced:
+        conn.close()
+        err_items = "\n".join([f"• `{u}` — *{desc}*" for u, desc in already_replaced])
+        return await m.answer(
+            f"🚫 **ডাবল রিপ্লেস নিষিদ্ধ (Already Replaced / Pending)!**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"নিচের UID গুলো ইতিমধ্যে পূর্বে রিপ্লেসের জন্য জমা দেওয়া হয়েছে বা রিপ্লেস প্রদান করা হয়েছে:\n\n"
+            f"{err_items}\n\n"
+            f"⚠️ একই UID দিয়ে একাধিকবার ডাবল রিপ্লেস রিকোয়েস্ট দেওয়া সম্পূর্ণ নিষিদ্ধ। অনুগ্রহ করে শুধুমাত্র নতুন নষ্ট আইডি দিন অথবা বাতিল করতে /cancel লিখুন।",
+            parse_mode="Markdown"
+        )
+
     try:
         conn.execute(
             "INSERT INTO support_tickets (ticket_id, user_id, type, status, data, timestamp) VALUES (?, ?, 'replace', 'pending', ?, ?)",
@@ -4310,8 +4365,7 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         rep_cat = st_data.get("replace_cat", "fb1000")
         db_cat_label = "1000xxx PC clon{Content Used}" if (rep_cat == "fb1000_used" or "used" in str(rep_cat).lower()) else ({"fb61":"FB 61","fb1000":"FB 1000 Fresh","tempid":"Temp ID"}.get(rep_cat, rep_cat))
 
-        # Extract UIDs and find sellers
-        detected_uids = extract_uids_from_text(user_data_text)
+        # Find sellers for UIDs
         uid_seller_map = find_sellers_for_uids(detected_uids)
         detected_sellers = list(set(uid_seller_map.values()))
         seller_summary = ", ".join(detected_sellers) if detected_sellers else None
@@ -4557,11 +4611,19 @@ async def tick_timeover_action(c: types.CallbackQuery):
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     admin_name = f"bot-admin ({c.from_user.first_name})"
     conn.execute("UPDATE support_tickets SET status='processed', admin_response=? WHERE ticket_id=?", (f"Time Over ({allowed_h}h)", ticket_id))
-    conn.execute("""
+    res = conn.execute("""
         UPDATE replace_requests 
         SET status='rejected', replacement_data=?, resolved_by=?, resolved_at=? 
-        WHERE (reason LIKE ? OR (user_id=? AND status='pending'))
-    """, (f"[Time Over: {allowed_h}h limit exceeded]", admin_name, now_ms, f"%{ticket_id}%", user_id))
+        WHERE reason LIKE ? AND status='pending'
+    """, (f"[Time Over: {allowed_h}h limit exceeded]", admin_name, now_ms, f"%{ticket_id}%"))
+    if res.rowcount == 0:
+        single_req = conn.execute("SELECT id FROM replace_requests WHERE user_id=? AND status='pending' ORDER BY id ASC LIMIT 1", (user_id,)).fetchone()
+        if single_req:
+            conn.execute("""
+                UPDATE replace_requests 
+                SET status='rejected', replacement_data=?, resolved_by=?, resolved_at=? 
+                WHERE id=?
+            """, (f"[Time Over: {allowed_h}h limit exceeded]", admin_name, now_ms, single_req[0]))
     conn.commit()
     conn.close()
     
@@ -4612,12 +4674,20 @@ async def send_admin_reply(m: types.Message, state: FSMContext):
     
     conn = _dbc()
     conn.execute("UPDATE support_tickets SET status='processed', admin_response=? WHERE ticket_id=?", (reply_text, ticket_id))
-    # Sync with replace_requests so it does not stay in pending!
-    conn.execute("""
+    # Sync with ONLY this specific replace request so other requests remain pending!
+    res = conn.execute("""
         UPDATE replace_requests 
         SET status='replaced', replacement_data=?, resolved_by=?, resolved_at=? 
-        WHERE (reason LIKE ? OR (user_id=? AND status='pending'))
-    """, (f"[Replied: {reply_text}]", admin_name, now_ms, f"%{ticket_id}%", user_id))
+        WHERE reason LIKE ? AND status='pending'
+    """, (f"[Replied: {reply_text}]", admin_name, now_ms, f"%{ticket_id}%"))
+    if res.rowcount == 0:
+        single_req = conn.execute("SELECT id FROM replace_requests WHERE user_id=? AND status='pending' ORDER BY id ASC LIMIT 1", (user_id,)).fetchone()
+        if single_req:
+            conn.execute("""
+                UPDATE replace_requests 
+                SET status='replaced', replacement_data=?, resolved_by=?, resolved_at=? 
+                WHERE id=?
+            """, (f"[Replied: {reply_text}]", admin_name, now_ms, single_req[0]))
     conn.commit()
     conn.close()
     
@@ -4669,11 +4739,19 @@ async def send_admin_replace(m: types.Message, state: FSMContext):
     original_data = ticket_data[0] if ticket_data else "N/A"
     
     conn.execute("UPDATE support_tickets SET status='processed', admin_response=? WHERE ticket_id=?", (replace_data, ticket_id))
-    conn.execute("""
+    res = conn.execute("""
         UPDATE replace_requests 
         SET status='replaced', replacement_data=?, resolved_by=?, resolved_at=? 
         WHERE reason LIKE ? AND status='pending'
     """, (replace_data, admin_name, now_ms, f"%{ticket_id}%"))
+    if res.rowcount == 0:
+        single_req = conn.execute("SELECT id FROM replace_requests WHERE user_id=? AND status='pending' ORDER BY id ASC LIMIT 1", (user_id,)).fetchone()
+        if single_req:
+            conn.execute("""
+                UPDATE replace_requests 
+                SET status='replaced', replacement_data=?, resolved_by=?, resolved_at=? 
+                WHERE id=?
+            """, (replace_data, admin_name, now_ms, single_req[0]))
     conn.commit()
     conn.close()
     
