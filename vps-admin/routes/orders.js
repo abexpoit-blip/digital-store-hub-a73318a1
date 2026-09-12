@@ -43,36 +43,62 @@ router.get('/', (req, res) => {
   });
 });
 
-// Download Excel for a particular sale: pulls stock matching category & qty if available,
-// otherwise just exports the sale info row. Note: bot deletes stock on sale, so for
-// historical orders the IDs may not be retrievable. This works for fresh orders.
+// Download Excel for a particular sale: pulls real delivered accounts from delivery_archive
 router.get('/:id/excel', (req, res) => {
   const id = parseInt(req.params.id, 10);
   const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(id);
   if (!sale) return res.status(404).send('Sale not found');
 
+  // Pull actual delivered items from delivery_archive (real IDs that user received)
+  let items = [];
+  try {
+    items = db.prepare(
+      'SELECT stock_id, data, delivered_at, seller_name FROM delivery_archive WHERE sale_id = ? ORDER BY id ASC'
+    ).all(sale.id);
+  } catch (_) {}
+
+  // Fallback for older orders where sale_id might have been unlinked
+  if (!items.length) {
+    try {
+      items = db.prepare(
+        'SELECT stock_id, data, delivered_at, seller_name FROM delivery_archive WHERE user_id = ? AND category = ? ORDER BY id DESC LIMIT ?'
+      ).all(sale.user_id, sale.category, sale.qty || 1);
+    } catch (_) {}
+  }
+
   const wb = XLSX.utils.book_new();
-  const headerRows = [
+  const rows = [
     ['Order ID', sale.id],
     ['User ID', sale.user_id],
-    ['Username', sale.username],
+    ['Username', sale.username || '-'],
     ['Category', sale.category],
     ['Quantity', sale.qty],
-    ['Total', sale.total + '৳'],
-    ['Date', `${sale.date} ${sale.time || ''}`],
+    ['Total', (sale.total || 0) + '৳'],
+    ['Date', `${sale.date || ''} ${sale.time || ''}`.trim()],
     [],
-    ['#', 'Data (delivered)'],
+    ['#', 'UID', 'PASSWORD', 'COOKIES'],
   ];
-  // Fresh stock matching category — best-effort lookup
-  const stockSample = db.prepare(
-    'SELECT data FROM stock WHERE category = ? ORDER BY id DESC LIMIT ?'
-  ).all(sale.category, sale.qty || 1);
 
-  stockSample.forEach((s, i) => headerRows.push([i + 1, s.data]));
-  if (!stockSample.length) headerRows.push(['—', '(historical — IDs not stored separately)']);
+  if (items.length) {
+    items.forEach((it, i) => {
+      const line = (it.data || '').trim();
+      const parts = line.split(/\s+/);
+      if (parts.length >= 2) {
+        const uid = parts[0] || '';
+        const pass = parts[1] || '';
+        const cookies = line.split(null, 2)[2] || parts.slice(2).join(' ');
+        rows.push([i + 1, uid, pass, cookies]);
+      } else {
+        // e.g. VPN or single data string
+        rows.push([i + 1, line, '', '']);
+      }
+    });
+  } else {
+    rows.push(['—', '(No delivered items found in archive for this order)', '', '']);
+  }
 
-  const ws = XLSX.utils.aoa_to_sheet(headerRows);
-  ws['!cols'] = [{ wch: 14 }, { wch: 70 }];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{ wch: 6 }, { wch: 22 }, { wch: 18 }, { wch: 80 }];
   XLSX.utils.book_append_sheet(wb, ws, `Order-${sale.id}`);
 
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });

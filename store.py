@@ -3183,11 +3183,13 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                     "INSERT INTO nord_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)",
                     (_stock_id, c.from_user.id, _order_id, _now_ts),
                 )
-                conn.execute(
+                _scur = conn.cursor()
+                _scur.execute(
                     "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (c.from_user.id, _uname, f"VPN: {vpn_name}", 1, price,
                      datetime.now().strftime("%Y-%m-%d"), _cur_time),
                 )
+                _v_sale_id = _scur.lastrowid
                 conn.execute(
                     "INSERT INTO vpn_orders (order_id, user_id, vpn_name, duration, price, status, date, admin_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (_order_id, c.from_user.id, vpn_name, pkg_name, price,
@@ -3196,7 +3198,7 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                 try:
                     conn.execute(
                         "INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        (None, c.from_user.id,
+                        (_v_sale_id, c.from_user.id,
                          (f"@{c.from_user.username}" if c.from_user.username else None),
                          f"VPN: {vpn_name}", _stock_id, _vpn_info, 'bot-auto', _now_ts),
                     )
@@ -3366,14 +3368,16 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                 (order_id, c.from_user.id, vpn_name, pkg_name, price, datetime.now().strftime("%Y-%m-%d"),
                  pool_api_oid or 'POOLED', s_code, str(account_data))
             )
-            conn.execute(
+            _scur = conn.cursor()
+            _scur.execute(
                 "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (c.from_user.id, username_display, f"VPN: {vpn_name}", 1, price, datetime.now().strftime("%Y-%m-%d"), current_time)
             )
+            _v_sid = _scur.lastrowid
             try:
                 conn.execute(
                     "INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (None, c.from_user.id, (f"@{c.from_user.username}" if c.from_user.username else None),
+                    (_v_sid, c.from_user.id, (f"@{c.from_user.username}" if c.from_user.username else None),
                      f"VPN: {vpn_name}", None, str(account_data), 'vpn-pool-2/2', now_ts)
                 )
             except Exception:
@@ -3458,14 +3462,16 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                     (order_id, c.from_user.id, vpn_name, pkg_name, price, datetime.now().strftime("%Y-%m-%d"),
                      api_order_id, s_code, str(account_data))
                 )
-                conn.execute(
+                _scur = conn.cursor()
+                _scur.execute(
                     "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (c.from_user.id, username_display, f"VPN: {vpn_name}", 1, price, datetime.now().strftime("%Y-%m-%d"), current_time)
                 )
+                _v_sid = _scur.lastrowid
                 try:
                     conn.execute(
                         "INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        (None, c.from_user.id, (f"@{c.from_user.username}" if c.from_user.username else None),
+                        (_v_sid, c.from_user.id, (f"@{c.from_user.username}" if c.from_user.username else None),
                          f"VPN: {vpn_name}", None, str(account_data), 'api-auto', now_ts)
                     )
                 except Exception:
@@ -3697,14 +3703,15 @@ async def poll_and_deliver_api_vpn_order(order_id, api_order_id, user_id, vpn_na
                 "UPDATE vpn_orders SET status='delivered', admin_name='API-POOL-1/2', api_status='completed', api_response=? WHERE order_id=?",
                 (str(account_data), order_id)
             )
-            conn.execute(
+            _scur = conn.execute(
                 "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (user_id, f"User {user_id}", f"VPN: {vpn_name}", 1, price, datetime.now().strftime("%Y-%m-%d"), cur_time)
             )
+            _v_sid = _scur.lastrowid
             try:
                 conn.execute(
                     "INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (None, user_id, None, f"VPN: {vpn_name}", None, str(account_data), 'api-auto', now_ts)
+                    (_v_sid, user_id, None, f"VPN: {vpn_name}", None, str(account_data), 'api-auto', now_ts)
                 )
             except Exception:
                 pass
@@ -3789,14 +3796,15 @@ async def retry_vpn_api_delivery(c: types.CallbackQuery):
                 print(f"[vpn_retry_pool] error: {_e_pool}")
 
             conn.execute("UPDATE vpn_orders SET status='delivered', admin_name='API-RETRY', api_order_id=?, api_service=?, api_status='completed', api_response=? WHERE order_id=?", (api_order_id, s_code, str(account_data), order_id))
-            conn.execute(
+            _scur = conn.execute(
                 "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, 1, ?, ?, ?)",
                 (user_id, f"User {user_id}", f"VPN: {vpn_name}", price, datetime.now().strftime("%Y-%m-%d"), cur_time)
             )
+            _v_sid = _scur.lastrowid
             try:
                 conn.execute(
                     "INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (None, user_id, None, f"VPN: {vpn_name}", None, str(account_data), 'api-retry', now_ts)
+                    (_v_sid, user_id, None, f"VPN: {vpn_name}", None, str(account_data), 'api-retry', now_ts)
                 )
             except Exception:
                 pass
