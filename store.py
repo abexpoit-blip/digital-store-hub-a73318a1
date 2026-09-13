@@ -105,17 +105,17 @@ QUOTES = [
     "“ডিজিটাল সেবায় আমরা আছি আপনার পাশে।”"
 ]
 
-BOT_VERSION = "V 10.07"
+BOT_VERSION = "V 10.08"
 
 # --- REPLACEMENT DYNAMIC TIERS & TIME HELPERS ---
 def get_replace_window_hours(qty: int, category: str = "") -> int:
     """
-    Tier-based replace windows:
+    Tier-based replace windows (Strict limits, 24h removed, max 12h):
     1000xxx PC clon{Content Used} : strictly 2 hours
-    1-4 pcs   : 2 hours
-    5-30 pcs  : 6 hours
-    31-100 pcs: 12 hours
-    101+ pcs  : 24 hours
+    1-10 pcs  : 2 hours
+    11-30 pcs : 6 hours
+    31-50 pcs : 8 hours
+    51+ pcs   : 12 hours (maximum limit)
     """
     cat_str = str(category).lower().strip()
     if "used" in cat_str or cat_str == "fb1000_used":
@@ -124,18 +124,17 @@ def get_replace_window_hours(qty: int, category: str = "") -> int:
         q = int(qty)
     except Exception:
         q = 1
-    if q <= 4:
+    if q <= 10:
         return 2
     elif q <= 30:
         return 6
-    elif q <= 100:
-        return 12
+    elif q <= 50:
+        return 8
     else:
-        return 24
+        return 12
 
 def get_sale_epoch(sale_id: int, date_str: str, time_str: str) -> int:
     """Return unix timestamp (seconds) of sale delivery or creation."""
-    import time
     try:
         conn = _dbc()
         row = conn.execute("SELECT delivered_at FROM delivery_archive WHERE sale_id=? ORDER BY id ASC LIMIT 1", (sale_id,)).fetchone()
@@ -144,14 +143,16 @@ def get_sale_epoch(sale_id: int, date_str: str, time_str: str) -> int:
             return int(row[0])
     except Exception:
         pass
-    try:
-        dt_str = f"{date_str} {time_str}"
-        dt = datetime.strptime(dt_str, "%Y-%m-%d %I:%M %p")
-        bst_tz = timezone(timedelta(hours=6))
-        dt = dt.replace(tzinfo=bst_tz)
-        return int(dt.timestamp())
-    except Exception:
-        return int(time.time())
+    dt_str = f"{date_str or ''} {time_str or ''}".strip()
+    bst_tz = timezone(timedelta(hours=6))
+    for fmt in ("%Y-%m-%d %I:%M %p", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(dt_str, fmt)
+            dt = dt.replace(tzinfo=bst_tz)
+            return int(dt.timestamp())
+        except Exception:
+            continue
+    return 0
 
 def format_duration(seconds: int) -> str:
     """Format duration in seconds into human-readable Bengali string."""
@@ -4018,16 +4019,16 @@ async def show_terms_policy(event: types.Message | types.CallbackQuery):
         "━━━━━━━━━━━━━━━━━━━━\n"
         "আমাদের স্টোর থেকে কেনাকাটার পূর্বে ও পরে নিচের নীতিমালাগুলো বাধ্যতামূলকভাবে মেনে চলতে হবে:\n\n"
         "⏱️ **ডায়নামিক রিপ্লেস সময়সীমা (Replacement Tiers):**\n"
-        "▫️ **১ – ৪ পিস আইডি:** ক্রয়ের পর **২ ঘণ্টা** গ্যারান্টি\n"
-        "▫️ **৫ – ৩০ পিস আইডি:** ক্রয়ের পর **৬ ঘণ্টা** গ্যারান্টি\n"
-        "▫️ **৩১ – ১০০ পিস আইডি:** ক্রয়ের পর **১২ ঘণ্টা** গ্যারান্টি\n"
-        "▫️ **১০১+ পিস আইডি:** ক্রয়ের পর **২৪ ঘণ্টা** গ্যারান্টি\n\n"
+        "▫️ **১ – ১০ পিস আইডি:** ক্রয়ের পর **২ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ **১১ – ৩০ পিস আইডি:** ক্রয়ের পর **৬ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ **৩১ – ৫০ পিস আইডি:** ক্রয়ের পর **৮ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ **৫১+ পিস আইডি:** ক্রয়ের পর সর্বোচ্চ **১২ ঘণ্টা** গ্যারান্টি\n\n"
         "🚫 *অনুমোদিত সময় পার হয়ে গেলে স্বয়ংক্রিয়ভাবে রিপ্লেস মেয়াদ শেষ হবে এবং কোনো রিকোয়েস্ট গ্রহণ করা হবে না।*\n\n"
         "📢 **PC Clone ID মার্কেট বাস্তবতা ও গুরুত্বপূর্ণ নির্দেশনা (বাধ্যতামূলক পাঠ্য):**\n"
         "▫️ আপনারা জানেন বর্তমানে মার্কেটে ফ্রেশ PC Clone ID পাওয়া অনেক কঠিন এবং দিন দিন তীব্র শর্টেজ দেখা দিচ্ছে। দীর্ঘ সময় ধরে ক্লোন আইডি সরবরাহ হওয়ায় মার্কেট সংকট সৃষ্টি হয়েছে।\n"
         "▫️ কিছু সেলার বর্তমানে ২-৩ মাস বা ১-২ সপ্তাহ আগের ব্যবহৃত (Used) আইডি পুনরায় বিভিন্ন বায়ারের কাছে বিক্রি করে থাকে। আমরা সর্বোচ্চ যাচাই করে বিশ্বস্ত সোর্স থেকে আইডি স্টকে নিই এবং সমস্যার প্রমাণ পেলে সেলারদের বরখাস্ত করি। কিন্তু চরম সংকটের সময় মার্কেটে এই বাস্তবতা উপেক্ষা করা যায় না।\n"
         "▫️ **ক্রেতাদের জন্য জরুরি পরামর্শ:** আইডি কেনার পর দ্রুত কাজ করে আপনার Ad Account, মাদার একাউন্ট বা অন্য সুরক্ষিত একাউন্টে ট্রান্সফার/মুভ করে রেখে দিন।\n"
-        "▫️ **কঠোর নিয়ম:** আইডি ক্রয়ের জন্য নির্ধারিত গ্যারান্টি উইন্ডোর (২h / ৬h / ১২h / ২৪h) পর সেলারের রি-সেলিং বা লগইন সংক্রান্ত কোনো অভিযোগ গ্রহণযোগ্য হবে না। অতএব কেনার পরপরই আইডি চেক করে কাজ সম্পন্ন করুন।\n\n"
+        "▫️ **কঠোর নিয়ম:** আইডি ক্রয়ের জন্য নির্ধারিত গ্যারান্টি উইন্ডোর (২h / ৬h / ৮h / ১২h) পর সেলারের রি-সেলিং বা লগইন সংক্রান্ত কোনো অভিযোগ গ্রহণযোগ্য হবে না। অতএব কেনার পরপরই আইডি চেক করে কাজ সম্পন্ন করুন।\n\n"
         "📌 **রিপ্লেসের নিয়মাবলী ও শর্তাবলী:**\n"
         "১. শুধুমাত্র `UID PASSWORD COOKIES` টেক্সট আকারে সাবমিট করতে হবে।\n"
         "২. কোনো ফটো, স্ক্রিনশট বা ফাইল পাঠালে রিকোয়েস্ট সাথে সাথে বাতিল হবে।\n"
@@ -4124,12 +4125,12 @@ async def support_replace_start(c: types.CallbackQuery, state: FSMContext):
         "কোন অর্ডারের নষ্ট আইডি আপনি রিপ্লেস করতে চান তা নিচে থেকে সিলেক্ট করুন:\n\n"
         "⏱️ **আমাদের অটোমেটিক রিপ্লেস গ্যারান্টি:**\n"
         "▫️ 1000xxx PC clon{{Content Used}}: **২ ঘণ্টা** ফিক্সড গ্যারান্টি\n"
-        "▫️ ১ – ৪ পিস (অন্যান্য): **২ ঘণ্টা** গ্যারান্টি\n"
-        "▫️ ৫ – ৩০ পিস: **৬ ঘণ্টা** গ্যারান্টি\n"
-        "▫️ ৩১ – ১০০ পিস: **১২ ঘণ্টা** গ্যারান্টি\n"
-        "▫️ ১০১+ পিস: **২৪ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ ১ – ১০ পিস (অন্যান্য): **২ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ ১১ – ৩০ পিস: **৬ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ ৩১ – ৫০ পিস: **৮ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ ৫১+ পিস: সর্বোচ্চ **১২ ঘণ্টা** গ্যারান্টি\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "💡 *সিস্টেম স্বয়ংক্রিয়ভাবে অর্ডারের সময়, ক্যাটাগরি এবং পরিমাণের ওপর ভিত্তি করে রিপ্লেসের মেয়াদ যাচাই করবে।*"
+        "💡 *সিস্টেম স্বয়ংক্রিয়ভাবে অর্ডারের সময়, ক্যাটাগরি এবং পরিমাণের ওপর ভিত্তি করে রিপ্লেসের মেয়াদ যাচাই করবে। নির্ধারিত সময়ের বাইরে কোনো রিপ্লেস গ্রহণ করা হবে না।*"
     )
     await c.message.edit_text(pick_msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
@@ -4214,7 +4215,45 @@ async def select_replace_order(c: types.CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data.startswith("rep_agree_"))
 async def rep_agree_action(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
-    sale_id = c.data.split("_")[2]
+    sale_id = int(c.data.split("_")[2])
+    
+    conn = _dbc()
+    sale = conn.execute("SELECT id, user_id, category, qty, date, time FROM sales WHERE id=? AND user_id=?", (sale_id, c.from_user.id)).fetchone()
+    conn.close()
+    
+    if not sale:
+        return await c.message.answer("❌ অর্ডারটি পাওয়া যায়নি অথবা আপনি এই অর্ডারের ক্রেতা নন।")
+        
+    s_id, s_uid, s_cat, s_qty, s_date, s_time = sale
+    s_epoch = get_sale_epoch(s_id, s_date, s_time)
+    allowed_h = get_replace_window_hours(s_qty, s_cat)
+    allowed_sec = allowed_h * 3600
+    now_ts = int(time.time())
+    elapsed_sec = max(0, now_ts - s_epoch)
+    
+    if elapsed_sec > allowed_sec:
+        kb = InlineKeyboardBuilder()
+        kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy (শর্তাবলী)", callback_data="terms_policy"))
+        kb.row(types.InlineKeyboardButton(text="🔙 অন্য অর্ডার বাছুন", callback_data="sup_replace"))
+        return await c.message.edit_text(
+            f"🚫 **রিপ্লেস সময়সীমা অতিক্রম করেছে (Time Expired)!**\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"📦 **অর্ডার নং:** `#{s_id}` ({s_qty} pcs)\n"
+            f"⏳ **অনুমোদিত রিপ্লেস উইন্ডো:** {allowed_h} ঘণ্টা\n"
+            f"⌛ **অতিবাহিত সময়:** {format_duration(elapsed_sec)}\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚠️ আপনার অর্ডারের জন্য নির্ধারিত **{allowed_h} ঘণ্টার** রিপ্লেস সময়সীমা শেষ হয়ে গেছে। নির্ধারিত সময়ের বাইরে কোনো রিপ্লেস গ্রহণ করা সম্ভব নয়।",
+            reply_markup=kb.as_markup(), parse_mode="Markdown"
+        )
+        
+    await state.update_data(
+        replace_sale_id=s_id,
+        replace_qty=s_qty,
+        replace_cat=s_cat,
+        replace_allowed_hours=allowed_h,
+        replace_sale_time=f"{s_date} {s_time}",
+        replace_sale_epoch=s_epoch
+    )
     
     await c.message.edit_text(
         f"✍️ **অর্ডার `#{sale_id}` এর নষ্ট আইডিগুলো টেক্সট আকারে দিন:**\n\n"
@@ -4223,7 +4262,7 @@ async def rep_agree_action(c: types.CallbackQuery, state: FSMContext):
         "📝 **Example:**\n"
         "`100011... myPass123 datr=xxx; c_user=100011...; xs=...`\n\n"
         "⚠️ শুধুমাত্র Text accept হবে। File / Screenshot পাঠালে auto-reject।\n"
-        "একাধিক আইডি হলে প্রতি লাইনে একটি করে দিন।"
+        f"⚠️ আপনি এই অর্ডারে সর্বোচ্চ **{s_qty}টি** আইডি সাবমিট করতে পারবেন।"
     )
     await state.set_state(ShopStates.waiting_for_replace_data)
 
@@ -4281,26 +4320,56 @@ async def process_replace_request(m: types.Message, state: FSMContext):
             parse_mode="Markdown"
         )
 
-    # Re-verify time expiration in state
+    # Re-verify order existence and time expiration strictly from DB
     st_data = await state.get_data()
     sale_id = st_data.get("replace_sale_id")
-    allowed_h = st_data.get("replace_allowed_hours", 6)
-    sale_epoch = st_data.get("replace_sale_epoch")
-    qty = st_data.get("replace_qty", len(raw_lines))
+    if not sale_id:
+        await state.clear()
+        kb = InlineKeyboardBuilder()
+        kb.row(types.InlineKeyboardButton(text="🔄 অর্ডার সিলেক্ট করুন", callback_data="sup_replace"))
+        kb.row(types.InlineKeyboardButton(text="🔙 মেনু", callback_data="support_menu"))
+        return await m.answer(
+            "❌ **কোনো সক্রিয় অর্ডার সনাক্ত করা যায়নি!**\n\n"
+            "রিপ্লেস দেওয়ার জন্য প্রথমে সাপোর্ট মেনু থেকে নির্দিষ্ট অর্ডারটি সিলেক্ট করুন।",
+            reply_markup=kb.as_markup(), parse_mode="Markdown"
+        )
 
-    now_ts = int(__import__("time").time())
-    if sale_epoch and (now_ts - sale_epoch) > (allowed_h * 3600):
+    conn = _dbc()
+    sale = conn.execute(
+        "SELECT id, user_id, username, category, qty, total, date, time FROM sales WHERE id=? AND user_id=?",
+        (sale_id, m.from_user.id)
+    ).fetchone()
+    if not sale:
+        conn.close()
+        await state.clear()
+        return await m.answer("❌ অর্ডারটি খুঁজে পাওয়া যায়নি অথবা আপনি এই অর্ডারের ক্রেতা নন।")
+
+    s_id, s_uid, s_uname, s_cat, s_qty, s_tot, s_date, s_time = sale
+    s_epoch = get_sale_epoch(s_id, s_date, s_time)
+    allowed_h = get_replace_window_hours(s_qty, s_cat)
+    allowed_sec = allowed_h * 3600
+    now_ts = int(time.time())
+    elapsed_sec = max(0, now_ts - s_epoch)
+
+    if elapsed_sec > allowed_sec:
+        conn.close()
         await state.clear()
         kb = InlineKeyboardBuilder()
         kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
         kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
         return await m.answer(
-            f"🚫 **রিপ্লেস সময়সীমা অতিক্রম করেছে!**\n\nআইডি সাবমিট করার আগেই আপনার অর্ডারের {allowed_h} ঘণ্টার গ্যারান্টি মেয়াদ শেষ হয়ে গেছে।",
-            reply_markup=kb.as_markup()
+            f"🚫 **রিপ্লেস সময়সীমা অতিক্রম করেছে (Time Expired)!**\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"📦 **অর্ডার নং:** `#{s_id}` ({s_qty} pcs)\n"
+            f"⏳ **অনুমোদিত সময়সীমা:** {allowed_h} ঘণ্টা\n"
+            f"⌛ **অতিবাহিত সময়:** {format_duration(elapsed_sec)}\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚠️ আপনার অর্ডারের জন্য নির্ধারিত **{allowed_h} ঘণ্টার** রিপ্লেস সময়সীমা শেষ হয়ে গেছে। নির্ধারিত সময়ের বাইরে কোনো রিপ্লেস গ্রহণ করা সম্ভব নয়।",
+            reply_markup=kb.as_markup(), parse_mode="Markdown"
         )
 
     ticket_id = str(uuid.uuid4())[:8]
-    order_ref = f"Order #{sale_id}" if sale_id else "Direct"
+    order_ref = f"Order #{s_id}"
     lines = raw_lines
     acc_count_warning = f"⚠️ __ইউজার {len(lines)} টি একাউন্ট দিয়েছে!__" if len(lines) > 1 else ""
     
@@ -4310,7 +4379,43 @@ async def process_replace_request(m: types.Message, state: FSMContext):
     # Extract UIDs
     detected_uids = extract_uids_from_text(user_data_text)
     if not detected_uids:
+        conn.close()
         return await m.answer("❌ টেক্সট থেকে কোনো বৈধ UID সনাক্ত করা যায়নি। অনুগ্রহ করে UID PASSWORD COOKIES ফরম্যাটে দিন।")
+
+    # Check submitted quantity against purchased quantity in that order
+    if len(detected_uids) > s_qty:
+        conn.close()
+        return await m.answer(
+            f"🚫 **অর্ডারের পরিমাণের চেয়ে বেশি আইডি দিয়েছেন!**\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"📦 অর্ডার `#{s_id}`-এ আপনি মোট **{s_qty}টি** আইডি কিনেছিলেন।\n"
+            f"কিন্তু আপনি সাবমিট করেছেন **{len(detected_uids)}টি** UID।\n\n"
+            f"⚠️ একটি অর্ডারে কেনা পরিমাণের বেশি রিপ্লেস দেওয়া যাবে না। অনুগ্রহ করে সর্বোচ্চ **{s_qty}টি** নষ্ট আইডি দিন অথবা /cancel লিখুন।",
+            parse_mode="Markdown"
+        )
+
+    # Check if UIDs belong to this sale in delivery_archive
+    archived_rows = conn.execute(
+        "SELECT data FROM delivery_archive WHERE sale_id=?",
+        (s_id,)
+    ).fetchall()
+    if archived_rows:
+        order_uids = set()
+        for a_row in archived_rows:
+            for u in extract_uids_from_text(a_row[0] or ""):
+                order_uids.add(u)
+        
+        invalid_uids = [u for u in detected_uids if u not in order_uids]
+        if invalid_uids:
+            conn.close()
+            inv_str = ", ".join([f"`{u}`" for u in invalid_uids])
+            return await m.answer(
+                f"🚫 **অর্ডারের বাইরের UID সনাক্ত হয়েছে!**\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                f"নিচের UID গুলো আপনার অর্ডার `#{s_id}`-এর অন্তর্ভুক্ত নয়:\n{inv_str}\n\n"
+                f"⚠️ অন্য কোনো অর্ডারের বা স্টোরের বাইরের আইডি এখানে সাবমিট করা যাবে না। শুধুমাত্র অর্ডার `#{s_id}`-এ প্রাপ্ত নষ্ট আইডিগুলো দিন।",
+                parse_mode="Markdown"
+            )
 
     # 1. Check for duplicate UIDs within the submitted message itself
     seen_in_msg = set()
@@ -4321,17 +4426,17 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         else:
             seen_in_msg.add(u)
     if dupes_in_msg:
+        conn.close()
         dupe_str = ", ".join([f"`{u}`" for u in set(dupes_in_msg)])
         return await m.answer(
             f"🚫 **একই মেসেজে ডুপ্লিকেট UID পাওয়া গেছে!**\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
             f"আপনার দেওয়া টেক্সটে নিচের UID একাধিকবার রয়েছে:\n{dupe_str}\n\n"
             f"⚠️ প্রতিটি নষ্ট আইডি একবারই সাবমিট করতে পারবেন। ডুপ্লিকেট লাইনগুলো বাদ দিয়ে পুনরায় টেক্সট পাঠান অথবা /cancel দিন।",
             parse_mode="Markdown"
         )
 
     # 2. Check database to ensure no duplicate / double replacement on the same UID
-    conn = _dbc()
     already_replaced = []
     for u in detected_uids:
         rep = conn.execute(
@@ -4370,7 +4475,7 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         )
         _rep_ts = int(utc_now_ts * 1000)
         _rep_uname = f"@{m.from_user.username}" if m.from_user.username else (m.from_user.first_name or f"User_{m.from_user.id}")
-        rep_cat = st_data.get("replace_cat", "fb1000")
+        rep_cat = s_cat or st_data.get("replace_cat", "fb1000")
         db_cat_label = "1000xxx PC clon{Content Used}" if (rep_cat == "fb1000_used" or "used" in str(rep_cat).lower()) else ({"fb61":"FB 61","fb1000":"FB 1000 Fresh","tempid":"Temp ID"}.get(rep_cat, rep_cat))
 
         # Find sellers for UIDs
