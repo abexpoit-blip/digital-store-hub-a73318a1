@@ -94,8 +94,8 @@ GROUP_LINK = "https://t.me/basictrick"
 VPN_BOT_LINK = "https://t.me/btstoreprobot"
 
 # Payment Info
-BKASH_NUMBER = "01971814603"
-NAGAD_NUMBER = "01971814603"
+BKASH_NUMBER = "01805652465"
+NAGAD_NUMBER = "01786726748"
 BINANCE_ID = "488586141"
 
 QUOTES = [
@@ -2661,7 +2661,8 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
         if is_manual:
             manual_desc = (
                 "\n\n📝 *Manual Payment* — সরাসরি bKash / Nagad\n"
-                f"   ▸ bKash ও Nagad: `{BKASH_NUMBER}`\n"
+                f"   ▸ bKash: `{BKASH_NUMBER}`\n"
+                f"   ▸ Nagad: `{NAGAD_NUMBER}`\n"
                 "   ▸ Send Money করে স্ক্রিনশট পাঠাবেন\n"
                 "   ▸ অ্যাডমিন চেক করে ব্যালেন্স যোগ করবে\n"
                 "   ▸ মিনিমাম ১০৳"
@@ -3004,7 +3005,8 @@ async def dep_start(c: types.CallbackQuery, state: FSMContext):
     if is_manual:
         manual_desc = (
             "\n\n📝 *Manual Payment* — সরাসরি bKash / Nagad\n"
-            f"   ▸ bKash ও Nagad: `{BKASH_NUMBER}`\n"
+            f"   ▸ bKash: `{BKASH_NUMBER}`\n"
+            f"   ▸ Nagad: `{NAGAD_NUMBER}`\n"
             "   ▸ Send Money করে স্ক্রিনশট পাঠাবেন\n"
             "   ▸ অ্যাডমিন চেক করে ব্যালেন্স যোগ করবে\n"
             "   ▸ মিনিমাম ১০৳"

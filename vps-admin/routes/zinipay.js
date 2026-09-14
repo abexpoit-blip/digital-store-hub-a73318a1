@@ -17,6 +17,12 @@ const SHARED_SECRET       = process.env.DOWNLOAD_SECRET || '';     // bot ↔ ad
 const PUBLIC_BASE         = process.env.ZINIPAY_PUBLIC_BASE || 'https://pay.nexus-x.cloud';
 const BOT_USERNAME        = process.env.BOT_USERNAME || 'btidsellerbot'; // without @
 
+let ziniDispatcher = undefined;
+try {
+  const { Agent } = require('undici');
+  ziniDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+} catch (_) {}
+
 // ---------- ensure ZiniPay columns exist (idempotent) ----------
 try {
   const cols = ['invoice_id TEXT', 'method TEXT'];
@@ -53,6 +59,7 @@ async function verifyAndApprove(invoice_id, source = 'manual') {
       'zini-api-key': ZINIPAY_API_KEY,
       'zinipay-api-key': ZINIPAY_API_KEY
     },
+    ...(ziniDispatcher ? { dispatcher: ziniDispatcher } : {}),
     body: JSON.stringify({ invoice_id })
   });
   const vdata = await vr.json().catch(() => ({}));
@@ -148,6 +155,7 @@ router.post('/create-invoice', express.json(), async (req, res) => {
     const r = await fetch(`${ZINIPAY_BASE}/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'zini-api-key': ZINIPAY_API_KEY },
+      ...(ziniDispatcher ? { dispatcher: ziniDispatcher } : {}),
       body: JSON.stringify(payload)
     });
     const data = await r.json();
