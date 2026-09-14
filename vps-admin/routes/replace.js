@@ -70,6 +70,28 @@ function extractUidsFromText(text) {
   return Array.from(found);
 }
 
+function classifyUid(uid, category = '') {
+  const u = String(uid || '').trim();
+  const c = String(category || '').toLowerCase().trim();
+  if (u.startsWith('61') || c.includes('61') || c.includes('fb61')) {
+    return '61xxx';
+  }
+  if (u.startsWith('1000') || c.includes('1000') || c.includes('fb1000')) {
+    return '1000xxx';
+  }
+  return 'Other';
+}
+
+function getBstDate(timestamp) {
+  if (!timestamp) return 'No Date';
+  const tsMs = timestamp > 100000000000 ? timestamp : timestamp * 1000;
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(new Date(tsMs));
+  } catch (_) {
+    return new Date(tsMs).toISOString().slice(0, 10);
+  }
+}
+
 function findSellersForUids(uids) {
   if (!uids || !uids.length) return new Map();
   const sellerMap = new Map();
@@ -183,31 +205,130 @@ router.get('/', (req, res) => {
   } catch (_) {}
 
   const activeCollectorRows = db.prepare(`
-    SELECT seller_name, uid, request_id 
+    SELECT seller_name, uid, category, submitted_at, request_id 
     FROM seller_uid_collector 
     WHERE status = 'active'
     ORDER BY id DESC
   `).all();
 
   const sellerGroups = {};
+  const dateGroups = {};
+
   activeCollectorRows.forEach(row => {
     const sName = row.seller_name || 'Unassigned (সেলার ছাড়া)';
+    const uid = String(row.uid || '').trim();
+    if (!uid) return;
+
+    const series = classifyUid(uid, row.category);
+    const dateStr = getBstDate(row.submitted_at);
+
+    // 1. Group by Seller
     if (!sellerGroups[sName]) {
-      sellerGroups[sName] = { seller: sName, uids: [], requestIds: new Set() };
+      sellerGroups[sName] = {
+        seller: sName,
+        allUids: [],
+        uids61: [],
+        uids1000: [],
+        uidsOther: [],
+        requestIds: new Set(),
+        dateCounts: {} // date -> { total, count61, count1000, countOther }
+      };
     }
-    if (!sellerGroups[sName].uids.includes(row.uid)) {
-      sellerGroups[sName].uids.push(row.uid);
+    const sg = sellerGroups[sName];
+    if (!sg.allUids.includes(uid)) {
+      sg.allUids.push(uid);
+      if (series === '61xxx') sg.uids61.push(uid);
+      else if (series === '1000xxx') sg.uids1000.push(uid);
+      else sg.uidsOther.push(uid);
+
+      if (!sg.dateCounts[dateStr]) {
+        sg.dateCounts[dateStr] = { total: 0, count61: 0, count1000: 0, countOther: 0 };
+      }
+      sg.dateCounts[dateStr].total++;
+      if (series === '61xxx') sg.dateCounts[dateStr].count61++;
+      else if (series === '1000xxx') sg.dateCounts[dateStr].count1000++;
+      else sg.dateCounts[dateStr].countOther++;
     }
-    if (row.request_id) sellerGroups[sName].requestIds.add(row.request_id);
+    if (row.request_id) sg.requestIds.add(row.request_id);
+
+    // 2. Group by Date
+    if (!dateGroups[dateStr]) {
+      dateGroups[dateStr] = {
+        date: dateStr,
+        total: 0,
+        count61: 0,
+        count1000: 0,
+        countOther: 0,
+        allUids: [],
+        sellers: {} // sellerName -> { seller, total, count61, count1000, countOther, uids61: [], uids1000: [], allUids: [] }
+      };
+    }
+    const dg = dateGroups[dateStr];
+    if (!dg.allUids.includes(uid)) {
+      dg.allUids.push(uid);
+      dg.total++;
+      if (series === '61xxx') dg.count61++;
+      else if (series === '1000xxx') dg.count1000++;
+      else dg.countOther++;
+
+      if (!dg.sellers[sName]) {
+        dg.sellers[sName] = {
+          seller: sName,
+          total: 0,
+          count61: 0,
+          count1000: 0,
+          countOther: 0,
+          uids61: [],
+          uids1000: [],
+          allUids: []
+        };
+      }
+      const dgs = dg.sellers[sName];
+      dgs.allUids.push(uid);
+      dgs.total++;
+      if (series === '61xxx') {
+        dgs.count61++;
+        dgs.uids61.push(uid);
+      } else if (series === '1000xxx') {
+        dgs.count1000++;
+        dgs.uids1000.push(uid);
+      } else {
+        dgs.countOther++;
+      }
+    }
   });
 
   const sellerReports = Object.values(sellerGroups).map(g => ({
     seller: g.seller,
-    count: g.uids.length,
-    uids: g.uids,
-    uidsText: g.uids.join('\n'),
+    count: g.allUids.length,
+    count61: g.uids61.length,
+    count1000: g.uids1000.length,
+    countOther: g.uidsOther.length,
+    uids: g.allUids,
+    uids61: g.uids61,
+    uids1000: g.uids1000,
+    uidsOther: g.uidsOther,
+    uidsText: g.allUids.join('\n'),
+    uids61Text: g.uids61.join('\n'),
+    uids1000Text: g.uids1000.join('\n'),
     requestCount: g.requestIds.size,
+    dateBreakdown: Object.entries(g.dateCounts).map(([d, c]) => ({ date: d, ...c })).sort((a, b) => b.date.localeCompare(a.date))
   })).sort((a, b) => b.count - a.count);
+
+  const dateReports = Object.values(dateGroups).map(dg => ({
+    date: dg.date,
+    total: dg.total,
+    count61: dg.count61,
+    count1000: dg.count1000,
+    countOther: dg.countOther,
+    uidsText: dg.allUids.join('\n'),
+    sellers: Object.values(dg.sellers).map(s => ({
+      ...s,
+      uidsText: s.allUids.join('\n'),
+      uids61Text: s.uids61.join('\n'),
+      uids1000Text: s.uids1000.join('\n')
+    })).sort((a, b) => b.total - a.total)
+  })).sort((a, b) => b.date.localeCompare(a.date));
 
   const counts = {
     pending: db.prepare("SELECT COUNT(*) AS c FROM replace_requests WHERE status='pending'").get().c,
@@ -221,7 +342,7 @@ router.get('/', (req, res) => {
     fb1000: db.prepare("SELECT COUNT(*) AS c FROM stock WHERE category='fb1000'").get().c,
     fb61: db.prepare("SELECT COUNT(*) AS c FROM stock WHERE category='fb61'").get().c,
   };
-  res.render('replace', { rows, status, counts, q, cat, stockCounts, sellerReports, msg: req.query.msg || null });
+  res.render('replace', { rows, status, counts, q, cat, stockCounts, sellerReports, dateReports, msg: req.query.msg || null });
 });
 
 // GET full data by ID (for modal viewer to avoid HTML attribute escaping issues)

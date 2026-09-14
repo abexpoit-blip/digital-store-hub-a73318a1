@@ -2023,13 +2023,33 @@ async def admin_vpn_sync(message: types.Message):
             parse_mode="Markdown"
         )
 
+def classify_uid(uid: str, category: str = "") -> str:
+    u = str(uid or "").strip()
+    c = str(category or "").lower().strip()
+    if u.startswith("61") or "61" in c or "fb61" in c:
+        return "61xxx"
+    if u.startswith("1000") or "1000" in c or "fb1000" in c:
+        return "1000xxx"
+    return "Other"
+
+def get_bst_date(timestamp) -> str:
+    if not timestamp:
+        return datetime.now(timezone(timedelta(hours=6))).strftime("%Y-%m-%d")
+    try:
+        ts = int(timestamp)
+        if ts > 100000000000:
+            ts = ts // 1000
+        return datetime.fromtimestamp(ts, timezone(timedelta(hours=6))).strftime("%Y-%m-%d")
+    except Exception:
+        return datetime.now(timezone(timedelta(hours=6))).strftime("%Y-%m-%d")
+
 @dp.message(Command("sellerreport"))
 async def admin_seller_report_cmd(message: types.Message, state: FSMContext):
     await state.clear()
     if not is_admin(message.from_user.id): return
 
     conn = _dbc()
-    rows = conn.execute("SELECT seller_name, uid FROM seller_uid_collector WHERE status='active' ORDER BY id DESC").fetchall()
+    rows = conn.execute("SELECT seller_name, uid, category, submitted_at FROM seller_uid_collector WHERE status='active' ORDER BY id DESC").fetchall()
     conn.close()
 
     if not rows:
@@ -2039,35 +2059,84 @@ async def admin_seller_report_cmd(message: types.Message, state: FSMContext):
         )
 
     grouped = {}
-    for s_name, uid in rows:
+    for s_name, uid, cat, sub_at in rows:
         s_name = s_name or "Unassigned"
+        uid = str(uid).strip()
+        if not uid: continue
+        series = classify_uid(uid, cat)
+        d_str = get_bst_date(sub_at)
+
         if s_name not in grouped:
-            grouped[s_name] = []
-        if uid not in grouped[s_name]:
-            grouped[s_name].append(uid)
+            grouped[s_name] = {
+                "uids_1000": [],
+                "uids_61": [],
+                "uids_other": [],
+                "all_uids": [],
+                "dates": {}
+            }
+        g = grouped[s_name]
+        if uid not in g["all_uids"]:
+            g["all_uids"].append(uid)
+            if series == "1000xxx":
+                g["uids_1000"].append(uid)
+            elif series == "61xxx":
+                g["uids_61"].append(uid)
+            else:
+                g["uids_other"].append(uid)
+
+            if d_str not in g["dates"]:
+                g["dates"][d_str] = {"total": 0, "1000": 0, "61": 0}
+            g["dates"][d_str]["total"] += 1
+            if series == "1000xxx": g["dates"][d_str]["1000"] += 1
+            elif series == "61xxx": g["dates"][d_str]["61"] += 1
 
     msg = (
-        "📋 **Seller-wise Broken UIDs Report** 📋\n"
+        f"📋 **Seller-wise Broken UIDs Report • {BOT_VERSION}** 📋\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "💡 *ইউজারদের রিপ্লেস থেকে সংগৃহীত UID তালিকা:*\n\n"
+        "💡 *সেলার অনুযায়ী 61xxx এবং 1000xxx আলাদা তালিকা:*\n\n"
     )
 
     kb = InlineKeyboardBuilder()
-    for s_name, u_list in sorted(grouped.items(), key=lambda x: len(x[1]), reverse=True):
-        msg += f"👤 **Seller: {s_name}** ({len(u_list)} pcs)\n"
-        preview = u_list[:8]
-        for u in preview:
-            msg += f"`{u}`\n"
-        if len(u_list) > 8:
-            msg += f"_... আরও {len(u_list) - 8}টি UID_\n"
-        msg += "\n"
+    for s_name, g in sorted(grouped.items(), key=lambda x: len(x[1]["all_uids"]), reverse=True):
+        tot = len(g["all_uids"])
+        c1000 = len(g["uids_1000"])
+        c61 = len(g["uids_61"])
+        coth = len(g["uids_other"])
 
-        s_hash = hashlib.md5(s_name.encode("utf-8")).hexdigest()[:10]
+        # Date summary string
+        date_parts = []
+        for d, dc in sorted(g["dates"].items(), reverse=True)[:3]:
+            sub_d = f"(1000x:{dc['1000']}, 61x:{dc['61']})" if (dc['1000'] and dc['61']) else ""
+            date_parts.append(f"`{d}`: {dc['total']} {sub_d}".strip())
+        date_summary = ", ".join(date_parts) if date_parts else "N/A"
+
+        msg += f"👤 **Seller: {s_name}** (মোট: {tot} pcs)\n"
+        if c1000:
+            msg += f"  🟢 1000xxx: **{c1000} pcs**\n"
+        if c61:
+            msg += f"  🟣 61xxx: **{c61} pcs**\n"
+        if coth:
+            msg += f"  ⚪ Other: **{coth} pcs**\n"
+        msg += f"  📅 তারিখসমূহ: {date_summary}\n\n"
+
+        s_hash = hashlib.md5(s_name.encode("utf-8")).hexdigest()[:8]
+        btn_row = []
+        if c1000:
+            btn_row.append(types.InlineKeyboardButton(text=f"🟢 Copy 1000x ({c1000})", callback_data=f"cpsel_{s_hash}_1000"))
+        if c61:
+            btn_row.append(types.InlineKeyboardButton(text=f"🟣 Copy 61x ({c61})", callback_data=f"cpsel_{s_hash}_61"))
+        if btn_row:
+            kb.row(*btn_row)
+
         kb.row(
-            types.InlineKeyboardButton(text=f"📋 Copy {s_name} ({len(u_list)})", callback_data=f"cpsel_{s_hash}"),
+            types.InlineKeyboardButton(text=f"📋 Copy All ({tot})", callback_data=f"cpsel_{s_hash}_all"),
             types.InlineKeyboardButton(text=f"🗑️ Clear {s_name}", callback_data=f"clsel_{s_hash}")
         )
-    kb.row(types.InlineKeyboardButton(text="🗑️ Clear All Sellers", callback_data="clsel_all"))
+
+    kb.row(
+        types.InlineKeyboardButton(text="📅 Date-wise Report", callback_data="rep_view_date"),
+        types.InlineKeyboardButton(text="🗑️ Clear All Sellers", callback_data="clsel_all")
+    )
 
     if len(msg) > 4000:
         for x in range(0, len(msg), 4000):
@@ -2076,42 +2145,192 @@ async def admin_seller_report_cmd(message: types.Message, state: FSMContext):
     else:
         await message.answer(msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
+@dp.message(Command("datereport"))
+async def admin_date_report_cmd(message: types.Message, state: FSMContext):
+    await state.clear()
+    if not is_admin(message.from_user.id): return
+    await render_date_report(message)
+
+@dp.callback_query(F.data == "rep_view_date")
+async def rep_view_date_cb(call: types.CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return await call.answer("Access denied", show_alert=True)
+    await call.answer()
+    await render_date_report(call.message)
+
+@dp.callback_query(F.data == "rep_view_seller")
+async def rep_view_seller_cb(call: types.CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id):
+        return await call.answer("Access denied", show_alert=True)
+    await call.answer()
+    await admin_seller_report_cmd(call.message, state)
+
+async def render_date_report(target_message: types.Message):
+    conn = _dbc()
+    rows = conn.execute("SELECT seller_name, uid, category, submitted_at FROM seller_uid_collector WHERE status='active' ORDER BY submitted_at DESC, id DESC").fetchall()
+    conn.close()
+
+    if not rows:
+        return await target_message.answer("✅ **বর্তমানে কোনো সক্রিয় ব্রোকেন UID নেই!**")
+
+    # Group by Date -> Seller
+    date_groups = {}
+    for s_name, uid, cat, sub_at in rows:
+        s_name = s_name or "Unassigned"
+        uid = str(uid).strip()
+        if not uid: continue
+        series = classify_uid(uid, cat)
+        d_str = get_bst_date(sub_at)
+
+        if d_str not in date_groups:
+            date_groups[d_str] = {
+                "total": 0, "1000": 0, "61": 0, "other": 0, "sellers": {}
+            }
+        dg = date_groups[d_str]
+        dg["total"] += 1
+        if series == "1000xxx": dg["1000"] += 1
+        elif series == "61xxx": dg["61"] += 1
+        else: dg["other"] += 1
+
+        if s_name not in dg["sellers"]:
+            dg["sellers"][s_name] = {"total": 0, "1000": 0, "61": 0, "uids_1000": [], "uids_61": [], "all": []}
+        ds = dg["sellers"][s_name]
+        ds["total"] += 1
+        ds["all"].append(uid)
+        if series == "1000xxx":
+            ds["1000"] += 1
+            ds["uids_1000"].append(uid)
+        elif series == "61xxx":
+            ds["61"] += 1
+            ds["uids_61"].append(uid)
+
+    msg = (
+        f"📅 **Date-wise Broken UIDs Report • {BOT_VERSION}** 📅\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "💡 *তারিখ ও সেলারভিত্তিক ব্রোকেন UID হিসাব:*\n\n"
+    )
+
+    kb = InlineKeyboardBuilder()
+    for d_str, dg in sorted(date_groups.items(), key=lambda x: x[0], reverse=True):
+        msg += f"📆 **তারিখ: {d_str}** (মোট: {dg['total']} pcs)\n"
+        msg += f"  [🟢 1000xxx: {dg['1000']} | 🟣 61xxx: {dg['61']}]\n"
+        for s_name, ds in sorted(dg["sellers"].items(), key=lambda x: x[1]["total"], reverse=True):
+            msg += f"  👤 **{s_name}**: {ds['total']} pcs (1000x: {ds['1000']} | 61x: {ds['61']})\n"
+            s_hash = hashlib.md5(s_name.encode("utf-8")).hexdigest()[:6]
+            btns = []
+            if ds["1000"]:
+                btns.append(types.InlineKeyboardButton(text=f"🟢 {s_name[:7]} 1000x ({ds['1000']})", callback_data=f"cpdt_{d_str}_{s_hash}_1000"))
+            if ds["61"]:
+                btns.append(types.InlineKeyboardButton(text=f"🟣 {s_name[:7]} 61x ({ds['61']})", callback_data=f"cpdt_{d_str}_{s_hash}_61"))
+            if btns:
+                kb.row(*btns)
+        msg += "\n"
+
+    kb.row(types.InlineKeyboardButton(text="👤 Switch to Seller-wise View", callback_data="rep_view_seller"))
+    kb.row(types.InlineKeyboardButton(text="🗑️ Clear All Sellers", callback_data="clsel_all"))
+
+    if len(msg) > 4000:
+        for x in range(0, len(msg), 4000):
+            await target_message.answer(msg[x:x+4000], parse_mode="Markdown")
+        await target_message.answer("👇 **অ্যাকশন বাটনসমূহ:**", reply_markup=kb.as_markup())
+    else:
+        await target_message.answer(msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
+
 @dp.callback_query(F.data.startswith("cpsel_"))
 async def copy_seller_uids_cb(call: types.CallbackQuery):
     if not is_admin(call.from_user.id):
         return await call.answer("Access denied", show_alert=True)
-    target_hash = call.data[6:]
+    parts = call.data.split("_")
+    target_hash = parts[1]
+    mode = parts[2] if len(parts) > 2 else "all"
+
     conn = _dbc()
-    rows = conn.execute("SELECT seller_name, uid FROM seller_uid_collector WHERE status='active' ORDER BY id ASC").fetchall()
+    rows = conn.execute("SELECT seller_name, uid, category FROM seller_uid_collector WHERE status='active' ORDER BY id ASC").fetchall()
     conn.close()
 
     target_seller = None
     uids = []
-    for s_name, uid in rows:
+    for s_name, uid, cat in rows:
         s_name = s_name or "Unassigned"
-        h = hashlib.md5(s_name.encode("utf-8")).hexdigest()[:10]
-        if h == target_hash:
+        uid = str(uid).strip()
+        h = hashlib.md5(s_name.encode("utf-8")).hexdigest()
+        if h.startswith(target_hash):
             target_seller = s_name
+            series = classify_uid(uid, cat)
+            if mode == "1000" and series != "1000xxx": continue
+            if mode == "61" and series != "61xxx": continue
             if uid not in uids:
                 uids.append(uid)
 
     if not target_seller or not uids:
         return await call.answer("❌ কোনো সক্রিয় UID পাওয়া যায়নি বা ইতিমধ্যে ক্লিয়ার করা হয়েছে!", show_alert=True)
 
+    mode_label = " (1000xxx Series)" if mode == "1000" else (" (61xxx Series)" if mode == "61" else "")
     uid_block = "\n".join(uids)
     resp = (
-        f"📋 **Seller: {target_seller}** ({len(uids)} pcs)\n"
+        f"📋 **Seller: {target_seller}{mode_label}** ({len(uids)} pcs)\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"👇 *নিচের কোডব্লকে সিঙ্গেল ট্যাপ/ক্লিক করলেই সম্পূর্ণ তালিকা কপি হয়ে যাবে:*\n\n"
         f"```text\n{uid_block}\n```"
     )
     if len(resp) > 4000:
-        await call.message.answer(f"📋 **Seller: {target_seller}** ({len(uids)} pcs)\n━━━━━━━━━━━━━━━━━━━━\n👇 *কপি করুন:*")
+        await call.message.answer(f"📋 **Seller: {target_seller}{mode_label}** ({len(uids)} pcs)\n━━━━━━━━━━━━━━━━━━━━\n👇 *কপি করুন:*")
         for chunk in [uids[i:i+150] for i in range(0, len(uids), 150)]:
             await call.message.answer("```text\n" + "\n".join(chunk) + "\n```", parse_mode="Markdown")
     else:
         await call.message.answer(resp, parse_mode="Markdown")
-    await call.answer("📋 UIDs নিচে পাঠানো হয়েছে! ট্যাপ করে কপি করুন।")
+    await call.answer(f"📋 {len(uids)}টি UID পাঠানো হয়েছে! ট্যাপ করে কপি করুন।")
+
+@dp.callback_query(F.data.startswith("cpdt_"))
+async def copy_date_uids_cb(call: types.CallbackQuery):
+    if not is_admin(call.from_user.id):
+        return await call.answer("Access denied", show_alert=True)
+    parts = call.data.split("_")
+    # format: cpdt_{date}_{s_hash}_{mode}
+    if len(parts) < 4:
+        return await call.answer("Invalid callback", show_alert=True)
+    target_date = parts[1]
+    target_hash = parts[2]
+    mode = parts[3]
+
+    conn = _dbc()
+    rows = conn.execute("SELECT seller_name, uid, category, submitted_at FROM seller_uid_collector WHERE status='active' ORDER BY id ASC").fetchall()
+    conn.close()
+
+    target_seller = None
+    uids = []
+    for s_name, uid, cat, sub_at in rows:
+        s_name = s_name or "Unassigned"
+        d_str = get_bst_date(sub_at)
+        if d_str != target_date: continue
+
+        h = hashlib.md5(s_name.encode("utf-8")).hexdigest()
+        if h.startswith(target_hash):
+            target_seller = s_name
+            series = classify_uid(uid, cat)
+            if mode == "1000" and series != "1000xxx": continue
+            if mode == "61" and series != "61xxx": continue
+            if uid not in uids:
+                uids.append(uid)
+
+    if not target_seller or not uids:
+        return await call.answer("❌ কোনো সক্রিয় UID পাওয়া যায়নি!", show_alert=True)
+
+    mode_label = " (1000xxx)" if mode == "1000" else (" (61xxx)" if mode == "61" else "")
+    uid_block = "\n".join(uids)
+    resp = (
+        f"📅 **Date: {target_date} • Seller: {target_seller}{mode_label}** ({len(uids)} pcs)\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"👇 *ট্যাপ করে কপি করুন:*\n\n"
+        f"```text\n{uid_block}\n```"
+    )
+    if len(resp) > 4000:
+        await call.message.answer(f"📅 **Date: {target_date} • Seller: {target_seller}{mode_label}** ({len(uids)} pcs)\n━━━━━━━━━━━━━━━━━━━━\n👇 *কপি করুন:*")
+        for chunk in [uids[i:i+150] for i in range(0, len(uids), 150)]:
+            await call.message.answer("```text\n" + "\n".join(chunk) + "\n```", parse_mode="Markdown")
+    else:
+        await call.message.answer(resp, parse_mode="Markdown")
+    await call.answer(f"📋 {len(uids)}টি UID পাঠানো হয়েছে!")
 
 @dp.callback_query(F.data.startswith("clsel_"))
 async def clear_seller_confirm_cb(call: types.CallbackQuery):
@@ -2138,7 +2357,7 @@ async def clear_seller_confirm_cb(call: types.CallbackQuery):
     target_seller = None
     for (s_name,) in rows:
         s_name = s_name or "Unassigned"
-        if hashlib.md5(s_name.encode("utf-8")).hexdigest()[:10] == target_hash:
+        if hashlib.md5(s_name.encode("utf-8")).hexdigest().startswith(target_hash):
             target_seller = s_name
             break
 
@@ -2179,7 +2398,7 @@ async def clear_seller_execute_cb(call: types.CallbackQuery):
     target_seller = None
     for (s_name,) in rows:
         s_name = s_name or "Unassigned"
-        if hashlib.md5(s_name.encode("utf-8")).hexdigest()[:10] == target_hash:
+        if hashlib.md5(s_name.encode("utf-8")).hexdigest().startswith(target_hash):
             target_seller = s_name
             break
 

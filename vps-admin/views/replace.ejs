@@ -69,36 +69,51 @@
   </a>
 </div>
 
-<!-- SELLER-WISE REPLACE REPORT (সেলারভিত্তিক নষ্ট অ্যাকাউন্টের UID লিস্ট) -->
-<% if (typeof sellerReports !== 'undefined' && sellerReports.length) { %>
-  <div class="bg-gradient-to-r from-sky-50 to-indigo-50/60 border border-sky-200/80 rounded-2xl p-5 mb-6 shadow-xs">
+<!-- SELLER-WISE & DATE-WISE REPLACE REPORT -->
+<% if ((typeof sellerReports !== 'undefined' && sellerReports.length) || (typeof dateReports !== 'undefined' && dateReports.length)) { %>
+  <div class="bg-gradient-to-r from-sky-50 via-indigo-50/50 to-sky-50 border border-sky-200/90 rounded-2xl p-5 mb-6 shadow-xs">
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
       <div>
         <h2 class="text-base font-extrabold text-slate-900 flex items-center gap-2">
           <span>📋</span>
-          <span>Seller-wise Replace Report (সেলারভিত্তিক ব্রোকেন আইডি রিপোর্ট)</span>
+          <span>Seller & Date Wise Replace Report (সেলার ও তারিখভিত্তিক ব্রোকেন রিপোর্ট)</span>
           <span class="bg-sky-600 text-white text-[11px] font-bold px-2 py-0.5 rounded-full">
-            <%= sellerReports.length %> Sellers
+            <%= (sellerReports || []).length %> Sellers
           </span>
         </h2>
         <p class="text-xs text-slate-600 mt-0.5">
-          ইউজারদের সাবমিট করা ব্রোকেন UID সেলার অনুযায়ী এখানে জমা থাকে। কপি করে সেলারকে দেওয়ার পর <strong>Remove</strong> বাটনে ক্লিক করে লিস্ট ক্লিয়ার করুন। পরবর্তীতে নতুন রিপ্লেস আসলে তা আবার স্বয়ংক্রিয়ভাবে জমা হবে।
+          রিপ্লেস রিকোয়েস্টের ব্রোকেন UID গুলো সেলার অনুযায়ী <strong>61xxx</strong> ও <strong>1000xxx</strong> আলাদা ক্যাটাগরিতে এবং <strong>তারিখ অনুযায়ী</strong> সাজানো রয়েছে।
         </p>
       </div>
-      <div class="flex items-center gap-2 shrink-0">
+
+      <!-- Tab Switcher & Clear All -->
+      <div class="flex items-center gap-2 shrink-0 flex-wrap">
+        <div class="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-2xs">
+          <button type="button" id="btnReportSeller" onclick="switchReportTab('seller')"
+                  class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-sky-600 text-white shadow-xs transition">
+            <span>👤</span> Seller-wise View
+          </button>
+          <button type="button" id="btnReportDate" onclick="switchReportTab('date')"
+                  class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-white text-slate-600 hover:text-slate-900 border border-slate-200 transition">
+            <span>📅</span> Date-wise View
+          </button>
+        </div>
+
         <form method="post" action="/replace/seller-uids/clear-all" onsubmit="return confirm('⚠️ আপনি কি নিশ্চিত যে সকল সেলারের জমানো UID ক্লিয়ার করতে চান?');" class="inline m-0">
           <button type="submit" class="text-xs bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 hover:border-rose-200 font-bold px-3 py-1.5 rounded-xl shadow-xs transition flex items-center gap-1.5">
-            <span>🗑️</span> Clear All Sellers
+            <span>🗑️</span> Clear All
           </button>
         </form>
       </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-      <% sellerReports.forEach(function(sr, sIdx){ %>
+    <!-- TAB 1: SELLER-WISE VIEW -->
+    <div id="reportSellerView" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <% (sellerReports || []).forEach(function(sr, sIdx){ %>
         <div class="bg-white border border-sky-200 rounded-xl p-4 shadow-xs hover:border-sky-300 transition flex flex-col justify-between">
           <div>
-            <div class="flex items-center justify-between gap-2 mb-2">
+            <!-- Seller Header -->
+            <div class="flex items-center justify-between gap-2 mb-3">
               <div class="flex items-center gap-2 min-w-0">
                 <span class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm shrink-0">
                   <%= sr.seller.slice(0, 1).toUpperCase() %>
@@ -108,7 +123,7 @@
                     <%= sr.seller %>
                   </div>
                   <div class="text-[11px] text-slate-500 font-medium">
-                    <%= sr.requestCount %> Claims • <span class="text-indigo-600 font-bold"><%= sr.count %> Broken UIDs</span>
+                    <%= sr.requestCount %> Claims • <span class="text-indigo-600 font-bold"><%= sr.count %> Total Broken</span>
                   </div>
                 </div>
               </div>
@@ -117,14 +132,88 @@
               </span>
             </div>
 
-            <!-- UIDs Preview Box -->
-            <div class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 max-h-32 overflow-y-auto mb-3 font-mono text-[11px] text-slate-700 select-all">
-              <% sr.uids.forEach(function(u){ %>
-                <div class="hover:text-sky-700 hover:font-bold"><%= u %></div>
-              <% }) %>
+            <!-- Series Badges / Breakdown -->
+            <div class="flex flex-wrap gap-1.5 mb-3">
+              <% if (sr.count1000 > 0) { %>
+                <span class="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-mono font-bold px-2 py-0.5 rounded-md">
+                  🟢 1000xxx: <%= sr.count1000 %> pcs
+                </span>
+              <% } %>
+              <% if (sr.count61 > 0) { %>
+                <span class="bg-purple-50 text-purple-700 border border-purple-200 text-[11px] font-mono font-bold px-2 py-0.5 rounded-md">
+                  🟣 61xxx: <%= sr.count61 %> pcs
+                </span>
+              <% } %>
+              <% if (sr.countOther > 0) { %>
+                <span class="bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-mono font-bold px-2 py-0.5 rounded-md">
+                  ⚪ Other: <%= sr.countOther %> pcs
+                </span>
+              <% } %>
             </div>
+
+            <!-- 1000xxx Box (if present) -->
+            <% if (sr.count1000 > 0) { %>
+              <div class="mb-3 bg-emerald-50/40 border border-emerald-200/80 rounded-lg p-2.5">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-[11px] font-bold text-emerald-800 flex items-center gap-1">
+                    <span>🟢</span> 1000xxx Series (<%= sr.count1000 %> pcs)
+                  </span>
+                  <button type="button"
+                          onclick="copySellerUids('<%= sr.seller.replace(/'/g, "\\'") %> (1000xxx)', <%= JSON.stringify(sr.uids1000Text) %>)"
+                          class="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2 py-0.5 rounded transition">
+                    📋 Copy 1000xxx
+                  </button>
+                </div>
+                <div class="bg-white border border-emerald-100 rounded p-1.5 max-h-24 overflow-y-auto font-mono text-[10px] text-slate-700 select-all leading-tight">
+                  <% sr.uids1000.forEach(function(u){ %>
+                    <div><%= u %></div>
+                  <% }) %>
+                </div>
+              </div>
+            <% } %>
+
+            <!-- 61xxx Box (if present) -->
+            <% if (sr.count61 > 0) { %>
+              <div class="mb-3 bg-purple-50/40 border border-purple-200/80 rounded-lg p-2.5">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="text-[11px] font-bold text-purple-800 flex items-center gap-1">
+                    <span>🟣</span> 61xxx Series (<%= sr.count61 %> pcs)
+                  </span>
+                  <button type="button"
+                          onclick="copySellerUids('<%= sr.seller.replace(/'/g, "\\'") %> (61xxx)', <%= JSON.stringify(sr.uids61Text) %>)"
+                          class="text-[10px] bg-purple-600 hover:bg-purple-700 text-white font-bold px-2 py-0.5 rounded transition">
+                    📋 Copy 61xxx
+                  </button>
+                </div>
+                <div class="bg-white border border-purple-100 rounded p-1.5 max-h-24 overflow-y-auto font-mono text-[10px] text-slate-700 select-all leading-tight">
+                  <% sr.uids61.forEach(function(u){ %>
+                    <div><%= u %></div>
+                  <% }) %>
+                </div>
+              </div>
+            <% } %>
+
+            <!-- Date Breakdown Badges for this seller -->
+            <% if (sr.dateBreakdown && sr.dateBreakdown.length) { %>
+              <div class="mt-2 mb-3 bg-slate-50 border border-slate-200/80 rounded-lg p-2">
+                <div class="text-[10px] font-bold text-slate-500 mb-1 flex items-center gap-1">
+                  <span>📅</span> Date-wise Breakdown:
+                </div>
+                <div class="flex flex-wrap gap-1 text-[10px]">
+                  <% sr.dateBreakdown.forEach(function(dbRow){ %>
+                    <span class="bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-700 font-mono">
+                      <%= dbRow.date %>: <strong><%= dbRow.total %></strong>
+                      <% if (dbRow.count1000 > 0 && dbRow.count61 > 0) { %>
+                        (1000x:<%= dbRow.count1000 %>, 61x:<%= dbRow.count61 %>)
+                      <% } %>
+                    </span>
+                  <% }) %>
+                </div>
+              </div>
+            <% } %>
           </div>
 
+          <!-- Actions Footer -->
           <div class="flex items-center gap-2 pt-2 border-t border-slate-100">
             <button type="button"
                     onclick="copySellerUids('<%= sr.seller.replace(/'/g, "\\'") %>', <%= JSON.stringify(sr.uidsText) %>)"
@@ -137,7 +226,7 @@
                     title="Download as .txt">
               <span>💾</span>
             </button>
-            <form method="post" action="/replace/seller-uids/clear" onsubmit="return confirm('⚠️ আপনি কি নিশ্চিত যে <%= sr.seller.replace(/'/g, "\\'") %> এর <%= sr.count %>টি UID রিমুভ/ক্লিয়ার করতে চান?\n\nকপি করা হয়ে থাকলে রিমুভ করুন। ভবিষ্যতে নতুন রিপ্লেস আসলে তা আবার এখানে জমা হবে।');" class="inline m-0">
+            <form method="post" action="/replace/seller-uids/clear" onsubmit="return confirm('⚠️ আপনি কি নিশ্চিত যে <%= sr.seller.replace(/'/g, "\\'") %> এর <%= sr.count %>টি UID রিমুভ/ক্লিয়ার করতে চান?');" class="inline m-0">
               <input type="hidden" name="seller_name" value="<%= sr.seller %>" />
               <button type="submit"
                       class="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 hover:border-rose-300 font-bold py-2 px-2.5 rounded-lg text-xs flex items-center justify-center gap-1 shadow-xs transition"
@@ -148,6 +237,103 @@
           </div>
         </div>
       <% }) %>
+    </div>
+
+    <!-- TAB 2: DATE-WISE VIEW -->
+    <div id="reportDateView" class="hidden space-y-4">
+      <% if (!dateReports || !dateReports.length) { %>
+        <div class="bg-white border border-slate-200 rounded-xl p-6 text-center text-slate-500 text-xs">
+          কোনো তারিখভিত্তিক ব্রোকেন UID পাওয়া যায়নি।
+        </div>
+      <% } else { %>
+        <% dateReports.forEach(function(dr){ %>
+          <div class="bg-white border border-indigo-200/80 rounded-xl p-4 shadow-xs">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-100">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                  <span>📅</span> <%= dr.date %>
+                </span>
+                <span class="bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono text-xs font-bold px-2 py-0.5 rounded-md">
+                  Total: <%= dr.total %> pcs
+                </span>
+                <% if (dr.count1000 > 0) { %>
+                  <span class="bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono text-xs font-bold px-2 py-0.5 rounded-md">
+                    1000xxx: <%= dr.count1000 %>
+                  </span>
+                <% } %>
+                <% if (dr.count61 > 0) { %>
+                  <span class="bg-purple-50 text-purple-700 border border-purple-200 font-mono text-xs font-bold px-2 py-0.5 rounded-md">
+                    61xxx: <%= dr.count61 %>
+                  </span>
+                <% } %>
+              </div>
+              <div>
+                <button type="button"
+                        onclick="copySellerUids('Date <%= dr.date %>', <%= JSON.stringify(dr.uidsText) %>)"
+                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1 rounded-lg text-xs flex items-center gap-1 shadow-xs transition">
+                  <span>📋</span> Copy All for <%= dr.date %> (<%= dr.total %>)
+                </button>
+              </div>
+            </div>
+
+            <!-- Sellers Table for this Date -->
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr class="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                    <th class="py-2 px-3">Seller Name</th>
+                    <th class="py-2 px-3">1000xxx Series</th>
+                    <th class="py-2 px-3">61xxx Series</th>
+                    <th class="py-2 px-3 text-center">Total Pcs</th>
+                    <th class="py-2 px-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <% dr.sellers.forEach(function(ds){ %>
+                    <tr class="hover:bg-slate-50/60 transition">
+                      <td class="py-2.5 px-3 font-bold text-slate-800">
+                        👤 <%= ds.seller %>
+                      </td>
+                      <td class="py-2.5 px-3 font-mono">
+                        <% if (ds.count1000 > 0) { %>
+                          <span class="text-emerald-700 font-bold"><%= ds.count1000 %> pcs</span>
+                          <button type="button" onclick="copySellerUids('<%= ds.seller %> <%= dr.date %> (1000xxx)', <%= JSON.stringify(ds.uids1000Text) %>)"
+                                  class="ml-1.5 text-[10px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded transition">
+                            Copy
+                          </button>
+                        <% } else { %>
+                          <span class="text-slate-400">—</span>
+                        <% } %>
+                      </td>
+                      <td class="py-2.5 px-3 font-mono">
+                        <% if (ds.count61 > 0) { %>
+                          <span class="text-purple-700 font-bold"><%= ds.count61 %> pcs</span>
+                          <button type="button" onclick="copySellerUids('<%= ds.seller %> <%= dr.date %> (61xxx)', <%= JSON.stringify(ds.uids61Text) %>)"
+                                  class="ml-1.5 text-[10px] bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 px-1.5 py-0.5 rounded transition">
+                            Copy
+                          </button>
+                        <% } else { %>
+                          <span class="text-slate-400">—</span>
+                        <% } %>
+                      </td>
+                      <td class="py-2.5 px-3 text-center font-mono font-extrabold text-slate-900">
+                        <%= ds.total %> pcs
+                      </td>
+                      <td class="py-2.5 px-3 text-right">
+                        <button type="button"
+                                onclick="copySellerUids('<%= ds.seller %> <%= dr.date %> (Total)', <%= JSON.stringify(ds.uidsText) %>)"
+                                class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-bold px-2.5 py-1 rounded-lg text-xs transition">
+                          📋 Copy (<%= ds.total %>)
+                        </button>
+                      </td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        <% }) %>
+      <% } %>
     </div>
   </div>
 <% } %>
@@ -593,9 +779,23 @@
     var m = document.getElementById('viewerModal');
     m.classList.add('hidden'); m.classList.remove('flex');
   }
-  function copyViewerText() {
-    var text = document.getElementById('viewerContent').textContent;
-    navigator.clipboard.writeText(text).then(function(){ alert('Copied to clipboard ✅'); });
+  function switchReportTab(tab) {
+    var sellerView = document.getElementById('reportSellerView');
+    var dateView = document.getElementById('reportDateView');
+    var btnSeller = document.getElementById('btnReportSeller');
+    var btnDate = document.getElementById('btnReportDate');
+    if (!sellerView || !dateView) return;
+    if (tab === 'date') {
+      sellerView.classList.add('hidden');
+      dateView.classList.remove('hidden');
+      if (btnDate) btnDate.className = "px-3.5 py-1.5 rounded-xl text-xs font-bold bg-sky-600 text-white shadow-xs transition";
+      if (btnSeller) btnSeller.className = "px-3.5 py-1.5 rounded-xl text-xs font-bold bg-white text-slate-600 hover:text-slate-900 border border-slate-200 transition";
+    } else {
+      dateView.classList.add('hidden');
+      sellerView.classList.remove('hidden');
+      if (btnSeller) btnSeller.className = "px-3.5 py-1.5 rounded-xl text-xs font-bold bg-sky-600 text-white shadow-xs transition";
+      if (btnDate) btnDate.className = "px-3.5 py-1.5 rounded-xl text-xs font-bold bg-white text-slate-600 hover:text-slate-900 border border-slate-200 transition";
+    }
   }
 
   function copySellerUids(sellerName, uidsText) {
