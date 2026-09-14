@@ -18,6 +18,7 @@ const DEFAULT_MSG =
 const SERVICE_TOGGLES = [
   ['buy_service_enabled', '🛒 ID কেনা (Buy)', 'বন্ধ করলে user কোনো ID কিনতে পারবে না'],
   ['deposit_service_enabled', '💰 Deposit / Add Balance', 'বন্ধ করলে নতুন payment তৈরি হবে না'],
+  ['manual_payment_enabled', '📝 Manual Payment (bKash/Nagad)', 'চালু রাখলে বটের ডিপোজিটে bKash ও Nagad ম্যানুয়াল পেমেন্ট অপশন দেখাবে'],
   ['vpn_service_enabled', '🛡 VPN Service', 'বন্ধ করলে VPN section unavailable দেখাবে'],
   ['replace_service_enabled', '🔄 Replace Request', 'বন্ধ করলে নতুন replace request নেওয়া হবে না'],
 ];

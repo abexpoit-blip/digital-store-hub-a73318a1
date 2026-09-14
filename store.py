@@ -2650,9 +2650,22 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
     elif text in ["💳 Deposit", "💳 ডিপোজিট", "💳 ব্যালেন্স অ্যাড"]:
         if not is_service_enabled("deposit_service_enabled") and not is_admin(m.from_user.id):
             return await m.answer("💰 **ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।", parse_mode="Markdown")
+        is_manual = is_service_enabled("manual_payment_enabled")
         kb = InlineKeyboardBuilder()
         kb.row(types.InlineKeyboardButton(text="⚡ Auto Payment (bKash / Nagad)", callback_data="dep_auto", style="success"))
+        if is_manual:
+            kb.row(types.InlineKeyboardButton(text="📝 Manual Payment (bKash / Nagad)", callback_data="dep_manual", style="primary"))
         kb.row(types.InlineKeyboardButton(text="💎 Binance USDT", callback_data="dep_binance", style="primary"))
+        
+        manual_desc = ""
+        if is_manual:
+            manual_desc = (
+                "\n\n📝 *Manual Payment* — সরাসরি bKash / Nagad\n"
+                f"   ▸ bKash ও Nagad: `{BKASH_NUMBER}`\n"
+                "   ▸ Send Money করে স্ক্রিনশট পাঠাবেন\n"
+                "   ▸ অ্যাডমিন চেক করে ব্যালেন্স যোগ করবে\n"
+                "   ▸ মিনিমাম ১০৳"
+            )
         await m.answer(
             "🌟 *ডিপোজিট পদ্ধতি বাছাই করুন* 🌟\n\n"
             "━━━━━━━━━━━━━━━━━━━━━\n"
@@ -2660,7 +2673,8 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
             "   ▸ bKash / Nagad সাপোর্ট\n"
             "   ▸ এক ক্লিকে ইন-অ্যাপ পপআপ পেমেন্ট\n"
             "   ▸ ১০-৩০ সেকেন্ডে ব্যালেন্স যোগ\n"
-            "   ▸ মিনিমাম ১০৳\n\n"
+            "   ▸ মিনিমাম ১০৳"
+            f"{manual_desc}\n\n"
             "💎 *Binance USDT* — ডলারে পেমেন্ট\n"
             "   ▸ Rate: *$1 = 125৳* (fixed)\n"
             "   ▸ Screenshot পাঠাবেন\n"
@@ -2855,6 +2869,8 @@ async def process_buy(m: types.Message, state: FSMContext):
             _need = max(0, total - bal)
             _kb = InlineKeyboardBuilder()
             _kb.row(types.InlineKeyboardButton(text="⚡ Auto Deposit (bKash/Nagad)", callback_data="dep_auto"))
+            if is_service_enabled("manual_payment_enabled"):
+                _kb.row(types.InlineKeyboardButton(text="📝 Manual Deposit (bKash/Nagad)", callback_data="dep_manual"))
             _kb.row(types.InlineKeyboardButton(text="🪙 Binance", callback_data="dep_binance"))
             await state.clear()
             await m.answer(
@@ -2977,9 +2993,22 @@ async def dep_start(c: types.CallbackQuery, state: FSMContext):
             "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
             parse_mode="Markdown"
         )
+    is_manual = is_service_enabled("manual_payment_enabled")
     kb = InlineKeyboardBuilder()
     kb.row(types.InlineKeyboardButton(text="⚡ Auto Payment (bKash / Nagad)", callback_data="dep_auto"))
+    if is_manual:
+        kb.row(types.InlineKeyboardButton(text="📝 Manual Payment (bKash / Nagad)", callback_data="dep_manual"))
     kb.row(types.InlineKeyboardButton(text="💎 Binance USDT", callback_data="dep_binance"))
+    
+    manual_desc = ""
+    if is_manual:
+        manual_desc = (
+            "\n\n📝 *Manual Payment* — সরাসরি bKash / Nagad\n"
+            f"   ▸ bKash ও Nagad: `{BKASH_NUMBER}`\n"
+            "   ▸ Send Money করে স্ক্রিনশট পাঠাবেন\n"
+            "   ▸ অ্যাডমিন চেক করে ব্যালেন্স যোগ করবে\n"
+            "   ▸ মিনিমাম ১০৳"
+        )
     await c.message.answer(
         "🌟 *ডিপোজিট পদ্ধতি বাছাই করুন* 🌟\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
@@ -2987,7 +3016,8 @@ async def dep_start(c: types.CallbackQuery, state: FSMContext):
         "   ▸ bKash / Nagad সাপোর্ট\n"
         "   ▸ এক ক্লিকে পেমেন্ট পেজ\n"
         "   ▸ ১০-৩০ সেকেন্ডে ব্যালেন্স যোগ\n"
-        "   ▸ মিনিমাম ১০৳\n\n"
+        "   ▸ মিনিমাম ১০৳"
+        f"{manual_desc}\n\n"
         "💎 *Binance USDT* — ডলারে পেমেন্ট\n"
         "   ▸ Rate: *$1 = 125৳* (fixed)\n"
         "   ▸ Screenshot পাঠাবেন\n"
@@ -3015,6 +3045,37 @@ async def dep_auto_start(c: types.CallbackQuery, state: FSMContext):
         parse_mode="Markdown"
     )
     await state.update_data(deposit_method="auto")
+    await state.set_state(ShopStates.waiting_for_deposit_amount)
+
+@dp.callback_query(F.data == "dep_manual")
+async def dep_manual_start(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    if not is_service_enabled("deposit_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer(
+            "💰 **ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
+            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
+            parse_mode="Markdown"
+        )
+    if not is_service_enabled("manual_payment_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer(
+            "⚠️ **ম্যানুয়াল পেমেন্ট সার্ভিস বর্তমানে বন্ধ রয়েছে।**\n"
+            "অনুগ্রহ করে ⚡ Auto Payment অথবা 💎 Binance ব্যবহার করুন।",
+            parse_mode="Markdown"
+        )
+    await c.message.answer(
+        "📝 *ম্যানুয়াল ডিপোজিট (bKash / Nagad)*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💗 *bKash (Personal / Send Money):* `{BKASH_NUMBER}`\n"
+        f"🟧 *Nagad (Personal / Send Money):* `{NAGAD_NUMBER}`\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "⚠️ *নির্দেশনা:*\n"
+        "1️⃣ উপরের নম্বরে bKash অথবা Nagad থেকে **Send Money** করুন।\n"
+        "2️⃣ মিনিমাম ডিপোজিট **১০৳**।\n"
+        "3️⃣ টাকা পাঠানো সম্পন্ন হলে নিচে **টাকার পরিমাণ** লিখুন।\n\n"
+        "💰 **কত টাকা পাঠিয়েছেন?** (শুধু সংখ্যা লিখুন, যেমন: `150`)",
+        parse_mode="Markdown"
+    )
+    await state.update_data(deposit_method="manual")
     await state.set_state(ShopStates.waiting_for_deposit_amount)
 
 @dp.callback_query(F.data == "dep_binance")
@@ -3080,6 +3141,21 @@ async def dep_amt(m: types.Message, state: FSMContext):
         await state.clear()
         return
 
+    # ============ MANUAL (bKash / Nagad) ============
+    if _method == "manual":
+        if not val_str.isdigit() or int(val_str) < 10:
+            return await m.answer("⚠️ মিনিমাম *১০ টাকা*। শুধু সংখ্যায় লিখুন (যেমন: `150`)", parse_mode="Markdown")
+        amt = int(val_str)
+        await state.update_data(amount_text=str(amt))
+        await m.answer(
+            f"✅ ডিপোজিট পরিমাণ: *{amt}৳*\n\n"
+            "📱 **যে নম্বর থেকে টাকা পাঠিয়েছেন সেই bKash/Nagad নম্বর অথবা TrxID লিখুন:**\n"
+            "💡 *(যেমন: `017xxxxxxxx` অথবা `TrxID: BL93K...`)*",
+            parse_mode="Markdown"
+        )
+        await state.set_state(ShopStates.waiting_for_deposit_num)
+        return
+
     # ============ BINANCE ($→BDT→screenshot) ============
     if _method == "binance":
         # ডলার amount পাছ — শুধু সংখ্যা / দশমিক
@@ -3111,6 +3187,28 @@ async def dep_amt(m: types.Message, state: FSMContext):
     await m.answer("⚠️ Session expired। আবার /start দিন।")
     await state.clear()
 
+@dp.message(ShopStates.waiting_for_deposit_num)
+async def dep_sender_num_handler(m: types.Message, state: FSMContext):
+    if m.text and m.text.startswith("/"): return
+    sender_text = (m.text or "").strip()
+    if not sender_text:
+        return await m.answer("⚠️ অনুগ্রহ করে আপনার Sender নম্বর অথবা TrxID লিখুন:")
+    
+    await state.update_data(sender=sender_text)
+    data = await state.get_data()
+    amt = data.get("amount_text", "0")
+    
+    await m.answer(
+        f"📸 **পেমেন্টের স্ক্রিনশট পাঠান (বাধ্যতামূলক):**\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 ডিপোজিট পরিমাণ: **{amt}৳**\n"
+        f"📱 প্রেরক তথ্য: `{sender_text}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"⚠️ টাকা পাঠানোর সফল স্ক্রিনশটটি এখনই সেন্ড করুন। অ্যাডমিন চেক করে ব্যালেন্স যোগ করে দেবে।",
+        parse_mode="Markdown"
+    )
+    await state.set_state(ShopStates.waiting_for_screenshot)
+
 @dp.message(ShopStates.waiting_for_screenshot)
 async def dep_submit(m: types.Message, state: FSMContext):
     if m.text and m.text.startswith("/"): return
@@ -3123,6 +3221,8 @@ async def dep_submit(m: types.Message, state: FSMContext):
     
     clean_amt = ''.join(filter(lambda x: x.isdigit(), data.get('amount_text', '0')))
     amt = int(clean_amt) if clean_amt else 0
+    dep_method = data.get('deposit_method', 'manual')
+    sender_val = data.get('sender') or ('Binance UID' if dep_method == 'binance' else 'Screenshot only')
     
     # --- DEPOSIT ANTI-SPAM LOGIC ---
     conn = _dbc()
@@ -3143,8 +3243,10 @@ async def dep_submit(m: types.Message, state: FSMContext):
     admins = conn.execute("SELECT user_id FROM admins").fetchall()
 
     try:
-        conn.execute("INSERT INTO payment_logs (req_id, user_id, username, amount, status, date, admin_name, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                     (req_id, m.from_user.id, username_display, amt, 'pending', datetime.now().strftime("%Y-%m-%d"), "None", now_ts))
+        conn.execute(
+            "INSERT INTO payment_logs (req_id, user_id, username, amount, status, date, admin_name, timestamp, sender_num, method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (req_id, m.from_user.id, username_display, amt, 'pending', datetime.now().strftime("%Y-%m-%d"), "None", now_ts, sender_val, dep_method)
+        )
         conn.commit()
     except Exception as e:
         await m.answer(f"❌ Error Saving Request: {e}")
@@ -3156,13 +3258,25 @@ async def dep_submit(m: types.Message, state: FSMContext):
     kb.row(types.InlineKeyboardButton(text=f"✅ Add {amt}৳", callback_data=f"pay_ok_{req_id}_{amt}"),
            types.InlineKeyboardButton(text="❌ Reject", callback_data=f"pay_no_{req_id}"))
 
-    admin_msg = f"🔔 **Pay Request**\n👤 {real_name} ({username_display})\n🆔 `{m.from_user.id}`\n💰 {amt}৳\n📱 `{data.get('sender')}`"
+    method_lbl = "💎 Binance USDT" if dep_method == "binance" else "📝 Manual (bKash/Nagad)"
+    admin_msg = (
+        f"🔔 **NEW DEPOSIT REQUEST** 🔔\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 **Name:** {real_name}\n"
+        f"🔗 **User:** {username_display}\n"
+        f"🆔 **ID:** `{m.from_user.id}`\n"
+        f"💰 **Amount:** {amt}৳\n"
+        f"💳 **Method:** {method_lbl}\n"
+        f"📱 **Sender / Info:** `{sender_val}`\n"
+        f"🎫 **Req ID:** `{req_id}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━"
+    )
 
     for admin in admins:
         try: await bot.send_photo(admin[0], m.photo[-1].file_id, caption=admin_msg, reply_markup=kb.as_markup())
         except: pass
 
-    await m.answer("⏳ জমা হয়েছে! এডমিন চেক করে ব্যালেন্স দিবে।")
+    await m.answer("⏳ আপনার ডিপোজিট রিকোয়েস্ট জমা হয়েছে! অ্যাডমিন চেক করে ব্যালেন্স যোগ করে দেবে।")
     await state.clear()
     await show_dashboard_ui(m.from_user.id, m.from_user.first_name, bot, m.chat.id)
 
@@ -3212,6 +3326,38 @@ async def admin_pay_action(c: types.CallbackQuery):
         except: pass
 
     conn.close()
+
+# --- MANUAL PAYMENT TOGGLE COMMAND ---
+@dp.message(Command("manualpay"))
+async def admin_toggle_manual_payment_cmd(message: types.Message, command: CommandObject):
+    if not is_admin(message.from_user.id): return
+    arg = (command.args or "").strip().lower()
+    conn = _dbc()
+    if arg in ["on", "enable", "1", "true"]:
+        conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('manual_payment_enabled', 'on')")
+        conn.commit()
+        conn.close()
+        return await message.answer("✅ **Manual Payment (bKash / Nagad) এখন চালু (ON) করা হয়েছে!**\nইউজাররা ডিপোজিট অপশনে ম্যানুয়াল পেমেন্ট দেখতে পাবে।")
+    elif arg in ["off", "disable", "0", "false"]:
+        conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('manual_payment_enabled', 'off')")
+        conn.commit()
+        conn.close()
+        return await message.answer("🚫 **Manual Payment (bKash / Nagad) এখন বন্ধ (OFF) করা হয়েছে!**\nইউজাররা এখন শুধু Auto Payment ও Binance দেখতে পাবে।")
+    else:
+        row = conn.execute("SELECT value FROM config WHERE key='manual_payment_enabled'").fetchone()
+        current = str(row[0]).strip().lower() if row and row[0] is not None else "on"
+        is_on = current not in _OFF_VALS
+        new_val = "off" if is_on else "on"
+        conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('manual_payment_enabled', ?)", (new_val,))
+        conn.commit()
+        conn.close()
+        status_txt = "চালু (ON) ✅" if new_val == "on" else "বন্ধ (OFF) 🚫"
+        return await message.answer(
+            f"⚙️ **Manual Payment স্ট্যাটাস পরিবর্তন করা হয়েছে:** {status_txt}\n\n"
+            f"💡 সরাসরি সেট করতে ব্যবহার করুন:\n"
+            f"`/manualpay on` — চালু করতে\n"
+            f"`/manualpay off` — বন্ধ করতে"
+        )
 
 # --- VPN FEATURES ---
 
@@ -3298,6 +3444,8 @@ async def vpn_confirm_order(c: types.CallbackQuery, state: FSMContext):
         _need = max(0, price - bal)
         _kb = InlineKeyboardBuilder()
         _kb.row(types.InlineKeyboardButton(text="⚡ Auto Deposit (bKash/Nagad)", callback_data="dep_auto"))
+        if is_service_enabled("manual_payment_enabled"):
+            _kb.row(types.InlineKeyboardButton(text="📝 Manual Deposit (bKash/Nagad)", callback_data="dep_manual"))
         _kb.row(types.InlineKeyboardButton(text="🪙 Binance", callback_data="dep_binance"))
         await state.clear()
         await c.message.answer(
