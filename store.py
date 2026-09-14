@@ -1118,13 +1118,26 @@ async def execute_send_notice(c: types.CallbackQuery, state: FSMContext):
     for user in users:
         try:
             if n_type == 'photo':
-                await bot.send_photo(user[0], n_file, caption=formatted_text, parse_mode="Markdown")
+                try:
+                    await bot.send_photo(user[0], n_file, caption=formatted_text[:1024], parse_mode="Markdown")
+                except Exception:
+                    await bot.send_photo(user[0], n_file, caption=formatted_text[:1024])
+                if len(formatted_text) > 1024:
+                    await bot.send_message(user[0], formatted_text[1024:])
             elif n_type == 'document':
-                await bot.send_document(user[0], n_file, caption=formatted_text, parse_mode="Markdown")
+                try:
+                    await bot.send_document(user[0], n_file, caption=formatted_text[:1024], parse_mode="Markdown")
+                except Exception:
+                    await bot.send_document(user[0], n_file, caption=formatted_text[:1024])
+                if len(formatted_text) > 1024:
+                    await bot.send_message(user[0], formatted_text[1024:])
             else:
-                await bot.send_message(user[0], formatted_text, parse_mode="Markdown")
+                try:
+                    await bot.send_message(user[0], formatted_text, parse_mode="Markdown")
+                except Exception:
+                    await bot.send_message(user[0], formatted_text)
             count += 1
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.04)
         except: pass
         
     await c.message.answer(f"✅ Notice Successfully Sent to {count} users!")
