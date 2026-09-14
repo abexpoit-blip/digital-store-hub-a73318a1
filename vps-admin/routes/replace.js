@@ -28,6 +28,45 @@ async function notifyUser(userId, text) {
   }
 }
 
+// Telegram photo send (screenshot/image)
+async function sendPhotoToUser(userId, buffer, filename, caption = '') {
+  if (!BOT_TOKEN || !userId || !buffer) return false;
+  try {
+    const formData = new FormData();
+    formData.append('chat_id', String(userId));
+    if (caption) {
+      formData.append('caption', caption);
+      formData.append('parse_mode', 'Markdown');
+    }
+    formData.append('photo', new Blob([buffer]), filename || 'screenshot.jpg');
+
+    let res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+      method: 'POST',
+      body: formData,
+    });
+    let data = await res.json().catch(() => ({}));
+    if (!data.ok) {
+      // Fallback without parse_mode if markdown parse error
+      const fallbackForm = new FormData();
+      fallbackForm.append('chat_id', String(userId));
+      if (caption) fallbackForm.append('caption', caption);
+      fallbackForm.append('photo', new Blob([buffer]), filename || 'screenshot.jpg');
+      res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+        method: 'POST',
+        body: fallbackForm,
+      });
+      data = await res.json().catch(() => ({}));
+      if (!data.ok) {
+        return await sendDocumentToUser(userId, buffer, filename, caption);
+      }
+    }
+    return data && data.ok;
+  } catch (e) {
+    console.error('[replace] sendPhoto failed:', e.message);
+    return await sendDocumentToUser(userId, buffer, filename, caption);
+  }
+}
+
 // Telegram document send (file replacement)
 async function sendDocumentToUser(userId, buffer, filename, caption = '') {
   if (!BOT_TOKEN || !userId || !buffer) return false;
@@ -462,6 +501,94 @@ router.post('/:id/resolve', upload.single('replace_file'), async (req, res) => {
   logAudit('admin', 'replace_resolved', `id=${id} user=${row.user_id} file=${file ? file.originalname : 'none'}`);
 
   res.redirect('/replace?status=replaced&msg=' + encodeURIComponent(`✅ Replacement sent to User ${row.user_id} #${id}`));
+});
+
+// POST Reply to User with Message & Screenshot/File
+router.post('/:id/reply', upload.single('reply_file'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const row = db.prepare('SELECT * FROM replace_requests WHERE id = ?').get(id);
+  if (!row) {
+    return res.redirect('/replace?msg=' + encodeURIComponent('❌ রিকোয়েস্ট পাওয়া যায়নি!'));
+  }
+
+  const replyMessage = (req.body.reply_message || '').trim();
+  const file = req.file;
+
+  if (!replyMessage && !file) {
+    return res.redirect('/replace?msg=' + encodeURIComponent('❌ অনুগ্রহ করে একটি মেসেজ অথবা স্ক্রিনশট/ফাইল প্রদান করুন!'));
+  }
+
+  const now = Date.now();
+  let userDelivered = false;
+
+  // 1. If file / screenshot provided
+  if (file) {
+    const isImage = (file.mimetype && file.mimetype.startsWith('image/')) ||
+                    /\.(jpg|jpeg|png|webp|gif)$/i.test(file.originalname);
+    
+    let caption = `📩 *Admin Message (Replace #${row.id})*\n━━━━━━━━━━━━━━━━━━━━\n`;
+    if (replyMessage) {
+      caption += `${replyMessage}\n\n`;
+    }
+    caption += `ধন্যবাদ 🙏`;
+
+    if (isImage) {
+      userDelivered = await sendPhotoToUser(row.user_id, file.buffer, file.originalname, caption);
+    } else {
+      userDelivered = await sendDocumentToUser(row.user_id, file.buffer, file.originalname, caption);
+    }
+  } else if (replyMessage) {
+    // 2. Pure text message
+    const msg =
+      `📩 *Admin Message (Replace #${row.id})*\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `${replyMessage}\n\n` +
+      `ধন্যবাদ 🙏`;
+    await notifyUser(row.user_id, msg);
+    userDelivered = true;
+  }
+
+  // 3. Update database record
+  const savedData = replyMessage || (file ? `[File: ${file.originalname}]` : '[Replied]');
+  db.prepare(`
+    UPDATE replace_requests
+    SET status = 'replaced',
+        replacement_data = ?,
+        replacement_file = ?,
+        resolved_by = 'web-admin',
+        resolved_at = ?
+    WHERE id = ?
+  `).run(
+    savedData,
+    file ? file.originalname : null,
+    now,
+    id
+  );
+
+  // 4. Sync support_tickets table ONLY for this specific ticket
+  try {
+    const tMatch = (row.reason || '').match(/Ticket\s*#([a-zA-Z0-9_-]+)/i);
+    if (tMatch && tMatch[1]) {
+      db.prepare(`
+        UPDATE support_tickets
+        SET status = 'processed', admin_response = ?
+        WHERE ticket_id = ?
+      `).run(savedData, tMatch[1]);
+    } else {
+      const pendingT = db.prepare("SELECT ticket_id FROM support_tickets WHERE user_id = ? AND type = 'replace' AND status = 'pending' ORDER BY id ASC LIMIT 1").get(row.user_id);
+      if (pendingT) {
+        db.prepare(`
+          UPDATE support_tickets
+          SET status = 'processed', admin_response = ?
+          WHERE ticket_id = ?
+        `).run(savedData, pendingT.ticket_id);
+      }
+    }
+  } catch (_) {}
+
+  logAudit('admin', 'replace_replied', `id=${id} user=${row.user_id} file=${file ? file.originalname : 'none'}`);
+
+  res.redirect('/replace?status=replaced&msg=' + encodeURIComponent(`✅ ইউজার ${row.user_id} কে রিপ্লাই ও স্ক্রিনশট পাঠানো হয়েছে!`));
 });
 
 // POST Collect

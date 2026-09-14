@@ -4988,11 +4988,16 @@ async def tick_reply_action(c: types.CallbackQuery, state: FSMContext):
         return await c.message.reply("⚠️ Already processed.")
         
     await state.update_data(current_ticket_user=ticket[0], current_ticket_id=ticket_id, admin_msg_id=c.message.message_id)
-    await c.message.reply("✍️ **ইউজারকে যে মেসেজ দিতে চান তা লিখুন:**")
+    await c.message.reply(
+        "✍️ **ইউজারকে রিপ্লাই লিখুন অথবা স্ক্রিনশট / ছবি / ফাইল পাঠান:**\n"
+        "💡 *(স্ক্রিনশটের ক্যাপশনে মেসেজ লিখে একসাথেই পাঠাতে পারবেন)*"
+    )
     await state.set_state(ShopStates.waiting_for_admin_reply)
 
 @dp.message(ShopStates.waiting_for_admin_reply)
 async def send_admin_reply(m: types.Message, state: FSMContext):
+    if m.text and m.text.startswith("/"): return
+
     data = await state.get_data()
     user_id = data.get('current_ticket_user')
     ticket_id = data.get('current_ticket_id')
@@ -5000,18 +5005,25 @@ async def send_admin_reply(m: types.Message, state: FSMContext):
     
     if not user_id: return await m.answer("❌ Error.")
     
-    reply_text = m.text or ""
+    reply_text = (m.text or m.caption or "").strip()
+    photo_id = m.photo[-1].file_id if m.photo else None
+    doc_id = m.document.file_id if m.document else None
+    
+    if not reply_text and not photo_id and not doc_id:
+        return await m.answer("⚠️ অনুগ্রহ করে মেসেজ লিখুন অথবা স্ক্রিনশট/ফাইল পাঠান।")
+    
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     admin_name = f"bot-admin ({m.from_user.first_name})"
+    saved_response = reply_text or ("[Photo Attachment]" if photo_id else "[File Attachment]")
     
     conn = _dbc()
-    conn.execute("UPDATE support_tickets SET status='processed', admin_response=? WHERE ticket_id=?", (reply_text, ticket_id))
+    conn.execute("UPDATE support_tickets SET status='processed', admin_response=? WHERE ticket_id=?", (saved_response, ticket_id))
     # Sync with ONLY this specific replace request so other requests remain pending!
     res = conn.execute("""
         UPDATE replace_requests 
         SET status='replaced', replacement_data=?, resolved_by=?, resolved_at=? 
         WHERE reason LIKE ? AND status='pending'
-    """, (f"[Replied: {reply_text}]", admin_name, now_ms, f"%{ticket_id}%"))
+    """, (f"[Replied: {saved_response}]", admin_name, now_ms, f"%{ticket_id}%"))
     if res.rowcount == 0:
         single_req = conn.execute("SELECT id FROM replace_requests WHERE user_id=? AND status='pending' ORDER BY id ASC LIMIT 1", (user_id,)).fetchone()
         if single_req:
@@ -5019,18 +5031,40 @@ async def send_admin_reply(m: types.Message, state: FSMContext):
                 UPDATE replace_requests 
                 SET status='replaced', replacement_data=?, resolved_by=?, resolved_at=? 
                 WHERE id=?
-            """, (f"[Replied: {reply_text}]", admin_name, now_ms, single_req[0]))
+            """, (f"[Replied: {saved_response}]", admin_name, now_ms, single_req[0]))
     conn.commit()
     conn.close()
     
-    user_msg = f"📩 **Admin Message:**\n━━━━━━━━━━━━━━━━━━━━\n{reply_text}"
+    caption_msg = f"📩 **Admin Message:**\n━━━━━━━━━━━━━━━━━━━━\n{reply_text}" if reply_text else "📩 **Admin Message:**\n━━━━━━━━━━━━━━━━━━━━\n(অ্যাডমিন একটি স্ক্রিনশট/ফাইল পাঠিয়েছেন)"
     
+    user_delivered = False
     try:
-        await bot.send_message(user_id, user_msg)
-        await m.answer("✅ মেসেজ ইউজারের কাছে পাঠানো হয়েছে এবং রিকোয়েস্ট সমাধান হিসেবে মার্ক করা হয়েছে।")
-        try: await bot.edit_message_text(f"✅ **Replied & Solved by {m.from_user.first_name}**", chat_id=m.chat.id, message_id=msg_id)
-        except: pass
-    except:
+        if photo_id:
+            try:
+                await bot.send_photo(user_id, photo_id, caption=caption_msg, parse_mode="Markdown")
+            except Exception:
+                await bot.send_photo(user_id, photo_id, caption=caption_msg)
+            user_delivered = True
+        elif doc_id:
+            try:
+                await bot.send_document(user_id, doc_id, caption=caption_msg, parse_mode="Markdown")
+            except Exception:
+                await bot.send_document(user_id, doc_id, caption=caption_msg)
+            user_delivered = True
+        else:
+            try:
+                await bot.send_message(user_id, caption_msg, parse_mode="Markdown")
+            except Exception:
+                await bot.send_message(user_id, caption_msg)
+            user_delivered = True
+            
+        if user_delivered:
+            sent_label = "মেসেজ ও স্ক্রিনশট/ফাইল" if (photo_id or doc_id) else "মেসেজ"
+            await m.answer(f"✅ {sent_label} ইউজারের কাছে পাঠানো হয়েছে এবং রিকোয়েস্ট সমাধান হিসেবে মার্ক করা হয়েছে।")
+            try: await bot.edit_message_text(f"✅ **Replied & Solved by {m.from_user.first_name}**", chat_id=m.chat.id, message_id=msg_id)
+            except: pass
+    except Exception as e:
+        print(f"[send_admin_reply] delivery error: {e}", flush=True)
         await m.answer("❌ User delivery failed.")
         
     await state.clear()

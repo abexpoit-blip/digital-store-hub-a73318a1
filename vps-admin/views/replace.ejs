@@ -490,8 +490,9 @@
                       onclick="openResolveModal(<%= r.id %>, '<%= r.user_id %>', '<%- (r.username || 'User').replace(/'/g, '') %>', '<%- (r.category || 'fb1000').replace(/'/g, '') %>', <%= (r.old_data || '').split('\n').filter(Boolean).length || 1 %>)">
                 🔄 Give Replace
               </button>
-              <button type="button" onclick="submitCollect(<%= r.id %>)" class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2.5 py-1.5 rounded-xl text-xs font-bold transition">
-                Mark Collect
+              <button type="button" onclick="openReplyModal(<%= r.id %>, '<%= r.user_id %>', '<%- (r.username || 'User').replace(/'/g, '') %>', '<%- (r.category || '').replace(/'/g, '') %>')"
+                      class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1">
+                <span>✉️</span> Reply
               </button>
               <button type="button" class="bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 px-2.5 py-1.5 rounded-xl text-xs font-bold transition"
                       onclick="openRejectModal(<%= r.id %>)">
@@ -641,6 +642,52 @@
   </div>
 </div>
 
+<!-- ================= MODAL 4: REPLY TO USER WITH MESSAGE & SCREENSHOT ================= -->
+<div id="replyModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+  <div class="w-full max-w-lg bg-white border border-sky-200 rounded-3xl shadow-2xl p-6">
+    <div class="flex items-center justify-between border-b border-sky-100 pb-3 mb-4">
+      <div>
+        <h3 class="text-base font-extrabold text-slate-900 flex items-center gap-2">
+          <span>✉️</span> Reply to User
+          <span id="replyModalId" class="text-sky-600 font-mono font-bold"></span>
+        </h3>
+        <p class="text-xs text-slate-500 mt-0.5">
+          User: <span id="replyModalUser" class="font-bold text-slate-700"></span>
+        </p>
+      </div>
+      <button type="button" onclick="closeReplyModal()" class="text-slate-400 hover:text-slate-700 text-base p-1">✕</button>
+    </div>
+
+    <form id="replyForm" method="post" enctype="multipart/form-data" class="space-y-4">
+      <div>
+        <label class="block text-xs font-bold text-slate-700 mb-1">
+          💬 Message (বার্তা):
+        </label>
+        <textarea name="reply_message" id="replyMessageText" rows="4" placeholder="ইউজারকে আপনার মেসেজ লিখুন (যেমন: আপনার সমস্যাটি চেক করা হয়েছে...)"
+                  class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 outline-none focus:border-sky-500 focus:bg-white placeholder-slate-400"></textarea>
+      </div>
+
+      <div>
+        <label class="block text-xs font-bold text-slate-700 mb-1">
+          🖼️ Screenshot / File Attachment (ঐচ্ছিক):
+        </label>
+        <input type="file" name="reply_file" accept="image/*,.txt,.pdf,.xlsx,.csv,.zip"
+               class="w-full text-xs text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 file:cursor-pointer border border-dashed border-sky-200 rounded-xl p-3 bg-slate-50"/>
+        <p class="text-[11px] text-slate-500 mt-1">📸 স্ক্রিনশট বা ফাইল সিলেক্ট করলে এটি ইউজারের টেলিগ্রামে সরাসরি চলে যাবে।</p>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
+        <button type="button" onclick="closeReplyModal()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100">
+          Cancel
+        </button>
+        <button type="submit" class="bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl text-xs shadow-md shadow-sky-600/20 flex items-center gap-1.5">
+          <span>🚀</span> Send Reply & Screenshot
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script>
   function toggleSelectAll(master) {
     var boxes = document.querySelectorAll('.row-checkbox');
@@ -747,6 +794,20 @@
   }
   function closeRejectModal() {
     var m = document.getElementById('rejectModal');
+    m.classList.add('hidden'); m.classList.remove('flex');
+  }
+
+  function openReplyModal(id, uid, uname, category) {
+    document.getElementById('replyModalId').textContent = '#' + id;
+    document.getElementById('replyModalUser').textContent = uname + ' (' + uid + ')';
+    document.getElementById('replyForm').action = '/replace/' + id + '/reply';
+    document.getElementById('replyMessageText').value = '';
+    var m = document.getElementById('replyModal');
+    m.classList.remove('hidden'); m.classList.add('flex');
+  }
+
+  function closeReplyModal() {
+    var m = document.getElementById('replyModal');
     m.classList.add('hidden'); m.classList.remove('flex');
   }
 
