@@ -201,11 +201,23 @@ router.post('/create-invoice', express.json(), async (req, res) => {
 // =====================================================================
 async function handleWebhook(req, res) {
   try {
-    console.log('[zinipay webhook]', JSON.stringify({ body: req.body || {}, query: req.query || {} }));
-    const invoice_id = req.body?.invoice_id || req.body?.invoiceId || req.query?.invoice_id || req.query?.invoiceId;
-    if (!invoice_id) return res.status(400).send('no invoice_id');
+    const body = req.body || {};
+    const query = req.query || {};
+    console.log('[zinipay webhook]', JSON.stringify({ body, query }));
+
+    const invoice_id = body.invoice_id || body.invoiceId || query.invoice_id || query.invoiceId;
+    if (!invoice_id) {
+      // Could be brand automation event like billing.payment_received
+      if (body.event) {
+        console.log(`[zinipay event] received ${body.event} txn=${body.transactionId || 'N/A'} amt=${body.amount || 'N/A'}`);
+      }
+      return res.status(200).send('ok');
+    }
+
     const result = await verifyAndApprove(invoice_id, 'webhook');
-    if (!result.approved && !result.alreadyApproved) console.warn('[zinipay] not approved yet', invoice_id, result.status || result.error || 'unknown');
+    if (!result.approved && !result.alreadyApproved) {
+      console.warn('[zinipay] not approved yet', invoice_id, result.status || result.error || 'unknown');
+    }
     res.status(200).send('ok');
   } catch (e) {
     console.error('[zinipay webhook] error:', e);
