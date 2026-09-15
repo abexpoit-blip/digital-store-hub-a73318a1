@@ -149,7 +149,19 @@ router.get('/', (req, res) => {
 
   const weeklyStats = getWeeklyStats();
 
-  res.render('deposits', { deposits, summary, status, q, weeklyStats });
+  const cfgRow = db.prepare("SELECT value FROM config WHERE key='manual_payment_enabled'").get();
+  const manualPaymentEnabled = cfgRow && cfgRow.value ? !['0', 'off', 'false', 'no', 'closed', 'disabled'].includes(String(cfgRow.value).toLowerCase()) : true;
+
+  res.render('deposits', { deposits, summary, status, q, weeklyStats, manualPaymentEnabled });
+});
+
+router.post('/toggle-manual', (req, res) => {
+  const cfgRow = db.prepare("SELECT value FROM config WHERE key='manual_payment_enabled'").get();
+  const current = cfgRow && cfgRow.value ? String(cfgRow.value).toLowerCase() : 'on';
+  const isOff = ['0', 'off', 'false', 'no', 'closed', 'disabled'].includes(current);
+  const nextVal = isOff ? 'on' : 'off';
+  db.prepare("INSERT OR REPLACE INTO config (key, value) VALUES ('manual_payment_enabled', ?)").run(nextVal);
+  res.redirect('/deposits?msg=' + encodeURIComponent(`Manual Payment ${nextVal === 'on' ? 'চালু (ON)' : 'বন্ধ (OFF)'} করা হয়েছে!`));
 });
 
 module.exports = router;

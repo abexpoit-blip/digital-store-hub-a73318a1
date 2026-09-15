@@ -1,12 +1,29 @@
 <%- include('partials/header', { title: 'Deposits', msg: null, currentPath }) %>
 
-<div class="flex items-center justify-between mb-4">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
   <div>
     <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
       <span>💰 Deposits Management</span>
     </h1>
     <p class="text-xs text-slate-500 mt-0.5 font-medium">Auto ZiniPay Webhook Settlement & Manual Transfer Audit</p>
   </div>
+
+  <% if (typeof manualPaymentEnabled !== 'undefined') { %>
+    <form method="post" action="/deposits/toggle-manual" class="flex items-center gap-3 bg-white border border-sky-200 px-4 py-2 rounded-2xl shadow-xs">
+      <div class="text-left">
+        <div class="text-[10px] uppercase font-mono tracking-wider text-slate-500 font-extrabold flex items-center gap-1.5">
+          <span>📝 Manual Payment</span>
+          <span class="h-2 w-2 rounded-full <%= manualPaymentEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500' %>"></span>
+        </div>
+        <div class="text-xs font-black <%= manualPaymentEnabled ? 'text-emerald-700' : 'text-rose-700' %>">
+          <%= manualPaymentEnabled ? 'চালু আছে (ON)' : 'বন্ধ আছে (OFF)' %>
+        </div>
+      </div>
+      <button class="px-3.5 py-1.5 font-bold text-xs rounded-xl transition shadow-xs <%= manualPaymentEnabled ? 'bg-rose-600 hover:bg-rose-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white' %>">
+        <%= manualPaymentEnabled ? '🚫 বন্ধ করো' : '✅ চালু করো' %>
+      </button>
+    </form>
+  <% } %>
 </div>
 
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
