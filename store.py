@@ -4871,15 +4871,28 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         conn.close()
         return await m.answer("❌ টেক্সট থেকে কোনো বৈধ UID সনাক্ত করা যায়নি। অনুগ্রহ করে UID PASSWORD COOKIES ফরম্যাটে দিন।")
 
-    # Check submitted quantity against purchased quantity in that order
-    if len(detected_uids) > s_qty:
+    # Check submitted quantity against purchased quantity in that order (cumulative check)
+    prev_count = 0
+    prev_rows = conn.execute(
+        "SELECT detected_uids, old_data FROM replace_requests WHERE reason LIKE ? AND status != 'rejected'",
+        (f"%Order #{s_id}%",)
+    ).fetchall()
+    for pr in prev_rows:
+        if pr[0]:
+            prev_count += len([x for x in pr[0].split(',') if x.strip()])
+        elif pr[1]:
+            prev_count += len(extract_uids_from_text(pr[1]))
+
+    if prev_count + len(detected_uids) > s_qty:
+        rem_allow = max(0, s_qty - prev_count)
         conn.close()
         return await m.answer(
             f"🚫 **অর্ডারের পরিমাণের চেয়ে বেশি আইডি দিয়েছেন!**\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            f"📦 অর্ডার `#{s_id}`-এ আপনি মোট **{s_qty}টি** আইডি কিনেছিলেন।\n"
-            f"কিন্তু আপনি সাবমিট করেছেন **{len(detected_uids)}টি** UID।\n\n"
-            f"⚠️ একটি অর্ডারে কেনা পরিমাণের বেশি রিপ্লেস দেওয়া যাবে না। অনুগ্রহ করে সর্বোচ্চ **{s_qty}টি** নষ্ট আইডি দিন অথবা /cancel লিখুন।",
+            f"📦 অর্ডার `#{s_id}`-এ আপনি কিনেছিলেন **{s_qty}টি** আইডি।\n"
+            f"পূর্বে ইতিমধ্যে **{prev_count}টি** আইডি রিপ্লেসের জন্য জমা দিয়েছেন।\n"
+            f"বর্তমানে আপনি সর্বোচ্চ আর **{rem_allow}টি** আইডি সাবমিট করতে পারবেন (আপনি দিয়েছেন {len(detected_uids)}টি)।\n\n"
+            f"⚠️ একটি অর্ডারে কেনা মোট পরিমাণের বেশি রিপ্লেস নেওয়া সম্পূর্ণ নিষিদ্ধ।",
             parse_mode="Markdown"
         )
 
@@ -4929,11 +4942,11 @@ async def process_replace_request(m: types.Message, state: FSMContext):
     already_replaced = []
     for u in detected_uids:
         rep = conn.execute(
-            "SELECT id, status FROM replace_requests WHERE (detected_uids LIKE ? OR old_data LIKE ?) AND status IN ('pending', 'replaced') LIMIT 1",
+            "SELECT id, status FROM replace_requests WHERE (detected_uids LIKE ? OR old_data LIKE ?) AND status != 'rejected' LIMIT 1",
             (f"%{u}%", f"%{u}%")
         ).fetchone()
         if rep:
-            status_desc = "বর্তমানে পেন্ডিং ক্লেইমে আছে" if rep[1] == 'pending' else "ইতিমধ্যে রিপ্লেস দেওয়া হয়েছে"
+            status_desc = "বর্তমানে পেন্ডিং ক্লেইমে আছে" if rep[1] == 'pending' else "ইতিমধ্যে পূর্বে রিপ্লেস জমা/সম্পন্ন হয়েছে"
             already_replaced.append((u, status_desc))
             continue
 

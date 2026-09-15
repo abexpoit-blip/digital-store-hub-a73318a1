@@ -478,7 +478,23 @@
               <div class="text-[11px] text-slate-400 font-mono"><%= typeof formatDateTime === 'function' ? formatDateTime(r.resolved_at) : (r.resolved_at ? new Date(r.resolved_at).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', hour12: true }) : '-') %></div>
             </td>
           <% } else { %>
-            <td class="py-3 px-4 text-slate-600 text-xs max-w-xs"><%= r.reason || '-' %></td>
+            <td class="py-3 px-4 text-slate-600 text-xs max-w-xs">
+              <div class="font-bold text-slate-800"><%= r.reason || '-' %></div>
+              <% if (r._orderPurchasedTime) { %>
+                <div class="mt-1.5 text-[11px] space-y-1 font-mono bg-sky-50/80 border border-sky-200/80 p-2 rounded-xl">
+                  <div class="text-slate-600 flex items-center justify-between">
+                    <span>🛒 কেনা: <strong class="text-slate-800"><%= r._orderPurchasedTime %></strong></span>
+                    <span class="text-[10px] text-slate-500">(<%= r._orderQty %> pcs)</span>
+                  </div>
+                  <div class="flex items-center justify-between pt-0.5 border-t border-sky-100">
+                    <span class="text-slate-600 font-semibold">⏱️ সময়: <%= r._orderElapsed %> (সীমা: <%= r._orderWindow %>)</span>
+                    <span class="px-1.5 py-0.2 rounded-full font-bold text-[10px] <%= r._orderWindowStatus === 'valid' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300' %>">
+                      <%= r._orderWindowStatus === 'valid' ? '✓ ইন-টাইম' : '⚠ এক্সপায়ার্ড' %>
+                    </span>
+                  </div>
+                </div>
+              <% } %>
+            </td>
             <td class="py-3 px-4 text-slate-600 text-xs font-mono font-medium whitespace-nowrap">
               <%= typeof formatDateTime === 'function' ? formatDateTime(r.created_at) : new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', hour12: true }) %>
             </td>

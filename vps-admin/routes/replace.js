@@ -201,11 +201,57 @@ router.get('/', (req, res) => {
 
   const rows = db.prepare(sql).all(...params);
 
-  // Extract UIDs and find sellers for visible rows
+  function getWindowHours(qty, cat) {
+    const c = String(cat || '').toLowerCase();
+    if (c.includes('used')) return 2;
+    const q = Number(qty || 1);
+    if (q <= 10) return 2;
+    if (q <= 30) return 6;
+    if (q <= 50) return 8;
+    return 12;
+  }
+
+  // Extract UIDs, find sellers, and enrich with order purchase telemetry
   const allRowUids = [];
   rows.forEach(r => {
     r.detectedUids = extractUidsFromText(r.old_data);
     allRowUids.push(...r.detectedUids);
+
+    // Extract Order # and enrich with purchase telemetry
+    const m = (r.reason || '').match(/Order #(\d+)/i);
+    if (m) {
+      r._orderId = Number(m[1]);
+      try {
+        const sale = db.prepare('SELECT date, time, qty, category FROM sales WHERE id = ?').get(r._orderId);
+        if (sale) {
+          r._orderQty = sale.qty;
+          r._orderCat = sale.category;
+          r._orderPurchasedTime = `${sale.date} ${sale.time}`;
+
+          let saleEpoch = 0;
+          const del = db.prepare('SELECT delivered_at FROM delivery_archive WHERE sale_id = ? ORDER BY id ASC LIMIT 1').get(r._orderId);
+          if (del && del.delivered_at) {
+            saleEpoch = Number(del.delivered_at);
+          } else {
+            const dtStr = `${sale.date || ''} ${sale.time || ''}`.trim();
+            const d = new Date(dtStr);
+            if (!isNaN(d.getTime())) saleEpoch = Math.floor(d.getTime() / 1000);
+          }
+
+          if (saleEpoch > 0) {
+            const createdSec = Math.floor((r.created_at > 100000000000 ? r.created_at / 1000 : r.created_at) || 0);
+            const elapsedSec = Math.max(0, createdSec - saleEpoch);
+            const hours = Math.floor(elapsedSec / 3600);
+            const mins = Math.floor((elapsedSec % 3600) / 60);
+            r._orderElapsed = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+
+            const winHours = getWindowHours(sale.qty, sale.category);
+            r._orderWindow = `${winHours}h`;
+            r._orderWindowStatus = elapsedSec <= (winHours * 3600) ? 'valid' : 'expired';
+          }
+        }
+      } catch (_) {}
+    }
   });
   const rowSellerMap = findSellersForUids(allRowUids);
   rows.forEach(r => {
