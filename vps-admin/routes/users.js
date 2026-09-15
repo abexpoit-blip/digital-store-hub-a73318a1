@@ -139,9 +139,18 @@ router.post('/:id/ban', (req, res) => {
   const userId = parseInt(req.params.id, 10);
   if (!Number.isFinite(userId)) return res.redirect('/users?msg=Invalid+user');
   const banned = req.body.banned === '1' ? 1 : 0;
-  db.prepare('UPDATE users SET is_banned = ? WHERE user_id = ?').run(banned, userId);
-  logAudit('admin', banned ? 'ban_user' : 'unban_user', `user=${userId}`);
-  res.redirect(`/users/${userId}?msg=` + encodeURIComponent(banned ? 'User banned 🚫' : 'User unbanned ✅'));
+  const banReason = (req.body.ban_reason || '').trim();
+
+  if (banned) {
+    const reason = banReason || 'নিয়ম লঙ্ঘনের কারণে একাউন্ট ব্যান করা হয়েছে';
+    db.prepare('UPDATE users SET is_banned = 1, ban_reason = ? WHERE user_id = ?').run(reason, userId);
+    logAudit('admin', 'ban_user', `user=${userId} reason="${reason}"`);
+    res.redirect(`/users/${userId}?msg=` + encodeURIComponent('User banned 🚫'));
+  } else {
+    db.prepare('UPDATE users SET is_banned = 0, ban_reason = NULL WHERE user_id = ?').run(userId);
+    logAudit('admin', 'unban_user', `user=${userId}`);
+    res.redirect(`/users/${userId}?msg=` + encodeURIComponent('User unbanned ✅'));
+  }
 });
 
 router.post('/:id/delete', (req, res) => {

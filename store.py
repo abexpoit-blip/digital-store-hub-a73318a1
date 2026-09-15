@@ -262,10 +262,15 @@ def init_db():
 
     # Core Tables
     cursor.execute('CREATE TABLE IF NOT EXISTS stock (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, data TEXT)')
-    cursor.execute('CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, balance INTEGER DEFAULT 0, is_banned INTEGER DEFAULT 0)')
+    cursor.execute('CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, balance INTEGER DEFAULT 0, is_banned INTEGER DEFAULT 0, ban_reason TEXT)')
     cursor.execute('CREATE TABLE IF NOT EXISTS sales (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT, category TEXT, qty INTEGER, total INTEGER, date TEXT, time TEXT)')
     cursor.execute('CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)')
     cursor.execute('CREATE TABLE IF NOT EXISTS admins (user_id INTEGER PRIMARY KEY)')
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN ban_reason TEXT")
+        conn.commit()
+    except Exception:
+        pass
 
     # Payment Logs 
     cursor.execute('''CREATE TABLE IF NOT EXISTS payment_logs (req_id TEXT PRIMARY KEY)''')
@@ -482,6 +487,7 @@ class ShopStates(StatesGroup):
     waiting_for_admin_reply = State()
     waiting_for_admin_replace = State()
     waiting_for_notice_content = State()
+    waiting_for_ban_reason = State()
 
 # --- UPDATE USER DATA ---
 def get_user_data(user_id, username=None, first_name="Unknown"):
@@ -964,6 +970,66 @@ class _DfmtDeliveryMiddleware(_DfmtBaseMiddleware):
         return None
 
 
+# --- BAN ENFORCEMENT MIDDLEWARE ---
+class BanEnforcementMiddleware(_DfmtBaseMiddleware):
+    async def __call__(self, handler, event, data):
+        user = getattr(event, "from_user", None)
+        if not user:
+            return await handler(event, data)
+
+        uid = user.id
+        if is_admin(uid):
+            return await handler(event, data)
+
+        # Check ban status
+        try:
+            conn = _dbc()
+            row = conn.execute("SELECT is_banned, ban_reason FROM users WHERE user_id = ?", (uid,)).fetchone()
+            conn.close()
+        except Exception:
+            row = None
+
+        if row and row[0] == 1:
+            reason = (row[1] or "").strip() or "নীতিমালা লঙ্ঘন / সন্দেহজনক কার্যকলাপের কারণে ব্যান করা হয়েছে।"
+
+            # Clear state so they cannot proceed with any active dialog
+            state = data.get("state")
+            if state:
+                try:
+                    await state.clear()
+                except Exception:
+                    pass
+
+            # If user pressed an inline button
+            if isinstance(event, types.CallbackQuery):
+                try:
+                    await event.answer(
+                        f"🚫 আপনার অ্যাকাউন্ট ব্যান করা হয়েছে!\n\nকারণ: {reason[:120]}",
+                        show_alert=True
+                    )
+                except Exception:
+                    pass
+                return None
+
+            # If user sent a message (text, photo, command, menu button, etc.)
+            if isinstance(event, types.Message):
+                try:
+                    ban_msg = (
+                        f"🚫 **আপনার একাউন্টটি ব্যান করা হয়েছে!**\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"⚠️ **ব্যান করার কারণ:**\n"
+                        f"_{reason}_\n\n"
+                        f"❌ আপনার একাউন্ট ব্যান থাকায় আপনি বটের কোনো সেবা (ক্রয়, ডিপোজিট, কমপ্লেইন ইত্যাদি) ব্যবহার করতে পারবেন না।"
+                    )
+                    await event.answer(ban_msg, parse_mode="Markdown")
+                except Exception:
+                    pass
+                return None
+
+        return await handler(event, data)
+
+dp.message.outer_middleware(BanEnforcementMiddleware())
+dp.callback_query.outer_middleware(BanEnforcementMiddleware())
 dp.callback_query.outer_middleware(_DfmtDeliveryMiddleware())
 print("[delivery-v11] READY canonical middleware + async IPv4 curl uploader", flush=True)
 
@@ -1281,36 +1347,92 @@ async def admin_check_bal(message: types.Message, command: CommandObject, state:
 async def admin_ban(message: types.Message, command: CommandObject, state: FSMContext):
     await state.clear()
     if not is_admin(message.from_user.id): return
-    if not command.args: return await message.answer("❌ Format: `/ban @user` or `/ban 12345678`")
-    
-    target = command.args.strip()
+    if not command.args:
+        return await message.answer(
+            "❌ **ব্যবহার:** `/ban @user [কারণ]` অথবা `/ban 12345678 [কারণ]`\n"
+            "উদাহরণ: `/ban @username ফেক রিপ্লেস সাবমিশন`\n"
+            "_(কারণ না দিলে বট আপনাকে কারণ লিখতে বলবে)_",
+            parse_mode="Markdown"
+        )
+
+    parts = command.args.strip().split(maxsplit=1)
+    target = parts[0]
+    reason = parts[1].strip() if len(parts) > 1 else None
+
     uid = get_id_by_username(target)
-    
-    if uid:
+    if not uid:
+        return await message.answer(f"❌ User `{target}` not found in database.", parse_mode="Markdown")
+
+    if reason:
         conn = _dbc()
-        # Insert user if they are new, then set ban status
         conn.execute("INSERT OR IGNORE INTO users (user_id, username, balance, is_banned) VALUES (?, 'Unknown', 0, 0)", (uid,))
-        conn.execute("UPDATE users SET is_banned = 1 WHERE user_id = ?", (uid,))
+        conn.execute("UPDATE users SET is_banned = 1, ban_reason = ? WHERE user_id = ?", (reason, uid))
         conn.commit(); conn.close()
-        await message.answer(f"🚫 Banned successfully: `{uid}`")
+        await message.answer(
+            f"🚫 **ইউজার `{uid}` (`{target}`) কে সফলভাবে ব্যান করা হয়েছে!**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚠️ **ব্যান করার কারণ:**\n_{reason}_\n\n"
+            f"🔒 ইউজার এখন বটে ঢুকলেই এই কারণটি দেখতে পাবে এবং কমপ্লেইন বক্স সহ বটের সমস্ত অ্যাক্সেস ব্লক থাকবে।",
+            parse_mode="Markdown"
+        )
     else:
-        await message.answer("❌ User not found.")
+        await state.update_data(ban_uid=uid, ban_target=target)
+        await state.set_state(ShopStates.waiting_for_ban_reason)
+        await message.answer(
+            f"✍️ **ইউজার `{target}` (`{uid}`) কে ব্যান করার কারণ লিখুন:**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📝 অনুগ্রহ করে কারণটি লিখে পাঠান (ইউজার বটে ঢুকলেই এই কারণটি দেখতে পাবে):\n\n"
+            f"_(বাতিল করতে চাইলে /cancel লিখুন)_",
+            parse_mode="Markdown"
+        )
+
+@dp.message(ShopStates.waiting_for_ban_reason)
+async def process_ban_reason(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id): return
+    if message.text and message.text.strip().startswith("/cancel"):
+        await state.clear()
+        return await message.answer("❌ ব্যান প্রক্রিয়া বাতিল করা হয়েছে।")
+
+    reason = (message.text or "").strip()
+    if not reason:
+        return await message.answer("⚠️ অনুগ্রহ করে টেক্সটে ব্যান করার কারণ লিখুন (অথবা বাতিল করতে /cancel লিখুন):")
+
+    data = await state.get_data()
+    uid = data.get("ban_uid")
+    target = data.get("ban_target") or str(uid)
+    await state.clear()
+
+    if not uid:
+        return await message.answer("❌ সেশনের মেয়াদ শেষ। অনুগ্রহ করে পুনরায় `/ban` কমান্ড দিন।")
+
+    conn = _dbc()
+    conn.execute("INSERT OR IGNORE INTO users (user_id, username, balance, is_banned) VALUES (?, 'Unknown', 0, 0)", (uid,))
+    conn.execute("UPDATE users SET is_banned = 1, ban_reason = ? WHERE user_id = ?", (reason, uid))
+    conn.commit(); conn.close()
+
+    await message.answer(
+        f"🚫 **ইউজার `{target}` (`{uid}`) কে সফলভাবে ব্যান করা হয়েছে!**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"⚠️ **ব্যান করার কারণ:**\n_{reason}_\n\n"
+        f"🔒 ইউজার এখন বটে ঢুকলেই এই কারণটি দেখতে পাবে এবং কমপ্লেইন বক্স সহ বটের সমস্ত অ্যাক্সেস ব্লক থাকবে।",
+        parse_mode="Markdown"
+    )
 
 @dp.message(Command("unban"))
 async def admin_unban(message: types.Message, command: CommandObject, state: FSMContext):
     await state.clear()
     if not is_admin(message.from_user.id): return
-    if not command.args: return await message.answer("❌ Format: `/unban @user` or `/unban 12345678`")
-    
+    if not command.args: return await message.answer("❌ ব্যবহার: `/unban @user` অথবা `/unban 12345678`")
+
     target = command.args.strip()
     uid = get_id_by_username(target)
-    
+
     if uid:
         conn = _dbc()
         conn.execute("INSERT OR IGNORE INTO users (user_id, username, balance, is_banned) VALUES (?, 'Unknown', 0, 0)", (uid,))
-        conn.execute("UPDATE users SET is_banned = 0 WHERE user_id = ?", (uid,))
+        conn.execute("UPDATE users SET is_banned = 0, ban_reason = NULL WHERE user_id = ?", (uid,))
         conn.commit(); conn.close()
-        await message.answer(f"✅ Unbanned successfully: `{uid}`")
+        await message.answer(f"✅ **ইউজার `{target}` (`{uid}`) কে আনব্যান করা হয়েছে!**\nইউজার পুনরায় বট ব্যবহার করতে পারবে।", parse_mode="Markdown")
     else:
         await message.answer("❌ User not found.")
 
@@ -5061,6 +5183,14 @@ async def process_replace_request(m: types.Message, state: FSMContext):
 # COMPLAIN SYSTEM
 @dp.callback_query(F.data == "sup_complain")
 async def support_complain_input(c: types.CallbackQuery, state: FSMContext):
+    # Ban check safeguard
+    conn = _dbc()
+    ban_row = conn.execute("SELECT is_banned, ban_reason FROM users WHERE user_id = ?", (c.from_user.id,)).fetchone()
+    conn.close()
+    if ban_row and ban_row[0] == 1:
+        reason = (ban_row[1] or "").strip() or "নীতিমালা লঙ্ঘনের কারণে ব্যান করা হয়েছে।"
+        return await c.answer(f"🚫 আপনি ব্যান আছেন!\nকারণ: {reason[:120]}", show_alert=True)
+
     await c.answer()
     await c.message.edit_text("✍️ **আপনার অভিযোগ বা সমস্যার কথা বিস্তারিত লিখুন:**")
     await state.set_state(ShopStates.waiting_for_complain_text)
@@ -5068,6 +5198,21 @@ async def support_complain_input(c: types.CallbackQuery, state: FSMContext):
 @dp.message(ShopStates.waiting_for_complain_text, F.content_type.in_({"text", "photo", "document"}))
 async def process_complain_request(m: types.Message, state: FSMContext):
     if m.text and m.text.startswith("/"): return
+
+    # Ban check safeguard
+    conn = _dbc()
+    ban_row = conn.execute("SELECT is_banned, ban_reason FROM users WHERE user_id = ?", (m.from_user.id,)).fetchone()
+    conn.close()
+    if ban_row and ban_row[0] == 1:
+        await state.clear()
+        reason = (ban_row[1] or "").strip() or "নীতিমালা লঙ্ঘনের কারণে ব্যান করা হয়েছে।"
+        return await m.answer(
+            f"🚫 **আপনার একাউন্টটি ব্যান করা হয়েছে!**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚠️ **ব্যান করার কারণ:**\n_{reason}_\n\n"
+            f"❌ ব্যান থাকা অবস্থায় কোনো অভিযোগ বা মেসেজ পাঠানো যাবে না।",
+            parse_mode="Markdown"
+        )
 
     complain_text = (m.text or m.caption or "").strip()
     photo_id = m.photo[-1].file_id if m.photo else None

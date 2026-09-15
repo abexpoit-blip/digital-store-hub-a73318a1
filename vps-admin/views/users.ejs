@@ -38,8 +38,18 @@
           <td><%= u.username || '-' %></td>
           <td class="text-emerald-400"><%= (u.balance||0).toLocaleString() %> Tk</td>
           <td>
-            <% if (u.is_banned) { %><span class="bg-rose-700/40 text-rose-300 px-2 py-0.5 rounded text-xs">BANNED</span>
-            <% } else { %><span class="bg-emerald-700/40 text-emerald-300 px-2 py-0.5 rounded text-xs">Active</span><% } %>
+            <% if (u.is_banned) { %>
+              <div class="flex flex-col items-start gap-0.5">
+                <span class="bg-rose-700/40 text-rose-300 px-2 py-0.5 rounded text-xs font-semibold">BANNED</span>
+                <% if (u.ban_reason) { %>
+                  <span class="text-[10px] text-rose-400/90 max-w-[160px] truncate" title="<%= u.ban_reason %>">
+                    <%= u.ban_reason %>
+                  </span>
+                <% } %>
+              </div>
+            <% } else { %>
+              <span class="bg-emerald-700/40 text-emerald-300 px-2 py-0.5 rounded text-xs">Active</span>
+            <% } %>
           </td>
           <td><a href="/users/<%= u.user_id %>" class="text-cyan-400 hover:underline text-xs">View →</a></td>
         </tr>

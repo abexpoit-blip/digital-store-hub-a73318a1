@@ -36,6 +36,7 @@ db.exec(`
   try { db.exec(`ALTER TABLE delivery_archive ADD COLUMN ${c}`); } catch (_) {}
   try { db.exec(`ALTER TABLE uid_history ADD COLUMN ${c}`); } catch (_) {}
 });
+try { db.exec('ALTER TABLE users ADD COLUMN ban_reason TEXT'); } catch (_) {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS seller_uid_collector (
