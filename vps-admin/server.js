@@ -1,3 +1,4 @@
+process.env.TZ = 'Asia/Dhaka';
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
@@ -22,9 +23,24 @@ app.use(session({
   cookie: { httpOnly: true, sameSite: 'lax', maxAge: 1000 * 60 * 60 * 12 } // 12h
 }));
 
-// Make `current` available in all views
+// Global view helpers and state (Asia/Dhaka 12-hour format)
 app.use((req, res, next) => {
   res.locals.currentPath = req.path;
+  res.locals.formatDateTime = function(val) {
+    if (!val) return '-';
+    const d = new Date(typeof val === 'string' && /^\d+$/.test(val) ? Number(val) : val);
+    if (isNaN(d.getTime())) return String(val);
+    return d.toLocaleString('en-GB', {
+      timeZone: 'Asia/Dhaka',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    }).toUpperCase();
+  };
   next();
 });
 

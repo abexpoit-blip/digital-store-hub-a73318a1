@@ -59,7 +59,7 @@
               </td>
               <td>
                 <% if (p.previouslyUploaded) { %>
-                  <span class="bg-orange-900/60 border border-orange-700 text-orange-200 px-1.5 py-0.5 rounded text-[10px]" title="First uploaded: <%= new Date(p.firstUploadedAt).toLocaleString() %>">⚠ OLD ×<%= p.uploadCount %></span>
+                  <span class="bg-orange-900/60 border border-orange-700 text-orange-200 px-1.5 py-0.5 rounded text-[10px]" title="First uploaded: <%= typeof formatDateTime === 'function' ? formatDateTime(p.firstUploadedAt) : new Date(p.firstUploadedAt).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', hour12: true }) %>">⚠ OLD ×<%= p.uploadCount %></span>
                 <% } else { %>
                   <span class="bg-emerald-900/60 border border-emerald-700 text-emerald-200 px-1.5 py-0.5 rounded text-[10px]">✓ NEW</span>
                 <% } %>

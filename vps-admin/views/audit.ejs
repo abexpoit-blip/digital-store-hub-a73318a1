@@ -13,7 +13,7 @@
           <td><%= r.actor %></td>
           <td class="text-cyan-400"><%= r.action %></td>
           <td class="text-xs text-slate-300 font-mono"><%= r.details %></td>
-          <td class="text-xs text-slate-400"><%= new Date(r.timestamp).toLocaleString('en-GB') %></td>
+          <td class="text-xs text-slate-400 font-mono"><%= typeof formatDateTime === 'function' ? formatDateTime(r.timestamp) : new Date(r.timestamp).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', hour12: true }) %></td>
         </tr>
       <% }) %>
     </tbody>

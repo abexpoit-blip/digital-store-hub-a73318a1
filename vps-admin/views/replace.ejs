@@ -475,12 +475,12 @@
             </td>
             <td class="py-3 px-4 text-xs text-slate-500">
               <span class="text-slate-800 font-semibold"><%= r.resolved_by || 'admin' %></span>
-              <div class="text-[11px] text-slate-400"><%= r.resolved_at ? new Date(r.resolved_at).toLocaleString('en-GB') : '-' %></div>
+              <div class="text-[11px] text-slate-400 font-mono"><%= typeof formatDateTime === 'function' ? formatDateTime(r.resolved_at) : (r.resolved_at ? new Date(r.resolved_at).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', hour12: true }) : '-') %></div>
             </td>
           <% } else { %>
             <td class="py-3 px-4 text-slate-600 text-xs max-w-xs"><%= r.reason || '-' %></td>
-            <td class="py-3 px-4 text-slate-500 text-xs whitespace-nowrap">
-              <%= new Date(r.created_at).toLocaleString('en-GB') %>
+            <td class="py-3 px-4 text-slate-600 text-xs font-mono font-medium whitespace-nowrap">
+              <%= typeof formatDateTime === 'function' ? formatDateTime(r.created_at) : new Date(r.created_at).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', hour12: true }) %>
             </td>
           <% } %>
 

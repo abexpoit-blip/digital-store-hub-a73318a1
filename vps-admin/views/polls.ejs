@@ -37,7 +37,7 @@
           <td><%= p.sent_count %></td>
           <td class="text-rose-400"><%= p.failed_count %></td>
           <td class="text-cyan-400 font-semibold"><%= p.vote_count %></td>
-          <td class="text-xs text-slate-500"><%= new Date(p.created_at).toLocaleString() %></td>
+          <td class="text-xs text-slate-500 font-mono"><%= typeof formatDateTime === 'function' ? formatDateTime(p.created_at) : new Date(p.created_at).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', hour12: true }) %></td>
           <td class="text-right">
             <a href="/polls/<%= p.id %>" class="text-cyan-400 hover:underline text-xs">View</a>
           </td>

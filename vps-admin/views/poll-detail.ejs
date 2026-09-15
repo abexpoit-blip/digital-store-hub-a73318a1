@@ -59,7 +59,7 @@
           <td class="font-mono text-xs"><%= v.user_id %></td>
           <td><%= v.username || '-' %></td>
           <td class="text-cyan-300"><%= picks.join(', ') %></td>
-          <td class="text-xs text-slate-500"><%= new Date(v.voted_at).toLocaleString() %></td>
+          <td class="text-xs text-slate-500 font-mono"><%= typeof formatDateTime === 'function' ? formatDateTime(v.voted_at) : new Date(v.voted_at).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', hour12: true }) %></td>
         </tr>
       <% }) %>
     </tbody>

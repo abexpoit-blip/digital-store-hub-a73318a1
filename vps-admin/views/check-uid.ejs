@@ -48,7 +48,7 @@
                 <% } %>
               </td>
               <td class="text-cyan-400"><%= r.category || '—' %></td>
-              <td class="text-slate-400"><%= r.firstUploadedAt ? new Date(r.firstUploadedAt).toLocaleString() : '—' %></td>
+              <td class="text-slate-400 font-mono text-xs"><%= r.firstUploadedAt ? (typeof formatDateTime === 'function' ? formatDateTime(r.firstUploadedAt) : new Date(r.firstUploadedAt).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', hour12: true })) : '—' %></td>
               <td class="text-slate-300"><%= r.uploadCount || '—' %></td>
             </tr>
           <% }) %>

@@ -15,7 +15,7 @@
       <div class="text-xs text-slate-400">
         ON করলে সাধারণ user বটে কিছু করতে গেলেই নিচের message দেখবে। <b>Admin রা স্বাভাবিক ব্যবহার করতে পারবে</b> (test করার জন্য)।
         <% if (maintenanceOn && since) { %>
-          <br/>শুরু হয়েছে: <b><%= new Date(since*1000).toLocaleString('en-GB') %></b>
+          <br/>শুরু হয়েছে: <b><%= typeof formatDateTime === 'function' ? formatDateTime(since*1000) : new Date(since*1000).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', hour12: true }) %></b>
         <% } %>
       </div>
     </div>
