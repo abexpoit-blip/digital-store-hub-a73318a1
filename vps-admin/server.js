@@ -30,7 +30,7 @@ app.use((req, res, next) => {
     if (!val) return '-';
     const d = new Date(typeof val === 'string' && /^\d+$/.test(val) ? Number(val) : val);
     if (isNaN(d.getTime())) return String(val);
-    return d.toLocaleString('en-GB', {
+    const str = d.toLocaleString('en-GB', {
       timeZone: 'Asia/Dhaka',
       day: '2-digit',
       month: '2-digit',
@@ -40,6 +40,7 @@ app.use((req, res, next) => {
       second: '2-digit',
       hour12: true
     }).toUpperCase();
+    return str + ' (BDT)';
   };
   next();
 });
