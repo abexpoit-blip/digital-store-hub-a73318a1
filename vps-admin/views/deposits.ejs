@@ -1,183 +1,214 @@
 <%- include('partials/header', { title: 'Deposits', msg: null, currentPath }) %>
 
-<h1 class="text-2xl font-bold mb-4">💰 Deposits</h1>
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <h1 class="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+      <span>💰 Deposits Management</span>
+    </h1>
+    <p class="text-xs text-slate-500 mt-0.5 font-medium">Auto ZiniPay Webhook Settlement & Manual Transfer Audit</p>
+  </div>
+</div>
 
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-  <% summary.forEach(function(s){ %>
-    <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl">
-      <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold"><%= s.status %> Deposits</div>
-      <div class="text-xl font-bold mt-1 text-slate-100"><%= s.s.toLocaleString() %>৳</div>
-      <div class="text-xs text-slate-500 mt-0.5"><%= s.c %> transactions</div>
+  <% summary.forEach(function(s){ 
+      const isApproved = s.status === 'approved';
+      const isPending = s.status === 'pending';
+      const badgeStyle = isApproved ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                         isPending ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                         'bg-rose-50 text-rose-700 border-rose-200';
+      const textStyle = isApproved ? 'text-emerald-600' :
+                        isPending ? 'text-amber-600' :
+                        'text-rose-600';
+  %>
+    <div class="commercial-card bg-white border border-sky-200 p-4 rounded-xl shadow-xs">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] uppercase tracking-wider font-mono font-extrabold text-slate-500"><%= s.status %> Deposits</span>
+        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border <%= badgeStyle %>"><%= s.c %> txn</span>
+      </div>
+      <div class="text-2xl font-black mt-2 <%= textStyle %>"><%= s.s.toLocaleString() %><span class="text-base font-bold text-slate-600">৳</span></div>
     </div>
   <% }) %>
 </div>
 
 <!-- WEEKLY DEPOSIT ANALYTICS (7 DAYS) -->
 <% if (typeof weeklyStats !== 'undefined') { %>
-<div class="mb-8 bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl backdrop-blur-sm">
-  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-4 border-b border-slate-800">
+<div class="commercial-card rounded-2xl p-6 mb-8 bg-white border border-sky-200 shadow-md shadow-sky-100/60 relative overflow-hidden">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-5 border-b border-sky-100">
     <div>
-      <h2 class="text-lg font-bold text-white flex items-center gap-2">
-        <span>📊</span>
+      <h2 class="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+        <span class="text-xl">📊</span>
         <span>Weekly Deposit Overview (Last 7 Days)</span>
-        <span class="text-xs font-normal text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">Live Accurate</span>
+        <span class="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">Live Accurate</span>
       </h2>
-      <p class="text-xs text-slate-400 mt-0.5">গত ৭ দিনের মোট ও দৈনিক ডিপোজিট রিপোর্ট — bKash, Nagad এবং Binance ভিত্তিক নিখুঁত হিসাব</p>
+      <p class="text-xs text-slate-500 mt-1 font-medium">গত ৭ দিনের মোট ও দৈনিক ডিপোজিট রিপোর্ট — bKash, Nagad এবং Binance ভিত্তিক নিখুঁত হিসাব</p>
     </div>
-    <div class="text-xs text-slate-500 font-mono">
-      <%= weeklyStats.days[weeklyStats.days.length - 1].date %> ~ <%= weeklyStats.days[0].date %>
+    <div class="text-xs font-mono font-semibold text-sky-800 bg-sky-50 border border-sky-200 px-3 py-1 rounded-full shadow-xs">
+      📅 <%= weeklyStats.days[weeklyStats.days.length - 1].date %> ~ <%= weeklyStats.days[0].date %>
     </div>
   </div>
 
-  <!-- 4 KPI Summary Cards -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+  <!-- 4 KPI Summary Cards (Light Commercial Aesthetic) -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
     <!-- Total 7 Days -->
-    <div class="bg-gradient-to-br from-slate-950 to-slate-900 border border-emerald-500/30 p-4 rounded-xl relative overflow-hidden">
-      <div class="absolute -right-2 -bottom-2 text-4xl opacity-10 select-none">💰</div>
-      <div class="text-xs font-medium text-emerald-400 uppercase tracking-wider">7 Days Total Approved</div>
-      <div class="text-2xl font-black text-white mt-1.5"><%= weeklyStats.totals.total.toLocaleString() %>৳</div>
-      <div class="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
-        <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-        <span><%= weeklyStats.totals.count %> সফল ট্রানজেকশন</span>
+    <div class="commercial-card p-4 rounded-xl relative overflow-hidden bg-white border border-emerald-200 shadow-xs hover:border-emerald-400 transition">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] font-extrabold text-emerald-800 uppercase tracking-wider font-mono">7 Days Approved</span>
+        <div class="h-8 w-8 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center text-sm font-bold shadow-xs">
+          💰
+        </div>
       </div>
+      <div class="text-2xl font-black text-slate-900 mt-2 tracking-tight">
+        <%= weeklyStats.totals.total.toLocaleString() %><span class="text-lg font-bold text-emerald-600">৳</span>
+      </div>
+      <div class="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
+        <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+        <span><%= weeklyStats.totals.count %> সফল ডিপোজিট</span>
+      </div>
+      <div class="h-1 w-full bg-gradient-to-r from-emerald-400 to-teal-500 absolute bottom-0 left-0"></div>
     </div>
 
     <!-- bKash -->
-    <div class="bg-gradient-to-br from-slate-950 to-slate-900 border border-pink-500/30 p-4 rounded-xl relative overflow-hidden">
-      <div class="absolute -right-2 -bottom-2 text-4xl opacity-10 select-none">💗</div>
+    <div class="commercial-card p-4 rounded-xl relative overflow-hidden bg-white border border-pink-200 shadow-xs hover:border-pink-400 transition">
       <div class="flex items-center justify-between">
-        <span class="text-xs font-medium text-pink-400 uppercase tracking-wider flex items-center gap-1">
+        <span class="text-[11px] font-extrabold text-pink-800 uppercase tracking-wider font-mono flex items-center gap-1">
           <span>💗</span> bKash Total
         </span>
         <% if (weeklyStats.totals.total > 0) { %>
-          <span class="text-[11px] font-bold text-pink-300 bg-pink-500/15 px-1.5 py-0.5 rounded">
+          <span class="text-[11px] font-extrabold text-pink-700 bg-pink-50 border border-pink-200 px-2 py-0.5 rounded-full font-mono">
             <%= ((weeklyStats.totals.bkash / weeklyStats.totals.total) * 100).toFixed(1) %>%
           </span>
         <% } %>
       </div>
-      <div class="text-2xl font-black text-pink-200 mt-1.5"><%= weeklyStats.totals.bkash.toLocaleString() %>৳</div>
-      <div class="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
-        <span class="inline-block w-1.5 h-1.5 rounded-full bg-pink-400"></span>
+      <div class="text-2xl font-black text-pink-600 mt-2 tracking-tight">
+        <%= weeklyStats.totals.bkash.toLocaleString() %><span class="text-lg font-bold text-pink-700">৳</span>
+      </div>
+      <div class="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
+        <span class="inline-block w-2 h-2 rounded-full bg-pink-500"></span>
         <span><%= weeklyStats.totals.bkashCount %> ট্রানজেকশন</span>
       </div>
+      <div class="h-1 w-full bg-gradient-to-r from-pink-400 to-rose-500 absolute bottom-0 left-0"></div>
     </div>
 
     <!-- Nagad -->
-    <div class="bg-gradient-to-br from-slate-950 to-slate-900 border border-orange-500/30 p-4 rounded-xl relative overflow-hidden">
-      <div class="absolute -right-2 -bottom-2 text-4xl opacity-10 select-none">🟧</div>
+    <div class="commercial-card p-4 rounded-xl relative overflow-hidden bg-white border border-orange-200 shadow-xs hover:border-orange-400 transition">
       <div class="flex items-center justify-between">
-        <span class="text-xs font-medium text-orange-400 uppercase tracking-wider flex items-center gap-1">
+        <span class="text-[11px] font-extrabold text-orange-800 uppercase tracking-wider font-mono flex items-center gap-1">
           <span>🟧</span> Nagad Total
         </span>
         <% if (weeklyStats.totals.total > 0) { %>
-          <span class="text-[11px] font-bold text-orange-300 bg-orange-500/15 px-1.5 py-0.5 rounded">
+          <span class="text-[11px] font-extrabold text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full font-mono">
             <%= ((weeklyStats.totals.nagad / weeklyStats.totals.total) * 100).toFixed(1) %>%
           </span>
         <% } %>
       </div>
-      <div class="text-2xl font-black text-orange-200 mt-1.5"><%= weeklyStats.totals.nagad.toLocaleString() %>৳</div>
-      <div class="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
-        <span class="inline-block w-1.5 h-1.5 rounded-full bg-orange-400"></span>
+      <div class="text-2xl font-black text-orange-600 mt-2 tracking-tight">
+        <%= weeklyStats.totals.nagad.toLocaleString() %><span class="text-lg font-bold text-orange-700">৳</span>
+      </div>
+      <div class="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
+        <span class="inline-block w-2 h-2 rounded-full bg-orange-500"></span>
         <span><%= weeklyStats.totals.nagadCount %> ট্রানজেকশন</span>
       </div>
+      <div class="h-1 w-full bg-gradient-to-r from-orange-400 to-amber-500 absolute bottom-0 left-0"></div>
     </div>
 
     <!-- Binance -->
-    <div class="bg-gradient-to-br from-slate-950 to-slate-900 border border-amber-500/30 p-4 rounded-xl relative overflow-hidden">
-      <div class="absolute -right-2 -bottom-2 text-4xl opacity-10 select-none">💎</div>
+    <div class="commercial-card p-4 rounded-xl relative overflow-hidden bg-white border border-amber-200 shadow-xs hover:border-amber-400 transition">
       <div class="flex items-center justify-between">
-        <span class="text-xs font-medium text-amber-400 uppercase tracking-wider flex items-center gap-1">
+        <span class="text-[11px] font-extrabold text-amber-800 uppercase tracking-wider font-mono flex items-center gap-1">
           <span>💎</span> Binance Total
         </span>
         <% if (weeklyStats.totals.total > 0) { %>
-          <span class="text-[11px] font-bold text-amber-300 bg-amber-500/15 px-1.5 py-0.5 rounded">
+          <span class="text-[11px] font-extrabold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-mono">
             <%= ((weeklyStats.totals.binance / weeklyStats.totals.total) * 100).toFixed(1) %>%
           </span>
         <% } %>
       </div>
-      <div class="text-2xl font-black text-amber-200 mt-1.5"><%= weeklyStats.totals.binance.toLocaleString() %>৳</div>
-      <div class="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
-        <span class="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+      <div class="text-2xl font-black text-amber-600 mt-2 tracking-tight">
+        <%= weeklyStats.totals.binance.toLocaleString() %><span class="text-lg font-bold text-amber-700">৳</span>
+      </div>
+      <div class="text-xs text-slate-500 mt-1.5 flex items-center gap-1.5 font-medium">
+        <span class="inline-block w-2 h-2 rounded-full bg-amber-500"></span>
         <span><%= weeklyStats.totals.binanceCount %> ট্রানজেকশন</span>
       </div>
+      <div class="h-1 w-full bg-gradient-to-r from-amber-400 to-yellow-500 absolute bottom-0 left-0"></div>
     </div>
   </div>
 
   <% if (weeklyStats.totals.other > 0) { %>
-    <div class="mb-4 text-xs text-slate-400 bg-slate-950/60 border border-slate-800 rounded-lg px-3 py-2 flex items-center justify-between">
-      <span>⚡ অন্যান্য / ম্যানুয়াল ক্রেডিট (Other/Manual): <strong class="text-slate-200"><%= weeklyStats.totals.other.toLocaleString() %>৳</strong> (<%= weeklyStats.totals.otherCount %> txn)</span>
-      <span class="text-[10px] text-slate-500">Includes system adjustments</span>
+    <div class="mb-5 text-xs text-slate-700 bg-sky-50/70 border border-sky-200 rounded-xl px-4 py-2.5 flex items-center justify-between shadow-xs">
+      <span class="font-medium">⚡ অন্যান্য / ম্যানুয়াল ক্রেডিট (Other/Manual): <strong class="text-slate-900 font-extrabold"><%= weeklyStats.totals.other.toLocaleString() %>৳</strong> (<%= weeklyStats.totals.otherCount %> txn)</span>
+      <span class="text-[11px] text-slate-500 font-mono">System adjustments</span>
     </div>
   <% } %>
 
-  <!-- 7-Day Day-by-Day Table -->
-  <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl overflow-hidden">
+  <!-- 7-Day Day-by-Day Table (Light Theme) -->
+  <div class="bg-white border border-sky-200 rounded-xl overflow-hidden shadow-xs">
     <div class="overflow-x-auto">
       <table class="w-full text-xs">
         <thead>
-          <tr class="bg-slate-900/90 text-slate-400 border-b border-slate-800 text-left">
-            <th class="py-2.5 px-3 font-semibold">তারিখ ও বার (Date)</th>
-            <th class="py-2.5 px-3 font-semibold text-right">মোট ডিপোজিট</th>
-            <th class="py-2.5 px-3 font-semibold text-right text-pink-400">💗 bKash</th>
-            <th class="py-2.5 px-3 font-semibold text-right text-orange-400">🟧 Nagad</th>
-            <th class="py-2.5 px-3 font-semibold text-right text-amber-400">💎 Binance</th>
-            <th class="py-2.5 px-3 font-semibold text-right text-slate-400">⚡ Other</th>
-            <th class="py-2.5 px-3 font-semibold w-40 text-center">মেথড অনুপাত</th>
+          <tr class="bg-sky-50 text-slate-700 border-b border-sky-200 text-left font-bold">
+            <th class="py-3 px-4">তারিখ ও বার (Date)</th>
+            <th class="py-3 px-4 text-right">মোট ডিপোজিট</th>
+            <th class="py-3 px-4 text-right text-pink-700">💗 bKash</th>
+            <th class="py-3 px-4 text-right text-orange-700">🟧 Nagad</th>
+            <th class="py-3 px-4 text-right text-amber-700">💎 Binance</th>
+            <th class="py-3 px-4 text-right text-slate-600">⚡ Other</th>
+            <th class="py-3 px-4 w-44 text-center">মেথড অনুপাত</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-slate-800/50">
+        <tbody class="divide-y divide-sky-100">
           <% weeklyStats.days.forEach(function(day){ %>
-            <tr class="hover:bg-slate-800/30 transition-colors <%= day.isToday ? 'bg-sky-500/5' : '' %>">
-              <td class="py-2.5 px-3 font-medium whitespace-nowrap">
+            <tr class="hover:bg-sky-50/60 transition-colors <%= day.isToday ? 'bg-sky-50/40 font-semibold' : '' %>">
+              <td class="py-3 px-4 whitespace-nowrap">
                 <div class="flex items-center gap-2">
-                  <span class="font-mono text-slate-200"><%= day.date %></span>
-                  <span class="text-slate-400">(<%= day.dayNameBn %>)</span>
+                  <span class="font-mono font-bold text-slate-800"><%= day.date %></span>
+                  <span class="text-slate-500 font-medium">(<%= day.dayNameBn %>)</span>
                   <% if (day.isToday) { %>
-                    <span class="text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30 px-1.5 py-0.2 rounded-full">আজ / Today</span>
+                    <span class="text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-300 px-2 py-0.5 rounded-full shadow-xs">আজ / Today</span>
                   <% } else if (day.isYesterday) { %>
-                    <span class="text-[10px] font-medium bg-slate-800 text-slate-400 px-1.5 py-0.2 rounded-full">গতকাল</span>
+                    <span class="text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full">গতকাল</span>
                   <% } %>
                 </div>
               </td>
-              <td class="py-2.5 px-3 text-right font-bold whitespace-nowrap">
-                <span class="text-emerald-400 text-sm"><%= day.total.toLocaleString() %>৳</span>
-                <div class="text-[10px] text-slate-500"><%= day.count %> txn</div>
+              <td class="py-3 px-4 text-right whitespace-nowrap">
+                <span class="text-slate-900 font-black text-sm"><%= day.total.toLocaleString() %>৳</span>
+                <div class="text-[10px] text-slate-500 font-mono font-medium"><%= day.count %> txn</div>
               </td>
-              <td class="py-2.5 px-3 text-right font-semibold text-pink-300 whitespace-nowrap">
-                <%= day.bkash.toLocaleString() %>৳
-                <div class="text-[10px] text-slate-500"><%= day.bkashCount %> txn</div>
+              <td class="py-3 px-4 text-right whitespace-nowrap">
+                <span class="text-pink-600 font-bold text-xs"><%= day.bkash.toLocaleString() %>৳</span>
+                <div class="text-[10px] text-slate-400 font-mono"><%= day.bkashCount %> txn</div>
               </td>
-              <td class="py-2.5 px-3 text-right font-semibold text-orange-300 whitespace-nowrap">
-                <%= day.nagad.toLocaleString() %>৳
-                <div class="text-[10px] text-slate-500"><%= day.nagadCount %> txn</div>
+              <td class="py-3 px-4 text-right whitespace-nowrap">
+                <span class="text-orange-600 font-bold text-xs"><%= day.nagad.toLocaleString() %>৳</span>
+                <div class="text-[10px] text-slate-400 font-mono"><%= day.nagadCount %> txn</div>
               </td>
-              <td class="py-2.5 px-3 text-right font-semibold text-amber-300 whitespace-nowrap">
-                <%= day.binance.toLocaleString() %>৳
-                <div class="text-[10px] text-slate-500"><%= day.binanceCount %> txn</div>
+              <td class="py-3 px-4 text-right whitespace-nowrap">
+                <span class="text-amber-600 font-bold text-xs"><%= day.binance.toLocaleString() %>৳</span>
+                <div class="text-[10px] text-slate-400 font-mono"><%= day.binanceCount %> txn</div>
               </td>
-              <td class="py-2.5 px-3 text-right font-mono text-slate-400 whitespace-nowrap">
+              <td class="py-3 px-4 text-right font-mono text-slate-500 whitespace-nowrap">
                 <%= day.other ? day.other.toLocaleString() + '৳' : '-' %>
               </td>
-              <td class="py-2.5 px-3">
+              <td class="py-3 px-4">
                 <% if (day.total > 0) { 
                      const bkPct = ((day.bkash / day.total) * 100).toFixed(0);
                      const ngPct = ((day.nagad / day.total) * 100).toFixed(0);
                      const bnPct = ((day.binance / day.total) * 100).toFixed(0);
                      const otPct = ((day.other / day.total) * 100).toFixed(0);
                 %>
-                  <div class="h-2 w-full bg-slate-800 rounded-full overflow-hidden flex" title="bKash: <%= bkPct %>%, Nagad: <%= ngPct %>%, Binance: <%= bnPct %>%">
+                  <div class="h-2.5 w-full bg-slate-100 rounded-full overflow-hidden flex border border-slate-200 shadow-inner" title="bKash: <%= bkPct %>%, Nagad: <%= ngPct %>%, Binance: <%= bnPct %>%">
                     <div style="width: <%= bkPct %>%" class="bg-pink-500 h-full"></div>
                     <div style="width: <%= ngPct %>%" class="bg-orange-500 h-full"></div>
                     <div style="width: <%= bnPct %>%" class="bg-amber-400 h-full"></div>
-                    <div style="width: <%= otPct %>%" class="bg-slate-500 h-full"></div>
+                    <div style="width: <%= otPct %>%" class="bg-slate-400 h-full"></div>
                   </div>
-                  <div class="flex justify-between text-[9px] text-slate-500 mt-1 font-mono">
-                    <span class="text-pink-400"><%= bkPct %>%</span>
-                    <span class="text-orange-400"><%= ngPct %>%</span>
-                    <span class="text-amber-400"><%= bnPct %>%</span>
+                  <div class="flex justify-between text-[9px] mt-1 font-mono font-bold">
+                    <span class="text-pink-600"><%= bkPct %>%</span>
+                    <span class="text-orange-600"><%= ngPct %>%</span>
+                    <span class="text-amber-600"><%= bnPct %>%</span>
                   </div>
                 <% } else { %>
-                  <div class="text-center text-slate-600 text-[10px]">No deposits</div>
+                  <div class="text-center text-slate-400 text-[10px] font-medium">No deposits</div>
                 <% } %>
               </td>
             </tr>
@@ -189,57 +220,61 @@
 </div>
 <% } %>
 
-<form class="mb-4 flex gap-2 flex-wrap">
-  <select name="status" class="bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm">
+<form class="mb-4 flex gap-2.5 flex-wrap">
+  <select name="status" class="bg-white border border-sky-200 rounded-xl px-3.5 py-2 text-sm text-slate-700 shadow-xs focus:border-sky-400 focus:outline-none font-medium">
     <option value="all" <%= status==='all'?'selected':'' %>>All status</option>
     <option value="pending" <%= status==='pending'?'selected':'' %>>Pending</option>
     <option value="approved" <%= status==='approved'?'selected':'' %>>Approved</option>
     <option value="rejected" <%= status==='rejected'?'selected':'' %>>Rejected</option>
   </select>
   <input name="q" value="<%= q %>" placeholder="user_id / username / sender phone / txn id"
-    class="flex-1 max-w-md bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm"/>
-  <button class="bg-cyan-600 hover:bg-cyan-500 px-4 rounded text-sm font-semibold">Filter</button>
+    class="flex-1 max-w-md bg-white border border-sky-200 rounded-xl px-3.5 py-2 text-sm text-slate-800 placeholder-slate-400 shadow-xs focus:border-sky-400 focus:outline-none font-medium"/>
+  <button class="bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-bold text-xs px-5 py-2 rounded-xl transition shadow-xs">Filter</button>
 </form>
 
-<div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+<div class="commercial-card bg-white border border-sky-200 rounded-2xl overflow-hidden shadow-xs mb-6">
   <div class="overflow-x-auto">
   <table class="w-full text-sm">
-    <thead><tr>
-      <th>Req ID</th>
-      <th>User (TG)</th>
-      <th>Sender info</th>
-      <th>Txn ID</th>
-      <th>Amount</th>
-      <th>Status</th>
-      <th>Admin</th>
-      <th>Date</th>
-    </tr></thead>
-    <tbody>
-      <% if (!deposits.length) { %><tr><td colspan="8" class="text-center text-slate-500 py-6">No deposits found.</td></tr><% } %>
+    <thead>
+      <tr class="bg-sky-50 text-sky-900 border-b border-sky-200 font-bold">
+        <th class="py-3 px-4">Req ID</th>
+        <th class="py-3 px-4">User (TG)</th>
+        <th class="py-3 px-4">Sender info</th>
+        <th class="py-3 px-4">Txn ID</th>
+        <th class="py-3 px-4">Amount</th>
+        <th class="py-3 px-4">Status</th>
+        <th class="py-3 px-4">Admin</th>
+        <th class="py-3 px-4">Date</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-sky-100">
+      <% if (!deposits.length) { %><tr><td colspan="8" class="text-center text-slate-400 py-8 font-medium">No deposits found.</td></tr><% } %>
       <% deposits.forEach(function(d){ %>
-        <tr>
+        <tr class="hover:bg-sky-50/50 transition-colors">
           <td class="font-mono text-xs text-slate-500"><%= (d.req_id||'').slice(0,12) %></td>
           <td>
-            <a href="/users/<%= d.user_id %>" class="text-cyan-400 hover:underline font-semibold">
+            <a href="/users/<%= d.user_id %>" class="text-sky-600 hover:text-sky-800 hover:underline font-bold">
               <%= d._tg_username || d.username || 'Unknown' %>
             </a>
-            <div class="text-[10px] text-slate-500 font-mono">ID: <%= d.user_id || '-' %></div>
-            <% if (d._tg_banned) { %><span class="text-[10px] text-rose-400">🚫 banned</span><% } %>
+            <div class="text-[10px] text-slate-400 font-mono">ID: <%= d.user_id || '-' %></div>
+            <% if (d._tg_banned) { %><span class="text-[10px] text-rose-600 font-bold">🚫 banned</span><% } %>
           </td>
           <td class="text-xs">
-            <div class="font-mono text-slate-300"><%= d.sender_num || '-' %></div>
-            <% if (d.method) { %><div class="text-[10px] text-slate-500"><%= d.method %></div><% } %>
+            <div class="font-mono text-slate-700 font-semibold"><%= d.sender_num || '-' %></div>
+            <% if (d.method) { %><div class="text-[10px] text-slate-400 uppercase font-mono font-medium"><%= d.method %></div><% } %>
           </td>
-          <td class="font-mono text-xs text-slate-400"><%= (d.transaction_id||'-').slice(0,16) %></td>
-          <td class="font-bold"><%= d.amount %>৳</td>
+          <td class="font-mono text-xs text-slate-600 font-semibold"><%= (d.transaction_id||'-').slice(0,16) %></td>
+          <td class="font-bold text-slate-900"><%= d.amount %>৳</td>
           <td>
-            <span class="px-2 py-0.5 rounded text-xs
-              <%= d.status==='approved'?'bg-emerald-700/40 text-emerald-300':d.status==='pending'?'bg-amber-700/40 text-amber-300':'bg-rose-700/40 text-rose-300' %>">
+            <span class="px-2.5 py-1 rounded-full text-xs font-bold border
+              <%= d.status==='approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                  d.status==='pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                  'bg-rose-50 text-rose-700 border-rose-200' %>">
               <%= d.status %>
             </span>
           </td>
-          <td class="text-slate-400 text-xs"><%= d.admin_name || '-' %></td>
-          <td class="text-slate-400 text-xs"><%= d.date || '-' %></td>
+          <td class="text-slate-600 text-xs font-medium"><%= d.admin_name || '-' %></td>
+          <td class="text-slate-500 text-xs font-mono"><%= d.date || '-' %></td>
         </tr>
       <% }) %>
     </tbody>
@@ -247,6 +282,12 @@
   </div>
 </div>
 
-<p class="text-xs text-slate-500 mt-3">💡 Search যেকোনো field এ — telegram username, user_id, sender phone/ID, বা transaction id দিয়ে।<br>Note: Approve/reject কাজ Telegram bot এ admin command দিয়ে হবে। এই panel শুধু read-only tracking।</p>
+<div class="bg-sky-50/60 border border-sky-200 rounded-xl p-4 text-xs text-slate-600">
+  <div class="flex items-center gap-1.5 font-bold text-sky-800 mb-1">
+    <span>💡</span>
+    <span>সার্চ ও ট্র্যাকিং সহায়িকা</span>
+  </div>
+  <p>যেকোনো ফিল্ডে সার্চ করতে পারেন — telegram username, user_id, sender phone/ID, অথবা transaction id দিয়ে। Approve/Reject কাজ Telegram bot এ admin command দিয়ে হবে, এই panel শুধু read-only লাইভ ট্র্যাকিং।</p>
+</div>
 
 <%- include('partials/footer') %>
