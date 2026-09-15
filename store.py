@@ -1479,61 +1479,168 @@ async def admin_del_stock(message: types.Message, command: CommandObject, state:
         await message.answer(f"✅ Deleted Stock ID `{stock_id}`")
     except: await message.answer("❌ Error")
 
+def classify_deposit_row(amount, method, admin_name, sender_num, transaction_id):
+    amt = float(amount or 0)
+    m = str(method or '').lower()
+    a = str(admin_name or '').lower()
+    s = str(sender_num or '').lower()
+    txn = str(transaction_id or '').upper()
+
+    if ('binance' in m or 'binance' in a or 'binance' in s or
+        (amt > 0 and amt % 125 == 0 and (a == 'sam' or 'basic trick' in a) and not m and not txn)):
+        return 'binance'
+    if 'nagad' in a or 'nagad' in m or 'nagad' in s or txn.startswith('75Z'):
+        return 'nagad'
+    if 'bkash' in a or 'bkash' in m or 'bkash' in s or txn.startswith('DI') or txn.startswith('BL'):
+        return 'bkash'
+    if 'zinipay' in m:
+        if 'nagad' in a:
+            return 'nagad'
+        return 'bkash'
+    return 'other'
+
 @dp.message(Command("stats"))
 async def admin_stats_daily(message: types.Message, state: FSMContext):
     await state.clear()
     if not is_admin(message.from_user.id): return
-    today = datetime.now().strftime("%Y-%m-%d")
+    bst_now = datetime.now(timezone(timedelta(hours=6)))
+    today = bst_now.strftime("%Y-%m-%d")
     conn = _dbc()
 
     sales = conn.execute("SELECT username, category, qty, total, time FROM sales WHERE date=?", (today,)).fetchall()
     total = conn.execute("SELECT SUM(total) FROM sales WHERE date=?", (today,)).fetchone()[0] or 0
 
-    dep_data = conn.execute("SELECT count(*), SUM(amount) FROM payment_logs WHERE date=? AND status='approved'", (today,)).fetchone()
-    dep_count = dep_data[0] if dep_data else 0
-    dep_total = dep_data[1] if dep_data and dep_data[1] else 0
+    dep_rows = conn.execute("""
+        SELECT amount, method, admin_name, sender_num, transaction_id
+        FROM payment_logs 
+        WHERE COALESCE(date, date(datetime(timestamp, 'unixepoch', '+6 hours'))) = ? 
+          AND status='approved'
+    """, (today,)).fetchall()
+
+    dep_count = len(dep_rows)
+    dep_total = sum(r[0] or 0 for r in dep_rows)
+    bkash_tot = sum(r[0] or 0 for r in dep_rows if classify_deposit_row(r[0], r[1], r[2], r[3], r[4]) == 'bkash')
+    bkash_cnt = sum(1 for r in dep_rows if classify_deposit_row(r[0], r[1], r[2], r[3], r[4]) == 'bkash')
+    nagad_tot = sum(r[0] or 0 for r in dep_rows if classify_deposit_row(r[0], r[1], r[2], r[3], r[4]) == 'nagad')
+    nagad_cnt = sum(1 for r in dep_rows if classify_deposit_row(r[0], r[1], r[2], r[3], r[4]) == 'nagad')
+    binance_tot = sum(r[0] or 0 for r in dep_rows if classify_deposit_row(r[0], r[1], r[2], r[3], r[4]) == 'binance')
+    binance_cnt = sum(1 for r in dep_rows if classify_deposit_row(r[0], r[1], r[2], r[3], r[4]) == 'binance')
+    other_tot = sum(r[0] or 0 for r in dep_rows if classify_deposit_row(r[0], r[1], r[2], r[3], r[4]) == 'other')
 
     conn.close()
 
-    report = f"📊 **TODAY ({today})**\n"
-    report += f"💰 Deposits: {dep_count} Approved ({dep_total}৳)\n"
-    report += f"💵 Sales: {total}৳\n\n"
+    report = f"📊 **TODAY'S REPORT ({today})**\n━━━━━━━━━━━━━━━━━━━━━\n"
+    report += f"💰 **মোট ডিপোজিট: {dep_total:,}৳** ({dep_count} txn)\n"
+    report += f"   ├ 💗 bKash: {bkash_tot:,}৳ ({bkash_cnt})\n"
+    report += f"   ├ 🟧 Nagad: {nagad_tot:,}৳ ({nagad_cnt})\n"
+    report += f"   └ 💎 Binance: {binance_tot:,}৳ ({binance_cnt})\n"
+    if other_tot > 0:
+        report += f"   └ ⚡ Other: {other_tot:,}৳\n"
+    report += f"\n🛒 **মোট সেল: {total:,}৳**\n\n"
     
     if sales:
-        for s in sales:
+        for s in sales[:20]:
             sale_time = f" 🕒 {s[4]}" if len(s) > 4 and s[4] else "" 
             report += f"👤 {s[0]} | {s[2]}x {s[1]} | {s[3]}৳{sale_time}\n"
+        if len(sales) > 20:
+            report += f"... (+{len(sales) - 20} more sales)\n"
 
     await message.answer(report)
 
 @dp.message(Command("stats_week"))
+@dp.message(Command("depstats"))
+@dp.message(Command("stats_deposit"))
 async def admin_stats_weekly(message: types.Message, state: FSMContext):
     await state.clear()
     if not is_admin(message.from_user.id): return
 
     try:
         conn = _dbc()
-        report = "📊 **LAST 7 DAYS REPORT**\n━━━━━━━━━━━━━━━━\n"
-        grand_total_sales = 0
-        grand_total_deposits = 0
+        bst_now = datetime.now(timezone(timedelta(hours=6)))
+        start_date = (bst_now - timedelta(days=6)).strftime("%Y-%m-%d")
 
+        dep_rows = conn.execute("""
+            SELECT amount, method, admin_name, sender_num, transaction_id,
+                   COALESCE(date, date(datetime(timestamp, 'unixepoch', '+6 hours'))) AS dep_date
+            FROM payment_logs
+            WHERE status = 'approved'
+              AND COALESCE(date, date(datetime(timestamp, 'unixepoch', '+6 hours'))) >= ?
+        """, (start_date,)).fetchall()
+
+        sales_rows = conn.execute("""
+            SELECT SUM(total), date FROM sales WHERE date >= ? GROUP BY date
+        """, (start_date,)).fetchall()
+        sales_by_date = {r[1]: (r[0] or 0) for r in sales_rows}
+
+        days_data = {}
         for i in range(6, -1, -1):
-            date = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
+            d_str = (bst_now - timedelta(days=i)).strftime("%Y-%m-%d")
+            days_data[d_str] = {
+                "total": 0, "count": 0,
+                "bkash": 0, "bkash_cnt": 0,
+                "nagad": 0, "nagad_cnt": 0,
+                "binance": 0, "binance_cnt": 0,
+                "other": 0, "other_cnt": 0,
+                "sales": sales_by_date.get(d_str, 0)
+            }
 
-            s_row = conn.execute("SELECT SUM(total) FROM sales WHERE date=?", (date,)).fetchone()
-            day_sales = s_row[0] if s_row and s_row[0] else 0
+        totals = {
+            "total": 0, "count": 0,
+            "bkash": 0, "bkash_cnt": 0,
+            "nagad": 0, "nagad_cnt": 0,
+            "binance": 0, "binance_cnt": 0,
+            "other": 0, "other_cnt": 0,
+            "sales": sum(sales_by_date.values())
+        }
 
-            d_row = conn.execute("SELECT SUM(amount) FROM payment_logs WHERE date=? AND status='approved'", (date,)).fetchone()
-            day_deps = d_row[0] if d_row and d_row[0] else 0
+        for r in dep_rows:
+            d_date = r[5]
+            if d_date in days_data:
+                amt = r[0] or 0
+                cat = classify_deposit_row(amt, r[1], r[2], r[3], r[4])
+                days_data[d_date]["total"] += amt
+                days_data[d_date]["count"] += 1
+                days_data[d_date][cat] += amt
+                days_data[d_date][f"{cat}_cnt"] += 1
 
-            report += f"📅 {date}\n   💰 Dep: {day_deps}৳ | 🛒 Sale: {day_sales}৳\n"
-            grand_total_sales += day_sales
-            grand_total_deposits += day_deps
+                totals["total"] += amt
+                totals["count"] += 1
+                totals[cat] += amt
+                totals[f"{cat}_cnt"] += 1
 
-        report += f"\n━━━━━━━━━━━━━━━━\n💵 **Total Sales:** {grand_total_sales}৳\n💰 **Total Deposits:** {grand_total_deposits}৳"
+        today_str = bst_now.strftime("%Y-%m-%d")
+        yesterday_str = (bst_now - timedelta(days=1)).strftime("%Y-%m-%d")
 
-        await message.answer(report)
+        report = "📊 **WEEKLY DEPOSIT REPORT (LAST 7 DAYS)**\n━━━━━━━━━━━━━━━━━━━━━\n"
+
+        for d_str in reversed(list(days_data.keys())):
+            d = days_data[d_str]
+            tag = " (আজ)" if d_str == today_str else " (গতকাল)" if d_str == yesterday_str else ""
+            report += f"📅 **{d_str}{tag}**\n"
+            report += f"💰 মোট: **{d['total']:,}৳** ({d['count']} txn) | 🛒 সেল: {d['sales']:,}৳\n"
+            report += f"   ├ 💗 bKash: {d['bkash']:,}৳ ({d['bkash_cnt']})\n"
+            report += f"   ├ 🟧 Nagad: {d['nagad']:,}৳ ({d['nagad_cnt']})\n"
+            report += f"   └ 💎 Binance: {d['binance']:,}৳ ({d['binance_cnt']})\n"
+            if d['other'] > 0:
+                report += f"   └ ⚡ Other: {d['other']:,}৳ ({d['other_cnt']})\n"
+            report += "\n"
+
+        bk_pct = f"({(totals['bkash']/totals['total']*100):.1f}%)" if totals['total'] > 0 else ""
+        ng_pct = f"({(totals['nagad']/totals['total']*100):.1f}%)" if totals['total'] > 0 else ""
+        bn_pct = f"({(totals['binance']/totals['total']*100):.1f}%)" if totals['total'] > 0 else ""
+
+        report += "━━━━━━━━━━━━━━━━━━━━━\n"
+        report += f"🏆 **৭ দিনের মোট ডিপোজিট: {totals['total']:,}৳** ({totals['count']} txn)\n"
+        report += f"💗 bKash মোট: **{totals['bkash']:,}৳** {bk_pct} ({totals['bkash_cnt']} txn)\n"
+        report += f"🟧 Nagad মোট: **{totals['nagad']:,}৳** {ng_pct} ({totals['nagad_cnt']} txn)\n"
+        report += f"💎 Binance মোট: **{totals['binance']:,}৳** {bn_pct} ({totals['binance_cnt']} txn)\n"
+        if totals['other'] > 0:
+            report += f"⚡ Other/Manual: {totals['other']:,}৳ ({totals['other_cnt']} txn)\n"
+        report += f"🛒 **৭ দিনের মোট সেল: {totals['sales']:,}৳**\n"
+        report += "━━━━━━━━━━━━━━━━━━━━━"
+
         conn.close()
+        await message.answer(report)
 
     except Exception as e:
         await message.answer(f"❌ Error computing weekly stats: {e}")
