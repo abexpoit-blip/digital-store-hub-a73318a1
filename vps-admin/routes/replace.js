@@ -219,6 +219,8 @@ router.get('/', (req, res) => {
 
     // Extract Order # and enrich with purchase telemetry
     const m = (r.reason || '').match(/Order #(\d+)/i);
+    const isReReplace = (r.reason || '').includes('[Re-Replace]');
+    r._isReReplace = isReReplace;
     if (m) {
       r._orderId = Number(m[1]);
       try {
@@ -228,19 +230,31 @@ router.get('/', (req, res) => {
           r._orderCat = sale.category;
           r._orderPurchasedTime = `${sale.date} ${sale.time}`;
 
-          let saleEpoch = 0;
-          const del = db.prepare('SELECT delivered_at FROM delivery_archive WHERE sale_id = ? ORDER BY id ASC LIMIT 1').get(r._orderId);
-          if (del && del.delivered_at) {
-            saleEpoch = Number(del.delivered_at);
-          } else {
-            const dtStr = `${sale.date || ''} ${sale.time || ''}`.trim();
-            const d = new Date(dtStr);
-            if (!isNaN(d.getTime())) saleEpoch = Math.floor(d.getTime() / 1000);
+          let refEpoch = 0;
+          if (isReReplace) {
+            const prevRep = db.prepare(
+              "SELECT resolved_at FROM replace_requests WHERE user_id = ? AND reason LIKE ? AND status = 'replaced' AND id != ? ORDER BY resolved_at DESC LIMIT 1"
+            ).get(r.user_id, `%Order #${r._orderId}%`, r.id);
+            if (prevRep && prevRep.resolved_at) {
+              refEpoch = Number(prevRep.resolved_at > 100000000000 ? Math.floor(prevRep.resolved_at / 1000) : prevRep.resolved_at);
+              r._lastReplacedTime = new Date(prevRep.resolved_at > 100000000000 ? prevRep.resolved_at : prevRep.resolved_at * 1000).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', hour12: true });
+            }
           }
 
-          if (saleEpoch > 0) {
+          if (!refEpoch) {
+            const del = db.prepare('SELECT delivered_at FROM delivery_archive WHERE sale_id = ? ORDER BY id ASC LIMIT 1').get(r._orderId);
+            if (del && del.delivered_at) {
+              refEpoch = Number(del.delivered_at);
+            } else {
+              const dtStr = `${sale.date || ''} ${sale.time || ''}`.trim();
+              const d = new Date(dtStr);
+              if (!isNaN(d.getTime())) refEpoch = Math.floor(d.getTime() / 1000);
+            }
+          }
+
+          if (refEpoch > 0) {
             const createdSec = Math.floor((r.created_at > 100000000000 ? r.created_at / 1000 : r.created_at) || 0);
-            const elapsedSec = Math.max(0, createdSec - saleEpoch);
+            const elapsedSec = Math.max(0, createdSec - refEpoch);
             const hours = Math.floor(elapsedSec / 3600);
             const mins = Math.floor((elapsedSec % 3600) / 60);
             r._orderElapsed = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;

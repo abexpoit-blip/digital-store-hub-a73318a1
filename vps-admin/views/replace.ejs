@@ -479,11 +479,18 @@
             </td>
           <% } else { %>
             <td class="py-3 px-4 text-slate-600 text-xs max-w-xs">
-              <div class="font-bold text-slate-800"><%= r.reason || '-' %></div>
+              <div class="font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                <%= r.reason || '-' %>
+                <% if (r._isReReplace) { %>
+                  <span class="inline-flex items-center gap-1 bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                    🔄 রি-রিপ্লেস (পূর্বের রিপ্লেস নষ্ট)
+                  </span>
+                <% } %>
+              </div>
               <% if (r._orderPurchasedTime) { %>
                 <div class="mt-1.5 text-[11px] space-y-1 font-mono bg-sky-50/80 border border-sky-200/80 p-2 rounded-xl">
                   <div class="text-slate-600 flex items-center justify-between">
-                    <span>🛒 কেনা: <strong class="text-slate-800"><%= r._orderPurchasedTime %></strong></span>
+                    <span><%= r._isReReplace && r._lastReplacedTime ? '🔄 রিপ্লেস প্রদান:' : '🛒 কেনা:' %> <strong class="text-slate-800"><%= r._isReReplace && r._lastReplacedTime ? r._lastReplacedTime : r._orderPurchasedTime %></strong></span>
                     <span class="text-[10px] text-slate-500">(<%= r._orderQty %> pcs)</span>
                   </div>
                   <div class="flex items-center justify-between pt-0.5 border-t border-sky-100">

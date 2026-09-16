@@ -4728,8 +4728,20 @@ async def support_replace_start(c: types.CallbackQuery, state: FSMContext):
         s_epoch = get_sale_epoch(s_id, s_date, s_time)
         allowed_h = get_replace_window_hours(s_qty, s_cat)
         is_expired = (now_ts - s_epoch) > (allowed_h * 3600)
-        
-        status_tag = "🔴 Expired" if is_expired else "🟢 Active"
+        has_active_rep = False
+
+        if is_expired:
+            last_rep = conn.execute(
+                "SELECT resolved_at FROM replace_requests WHERE user_id=? AND reason LIKE ? AND status='replaced' ORDER BY resolved_at DESC LIMIT 1",
+                (c.from_user.id, f"%Order #{s_id}%")
+            ).fetchone()
+            if last_rep and last_rep[0]:
+                r_ep = int(last_rep[0] / 1000 if last_rep[0] > 1e11 else last_rep[0])
+                if (now_ts - r_ep) <= (allowed_h * 3600):
+                    is_expired = False
+                    has_active_rep = True
+
+        status_tag = "🔴 Expired" if is_expired else ("🟢 Active (রি-রিপ্লেস)" if has_active_rep else "🟢 Active")
         btn_text = f"📦 #{s_id} • {lbl} ({s_qty} pcs) [{status_tag}]"
         kb.row(types.InlineKeyboardButton(text=btn_text, callback_data=f"rep_ord_{s_id}"))
         
@@ -4758,9 +4770,8 @@ async def select_replace_order(c: types.CallbackQuery, state: FSMContext):
     
     conn = _dbc()
     sale = conn.execute("SELECT id, user_id, username, category, qty, total, date, time FROM sales WHERE id=? AND user_id=?", (s_id, c.from_user.id)).fetchone()
-    conn.close()
-    
     if not sale:
+        conn.close()
         return await c.message.answer("❌ অর্ডারটি পাওয়া যায়নি।")
         
     sale_id, u_id, uname, cat_name, qty, total, d_str, t_str = sale
@@ -4768,10 +4779,22 @@ async def select_replace_order(c: types.CallbackQuery, state: FSMContext):
     
     sale_epoch = get_sale_epoch(sale_id, d_str, t_str)
     now_ts = int(__import__("time").time())
-    elapsed_sec = max(0, now_ts - sale_epoch)
     allowed_h = get_replace_window_hours(qty, cat_name)
     allowed_sec = allowed_h * 3600
-    
+
+    # Check if there is a recent replacement issued for this order
+    last_rep = conn.execute(
+        "SELECT resolved_at, replacement_data FROM replace_requests WHERE user_id=? AND reason LIKE ? AND status='replaced' ORDER BY resolved_at DESC LIMIT 1",
+        (c.from_user.id, f"%Order #{sale_id}%")
+    ).fetchone()
+    conn.close()
+
+    rep_epoch = 0
+    if last_rep and last_rep[0]:
+        rep_epoch = int(last_rep[0] / 1000 if last_rep[0] > 1e11 else last_rep[0])
+
+    effective_epoch = max(sale_epoch, rep_epoch)
+    elapsed_sec = max(0, now_ts - effective_epoch)
     elapsed_str = format_duration(elapsed_sec)
     
     if elapsed_sec > allowed_sec:
@@ -4804,7 +4827,7 @@ async def select_replace_order(c: types.CallbackQuery, state: FSMContext):
         replace_cat=cat_name,
         replace_allowed_hours=allowed_h,
         replace_sale_time=f"{d_str} {t_str}",
-        replace_sale_epoch=sale_epoch
+        replace_sale_epoch=effective_epoch
     )
     
     kb = InlineKeyboardBuilder()
@@ -4812,6 +4835,7 @@ async def select_replace_order(c: types.CallbackQuery, state: FSMContext):
     kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
     kb.row(types.InlineKeyboardButton(text="🔙 অন্য অর্ডার বাছুন", callback_data="sup_replace"))
     
+    re_rep_note = "\n🔄 *পূর্বে প্রাপ্ত রিপ্লেসের জন্য নতুন ওয়ারেন্টি সময় প্রযোজ্য*" if rep_epoch > sale_epoch else ""
     valid_msg = (
         "⚡ **অর্ডার ভেরিফাইড (রিপ্লেসের জন্য যোগ্য)** ⚡\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
@@ -4819,12 +4843,13 @@ async def select_replace_order(c: types.CallbackQuery, state: FSMContext):
         f"🏷️ **আইটেম:** {lbl} ({qty} pcs)\n"
         f"🕒 **কেনার সময়:** {d_str} | {t_str}\n"
         f"⏳ **অনুমোদিত গ্যারান্টি:** {allowed_h} ঘণ্টা\n"
-        f"⏱️ **বাকি সময় আছে:** {rem_str}\n"
+        f"⏱️ **বাকি সময় আছে:** {rem_str}{re_rep_note}\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         "📌 **নিয়মাবলী ও সুবিধা:**\n"
         "১. নষ্ট আইডিগুলো সরাসরি এখানে পেস্ট করুন (Auto-Detect সক্রিয়)।\n"
         "২. আপনি শুধুমাত্র UID অথবা সম্পূর্ণ আইডি লাইন (UID PASS COOKIE) যেকোনো ফরম্যাটে দিতে পারেন।\n"
-        "৩. টেক্সট মেসেজ অথবা .txt ফাইল উভয়ই সাপোর্ট করবে।\n\n"
+        "৩. টেক্সট মেসেজ অথবা .txt ফাইল উভয়ই সাপোর্ট করবে।\n"
+        "৪. পূর্বে প্রাপ্ত রিপ্লেস আইডি নষ্ট হলে তাও এখানে সাবমিট করতে পারবেন।\n\n"
         "✅ আপনি কি নষ্ট আইডি সাবমিট করতে প্রস্তুত?"
     )
     await c.message.edit_text(valid_msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
@@ -4836,9 +4861,8 @@ async def rep_agree_action(c: types.CallbackQuery, state: FSMContext):
     
     conn = _dbc()
     sale = conn.execute("SELECT id, user_id, category, qty, date, time FROM sales WHERE id=? AND user_id=?", (sale_id, c.from_user.id)).fetchone()
-    conn.close()
-    
     if not sale:
+        conn.close()
         return await c.message.answer("❌ অর্ডারটি পাওয়া যায়নি অথবা আপনি এই অর্ডারের ক্রেতা নন।")
         
     s_id, s_uid, s_cat, s_qty, s_date, s_time = sale
@@ -4846,7 +4870,20 @@ async def rep_agree_action(c: types.CallbackQuery, state: FSMContext):
     allowed_h = get_replace_window_hours(s_qty, s_cat)
     allowed_sec = allowed_h * 3600
     now_ts = int(time.time())
-    elapsed_sec = max(0, now_ts - s_epoch)
+
+    # Check if there is a recent replacement issued for this order
+    last_rep = conn.execute(
+        "SELECT resolved_at FROM replace_requests WHERE user_id=? AND reason LIKE ? AND status='replaced' ORDER BY resolved_at DESC LIMIT 1",
+        (c.from_user.id, f"%Order #{s_id}%")
+    ).fetchone()
+    conn.close()
+
+    rep_epoch = 0
+    if last_rep and last_rep[0]:
+        rep_epoch = int(last_rep[0] / 1000 if last_rep[0] > 1e11 else last_rep[0])
+
+    effective_epoch = max(s_epoch, rep_epoch)
+    elapsed_sec = max(0, now_ts - effective_epoch)
     
     if elapsed_sec > allowed_sec:
         kb = InlineKeyboardBuilder()
@@ -4945,39 +4982,40 @@ async def process_replace_request(m: types.Message, state: FSMContext):
     allowed_h = get_replace_window_hours(s_qty, s_cat)
     allowed_sec = allowed_h * 3600
     now_ts = int(time.time())
-    elapsed_sec = max(0, now_ts - s_epoch)
-
-    if elapsed_sec > allowed_sec:
-        conn.close()
-        await state.clear()
-        kb = InlineKeyboardBuilder()
-        kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
-        kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
-        return await m.answer(
-            f"🚫 **রিপ্লেস সময়সীমা অতিক্রম করেছে (Time Expired)!**\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            f"📦 **অর্ডার নং:** `#{s_id}` ({s_qty} pcs)\n"
-            f"⏳ **অনুমোদিত সময়সীমা:** {allowed_h} ঘণ্টা\n"
-            f"⌛ **অতিবাহিত সময়:** {format_duration(elapsed_sec)}\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            f"⚠️ আপনার অর্ডারের জন্য নির্ধারিত **{allowed_h} ঘণ্টার** রিপ্লেস সময়সীমা শেষ হয়ে গেছে। নির্ধারিত সময়ের বাইরে কোনো রিপ্লেস গ্রহণ করা সম্ভব নয়।",
-            reply_markup=kb.as_markup(), parse_mode="Markdown"
-        )
 
     ticket_id = str(uuid.uuid4())[:8]
     order_ref = f"Order #{s_id}"
     username_display = f"@{m.from_user.username}" if m.from_user.username else "No Username"
     utc_now_ts = datetime.now(timezone.utc).timestamp()
 
-    # Fetch all UIDs that were actually delivered in this order
+    # 1. Fetch all original UIDs delivered in this order
     archived_rows = conn.execute(
         "SELECT data FROM delivery_archive WHERE sale_id=?",
         (s_id,)
     ).fetchall()
-    order_uids = set()
+    original_order_uids = set()
     for a_row in archived_rows:
         for u in extract_uids_from_text(a_row[0] or ""):
-            order_uids.add(u)
+            original_order_uids.add(u)
+
+    # 2. Fetch all replacement UIDs previously issued for this order
+    repl_rows = conn.execute(
+        "SELECT replacement_data, resolved_at FROM replace_requests WHERE user_id=? AND reason LIKE ? AND status='replaced'",
+        (m.from_user.id, f"%Order #{s_id}%")
+    ).fetchall()
+    replacement_uids = set()
+    latest_rep_epoch = 0
+    for r_data, r_res_at in repl_rows:
+        if r_res_at:
+            r_ep = int(r_res_at / 1000 if r_res_at > 1e11 else r_res_at)
+            if r_ep > latest_rep_epoch:
+                latest_rep_epoch = r_ep
+        if r_data:
+            for u in extract_uids_from_text(r_data):
+                replacement_uids.add(u)
+
+    # Valid UIDs for this order = original UIDs + replacement UIDs
+    order_uids = set(original_order_uids) | set(replacement_uids)
 
     # Auto-detect UIDs from user submission
     parsed_uids = extract_uids_from_text(user_data_text)
@@ -5003,7 +5041,7 @@ async def process_replace_request(m: types.Message, state: FSMContext):
             parse_mode="Markdown"
         )
 
-    # Check if detected UIDs belong to this sale in delivery_archive
+    # Check if detected UIDs belong to this sale or its replacements
     if order_uids:
         invalid_uids = [u for u in detected_uids if u not in order_uids]
         if invalid_uids:
@@ -5012,33 +5050,82 @@ async def process_replace_request(m: types.Message, state: FSMContext):
             return await m.answer(
                 f"🚫 **অর্ডারের বাইরের UID সনাক্ত হয়েছে!**\n"
                 "━━━━━━━━━━━━━━━━━━━━\n"
-                f"নিচের UID গুলো আপনার অর্ডার `#{s_id}`-এর অন্তর্ভুক্ত নয়:\n{inv_str}\n\n"
-                f"⚠️ অন্য কোনো অর্ডারের বা বাইরের আইডি এখানে দেওয়া যাবে না। শুধুমাত্র অর্ডার `#{s_id}`-এ কেনা নষ্ট আইডিগুলো দিন।",
+                f"নিচের UID গুলো আপনার অর্ডার `#{s_id}` বা এর পূর্বে প্রাপ্ত রিপ্লেসের অন্তর্ভুক্ত নয়:\n{inv_str}\n\n"
+                f"⚠️ অন্য কোনো অর্ডারের বা বাইরের আইডি এখানে দেওয়া যাবে না। শুধুমাত্র অর্ডার `#{s_id}`-এ কেনা বা রিপ্লেস হিসেবে প্রাপ্ত নষ্ট আইডিগুলো দিন।",
                 parse_mode="Markdown"
             )
 
-    # Check submitted quantity against purchased quantity in that order (cumulative check)
-    prev_count = 0
+    # Categorize detected UIDs
+    re_replace_uids = [u for u in detected_uids if u in replacement_uids]
+    original_submitted = [u for u in detected_uids if u not in replacement_uids]
+    is_re_replace = len(re_replace_uids) > 0
+
+    # Warranty / Time Window Check:
+    # A. If original items are submitted, check against sale_epoch
+    if original_submitted and (now_ts - s_epoch) > allowed_sec:
+        elapsed_sec = max(0, now_ts - s_epoch)
+        conn.close()
+        await state.clear()
+        kb = InlineKeyboardBuilder()
+        kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
+        kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
+        return await m.answer(
+            f"🚫 **অর্ডারের রিপ্লেস সময়সীমা অতিক্রম করেছে (Time Expired)!**\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"📦 **অর্ডার নং:** `#{s_id}` ({s_qty} pcs)\n"
+            f"⏳ **অনুমোদিত সময়সীমা:** {allowed_h} ঘণ্টা\n"
+            f"⌛ **অতিবাহিত সময়:** {format_duration(elapsed_sec)}\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚠️ আপনার মূল অর্ডারের জন্য নির্ধারিত **{allowed_h} ঘণ্টার** রিপ্লেস সময়সীমা শেষ হয়ে গেছে। মূল অর্ডারের আইডি নির্ধারিত সময়ের বাইরে রিপ্লেস গ্রহণ করা সম্ভব নয়।",
+            reply_markup=kb.as_markup(), parse_mode="Markdown"
+        )
+
+    # B. If re-replace items are submitted, check against latest_rep_epoch
+    if re_replace_uids:
+        rep_ref_epoch = latest_rep_epoch if latest_rep_epoch > 0 else s_epoch
+        rep_elapsed_sec = max(0, now_ts - rep_ref_epoch)
+        if rep_elapsed_sec > allowed_sec:
+            conn.close()
+            await state.clear()
+            kb = InlineKeyboardBuilder()
+            kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
+            kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
+            return await m.answer(
+                f"🚫 **রি-রিপ্লেসের সময়সীমা অতিক্রম করেছে (Time Expired)!**\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                f"📦 **অর্ডার নং:** `#{s_id}` (পূর্বে প্রাপ্ত রিপ্লেস আইডি)\n"
+                f"⏳ **অনুমোদিত সময়সীমা:** {allowed_h} ঘণ্টা\n"
+                f"⌛ **অতিবাহিত সময়:** {format_duration(rep_elapsed_sec)}\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                f"⚠️ পূর্বে দেওয়া রিপ্লেস আইডির জন্য নির্ধারিত **{allowed_h} ঘণ্টার** সময়সীমা শেষ হয়ে গেছে।",
+                reply_markup=kb.as_markup(), parse_mode="Markdown"
+            )
+
+    # Cumulative check: count original slots consumed vs purchased quantity
     prev_rows = conn.execute(
         "SELECT detected_uids, old_data FROM replace_requests WHERE reason LIKE ? AND status != 'rejected'",
         (f"%Order #{s_id}%",)
     ).fetchall()
+    prev_original_count = 0
     for pr in prev_rows:
-        if pr[0]:
-            prev_count += len([x for x in pr[0].split(',') if x.strip()])
-        elif pr[1]:
-            prev_count += len(extract_uids_from_text(pr[1]))
+        u_list = [x.strip() for x in (pr[0] or '').split(',') if x.strip()]
+        if not u_list and pr[1]:
+            u_list = extract_uids_from_text(pr[1])
+        for pu in u_list:
+            if pu not in replacement_uids:
+                prev_original_count += 1
 
-    if prev_count + len(detected_uids) > s_qty:
-        rem_allow = max(0, s_qty - prev_count)
+    new_original_slots = len(original_submitted)
+    if prev_original_count + new_original_slots > s_qty:
+        rem_allow = max(0, s_qty - prev_original_count)
         conn.close()
         return await m.answer(
             f"🚫 **অর্ডারের পরিমাণের চেয়ে বেশি আইডি দিয়েছেন!**\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             f"📦 অর্ডার `#{s_id}`-এ আপনি কিনেছিলেন **{s_qty}টি** আইডি।\n"
-            f"পূর্বে ইতিমধ্যে **{prev_count}টি** আইডি রিপ্লেসের জন্য জমা দিয়েছেন।\n"
-            f"বর্তমানে আপনি সর্বোচ্চ আর **{rem_allow}টি** আইডি সাবমিট করতে পারবেন (আপনি দিয়েছেন {len(detected_uids)}টি)।\n\n"
-            f"⚠️ একটি অর্ডারে কেনা মোট পরিমাণের বেশি রিপ্লেস নেওয়া সম্পূর্ণ নিষিদ্ধ।",
+            f"পূর্বে মূল অর্ডারের **{prev_original_count}টি** আইডি রিপ্লেসের জন্য জমা দিয়েছেন।\n"
+            f"বর্তমানে মূল অর্ডারের সর্বোচ্চ আর **{rem_allow}টি** আইডি সাবমিট করতে পারবেন (আপনি দিয়েছেন {new_original_slots}টি)।\n\n"
+            f"⚠️ একটি অর্ডারে কেনা মোট পরিমাণের বেশি নতুন স্লট রিপ্লেস নেওয়া সম্পূর্ণ নিষিদ্ধ।",
             parse_mode="Markdown"
         )
 
@@ -5111,10 +5198,12 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         seller_summary = ", ".join(detected_sellers) if detected_sellers else None
         detected_uids_str = ",".join(detected_uids) if detected_uids else None
 
+        re_tag = " [Re-Replace]" if is_re_replace else ""
+        ticket_reason = f"Ticket #{ticket_id} ({order_ref}){re_tag}"
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO replace_requests (user_id, username, category, old_data, reason, status, created_at, detected_uids, seller_name) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
-            (m.from_user.id, _rep_uname, db_cat_label, user_data_text, f"Ticket #{ticket_id} ({order_ref})", _rep_ts, detected_uids_str, seller_summary)
+            (m.from_user.id, _rep_uname, db_cat_label, user_data_text, ticket_reason, _rep_ts, detected_uids_str, seller_summary)
         )
         rep_req_id = cursor.lastrowid
 
@@ -5146,10 +5235,12 @@ async def process_replace_request(m: types.Message, state: FSMContext):
     cat_badge = "🎬 **Category: 1000xxx PC clon{Content Used}**\n⚠️ *[Content Used Section — 2h Limit]*\n" if is_used_cat else f"🏷️ **Category:** {db_cat_label}\n"
     seller_line = f"👤 **Seller:** `{seller_summary}`\n" if seller_summary else ""
     uid_line = f"🆔 **Detected UIDs:** `{', '.join(detected_uids[:4])}{'...' if len(detected_uids)>4 else ''}`\n" if detected_uids else ""
+    re_badge = "🔄 **[RE-REPLACE CLAIM • পূর্বের দেওয়া রিপ্লেস নষ্ট ছিল]**\n" if is_re_replace else ""
 
     admin_msg = (
         f"🚨 **NEW REPLACE REQUEST • {BOT_VERSION}** 🚨\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"{re_badge}"
         f"{cat_badge}"
         f"{seller_line}"
         f"{uid_line}"
@@ -5173,10 +5264,11 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         try: await bot.send_message(admin[0], admin_msg, reply_markup=kb.as_markup())
         except: pass
         
+    re_type_str = "\n🔄 **ধরণ:** `রি-রিপ্লেস (পূর্বে প্রাপ্ত রিপ্লেস নষ্ট ছিল)`" if is_re_replace else ""
     confirm_msg = (
         f"✅ **আপনার রিপ্লেস রিকোয়েস্ট সফলভাবে গৃহীত হয়েছে!**\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📦 **অর্ডার নং:** `{order_ref}`\n"
+        f"📦 **অর্ডার নং:** `{order_ref}`{re_type_str}\n"
         f"🎫 **টিকিট আইডি:** `#{ticket_id}`\n"
         f"🆔 **সাবমিটকৃত নষ্ট আইডি:** **{len(detected_uids)}টি**\n"
         f"⏳ **বর্তমান স্ট্যাটাস:** `অ্যাডমিন পর্যালোচনায় (Pending)`\n"
