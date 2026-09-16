@@ -1944,18 +1944,24 @@ def extract_uids_from_text(text: str) -> list[str]:
     if not text:
         return []
     found = []
-    # Match standard FB UIDs (1000xxx, 615xxx, etc.) or general 9-18 digit IDs
-    matches = re.findall(r'\b(1000\d{7,13}|615\d{7,13}|61\d{8,13}|\d{10,18})\b', text)
-    for m in matches:
+    # 1. Look for c_user=... in cookies (exact FB user ID)
+    for m in re.findall(r'c_user=(\d{9,18})', text, re.IGNORECASE):
         if m not in found:
             found.append(m)
+    # 2. Check each line's first token (split by space, |, :, tab, comma, semicolon)
     for line in text.splitlines():
         line = line.strip()
         if not line: continue
-        parts = re.split(r'[\s:,|]+', line)
-        first_token = parts[0].strip("`*#")
-        if first_token.isdigit() and 9 <= len(first_token) <= 18 and first_token not in found:
-            found.append(first_token)
+        parts = re.split(r'[\s|:;,\t]+', line)
+        if parts:
+            first = parts[0].strip("`*#'\"")
+            if first.isdigit() and 9 <= len(first) <= 18:
+                if first not in found:
+                    found.append(first)
+    # 3. Match standard FB UID patterns (1000xxx, 615xxx, 61xxx) anywhere in text
+    for m in re.findall(r'\b(1000\d{7,13}|615\d{7,13}|61\d{8,13})\b', text):
+        if m not in found:
+            found.append(m)
     return found
 
 def find_sellers_for_uids(uids: list[str]) -> dict[str, str]:
@@ -4815,11 +4821,11 @@ async def select_replace_order(c: types.CallbackQuery, state: FSMContext):
         f"⏳ **অনুমোদিত গ্যারান্টি:** {allowed_h} ঘণ্টা\n"
         f"⏱️ **বাকি সময় আছে:** {rem_str}\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "📌 **নিয়মাবলী ও শর্তসমূহ:**\n"
-        "১. শুধুমাত্র নষ্ট আইডি দিন (UID PASS COOKIES)।\n"
-        "২. কোনো ফাইল, ফটো বা স্ক্রিনশট পাঠালে সরাসরি রিজেক্ট হবে।\n"
-        "৩. পাসওয়ার্ড চেঞ্জ করা বা নিজস্ব ভুলের কারণে নষ্ট আইডি রিপ্লেস হবে না।\n\n"
-        "✅ আপনি কি এই শর্তে নষ্ট আইডি সাবমিট করতে প্রস্তুত?"
+        "📌 **নিয়মাবলী ও সুবিধা:**\n"
+        "১. নষ্ট আইডিগুলো সরাসরি এখানে পেস্ট করুন (Auto-Detect সক্রিয়)।\n"
+        "২. আপনি শুধুমাত্র UID অথবা সম্পূর্ণ আইডি লাইন (UID PASS COOKIE) যেকোনো ফরম্যাটে দিতে পারেন।\n"
+        "৩. টেক্সট মেসেজ অথবা .txt ফাইল উভয়ই সাপোর্ট করবে।\n\n"
+        "✅ আপনি কি নষ্ট আইডি সাবমিট করতে প্রস্তুত?"
     )
     await c.message.edit_text(valid_msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
@@ -4867,69 +4873,48 @@ async def rep_agree_action(c: types.CallbackQuery, state: FSMContext):
     )
     
     await c.message.edit_text(
-        f"✍️ **অর্ডার `#{sale_id}` এর নষ্ট আইডিগুলো টেক্সট আকারে দিন:**\n\n"
-        "📌 **Format (প্রতি লাইনে):**\n"
-        "`UID PASSWORD COOKIES`\n\n"
-        "📝 **Example:**\n"
-        "`100011... myPass123 datr=xxx; c_user=100011...; xs=...`\n\n"
-        "⚠️ শুধুমাত্র Text accept হবে। File / Screenshot পাঠালে auto-reject।\n"
-        f"⚠️ আপনি এই অর্ডারে সর্বোচ্চ **{s_qty}টি** আইডি সাবমিট করতে পারবেন।"
+        f"✍️ **অর্ডার `#{sale_id}`-এর নষ্ট আইডি দিন:**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 কেনা পরিমাণ: **{s_qty}টি** | ⏱️ রিপ্লেস সময়সীমা: **{allowed_h} ঘণ্টা**\n\n"
+        f"💡 **সহজ নিয়ম (Auto-Detect সক্রিয়):**\n"
+        f"নষ্ট আইডিগুলো সরাসরি কপি করে এখানে পেস্ট করুন (অথবা .txt ফাইল দিন)। আমাদের সিস্টেম স্বয়ংক্রিয়ভাবে সঠিক UID সনাক্ত করে নেবে।\n\n"
+        f"📌 আপনি যেকোনো সুবিধাজনক ফরম্যাটে দিতে পারেন:\n"
+        f"• শুধুমাত্র UID (যেমন: `61577030293219`)\n"
+        f"• অথবা পুরো আইডি লাইন (যেমন: `UID PASS COOKIE` বা `UID|PASS|COOKIE`)\n"
+        f"• একাধিক আইডি থাকলে প্রতি লাইনে একটি করে দিন।\n\n"
+        f"⚠️ এই অর্ডারে প্রাপ্ত আইডির বাইরের কোনো আইডি দিলে তা গ্রহণ হবে না।\n"
+        f"_(বাতিল করতে চাইলে /cancel লিখুন)_",
+        parse_mode="Markdown"
     )
     await state.set_state(ShopStates.waiting_for_replace_data)
 
-@dp.message(ShopStates.waiting_for_replace_data)
+@dp.message(ShopStates.waiting_for_replace_data, F.content_type.in_({"text", "document"}))
 async def process_replace_request(m: types.Message, state: FSMContext):
-    # [REPLACE_TEXTONLY_PATCH_V1]
-    if m.content_type != "text" or not m.text:
-        return await m.answer(
-            "❌ **File / Photo / Screenshot / Document accept হবে না।**\n\n"
-            "📝 শুধু **text** paste করুন এই format-এ:\n"
-            "`UID PASSWORD COOKIES`\n\n"
-            "আবার চেষ্টা করুন অথবা /cancel দিন।"
-        )
+    if m.text and m.text.strip().startswith("/cancel"):
+        await state.clear()
+        return await m.answer("❌ রিপ্লেস রিকোয়েস্ট বাতিল করা হয়েছে।")
+    if m.text and m.text.startswith("/"): return
 
-    if m.text.startswith("/"): return
+    user_data_text = ""
+    if m.text:
+        user_data_text = m.text.strip()
+    elif m.document:
+        doc = m.document
+        fname = (doc.file_name or "").lower()
+        if fname.endswith(".txt") or (doc.mime_type or "").startswith("text/"):
+            try:
+                file_info = await bot.get_file(doc.file_id)
+                file_bytes = await bot.download_file(file_info.file_path)
+                user_data_text = file_bytes.read().decode('utf-8', errors='ignore').strip()
+            except Exception as e:
+                return await m.answer("❌ ফাইলটি পড়া সম্ভব হয়নি। অনুগ্রহ করে টেক্সট সরাসরি কপি করে এখানে পেস্ট করুন।")
+        else:
+            return await m.answer("⚠️ শুধুমাত্র **টেক্সট মেসেজ** অথবা **.txt ফাইল** গ্রহণযোগ্য। ফটো বা অন্যান্য ফাইল গ্রহণযোগ্য নয়।")
+    else:
+        return await m.answer("⚠️ অনুগ্রহ করে নষ্ট আইডিগুলো সরাসরি **টেক্সট আকারে পেস্ট করুন** অথবা **.txt ফাইল** পাঠান।")
 
-    user_data_text = m.text.strip()
-
-    # ---- Layer 2: per-line format validation ----
-    raw_lines = [ln.strip() for ln in user_data_text.split("\n") if ln.strip()]
-    if not raw_lines:
-        return await m.answer("❌ খালি text। UID PASS COOKIES format-এ দিন।")
-
-    _errors = []
-    for _i, _ln in enumerate(raw_lines, 1):
-        _parts = _ln.split(None, 2)
-        if len(_parts) < 3:
-            _errors.append(f"  • Line {_i}: শুধু {len(_parts)}টা field পাওয়া গেছে (দরকার 3 — UID PASS COOKIES)")
-            continue
-        _uid, _pw, _ck = _parts
-        if len(_uid) < 3:
-            _errors.append(f"  • Line {_i}: UID খুব ছোট ({_uid!r})")
-        if len(_pw) < 3:
-            _errors.append(f"  • Line {_i}: PASSWORD খুব ছোট")
-        if "=" not in _ck:
-            _errors.append(f"  • Line {_i}: COOKIES format ভুল (কোনো `=` নেই, যেমন `datr=...; c_user=...`)")
-
-    if _errors:
-        _err_txt = "\n".join(_errors[:8])
-        _more = f"\n  ... আরো {len(_errors)-8} টি ত্রুটি" if len(_errors) > 8 else ""
-        return await m.answer(
-            f"⚠️ **আইডি ফরম্যাট সঠিক নয়! ({len(_errors)}টি লাইনে ত্রুটি)**\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"{_err_txt}{_more}\n\n"
-            f"📌 **সঠিক ফরম্যাট দেওয়ার নিয়ম:**\n"
-            f"প্রতিটি লাইনে ৩টি অংশ স্পেস (space) দিয়ে আলাদা করে থাকতে হবে:\n"
-            f"`UID PASSWORD COOKIES`\n\n"
-            f"💡 **নমুনা উদাহরণ (Example):**\n"
-            f"```text\n"
-            f"61593898545651 Saida@25 datr=3O2NaVk3u2E1lRsGtMNRU48O; c_user=61593898545651; xs=42%3A...\n"
-            f"100029977223779 Juwel@3 datr=FAgZakFSQz1hOc15ekkIJlh9; c_user=100029977223779; xs=28%3A...\n"
-            f"```\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"✍️ অনুগ্রহ করে ফরম্যাট ঠিক করে পুনরায় টেক্সট আকারে মেসেজ পাঠান অথবা বাতিল করতে /cancel লিখুন।",
-            parse_mode="Markdown"
-        )
+    if not user_data_text:
+        return await m.answer("❌ কোনো টেক্সট বা আইডি পাওয়া যায়নি। অনুগ্রহ করে নষ্ট আইডিগুলো পেস্ট করুন অথবা /cancel লিখুন।")
 
     # Re-verify order existence and time expiration strictly from DB
     st_data = await state.get_data()
@@ -4981,17 +4966,56 @@ async def process_replace_request(m: types.Message, state: FSMContext):
 
     ticket_id = str(uuid.uuid4())[:8]
     order_ref = f"Order #{s_id}"
-    lines = raw_lines
-    acc_count_warning = f"⚠️ __ইউজার {len(lines)} টি একাউন্ট দিয়েছে!__" if len(lines) > 1 else ""
-    
     username_display = f"@{m.from_user.username}" if m.from_user.username else "No Username"
     utc_now_ts = datetime.now(timezone.utc).timestamp()
-    
-    # Extract UIDs
-    detected_uids = extract_uids_from_text(user_data_text)
+
+    # Fetch all UIDs that were actually delivered in this order
+    archived_rows = conn.execute(
+        "SELECT data FROM delivery_archive WHERE sale_id=?",
+        (s_id,)
+    ).fetchall()
+    order_uids = set()
+    for a_row in archived_rows:
+        for u in extract_uids_from_text(a_row[0] or ""):
+            order_uids.add(u)
+
+    # Auto-detect UIDs from user submission
+    parsed_uids = extract_uids_from_text(user_data_text)
+    detected_uids = []
+
+    # 1. Match any UIDs known to belong to this order that appear in user_data_text
+    for ou in order_uids:
+        if ou in user_data_text and ou not in detected_uids:
+            detected_uids.append(ou)
+
+    # 2. Also include any parsed candidate UIDs
+    for pu in parsed_uids:
+        if pu not in detected_uids:
+            detected_uids.append(pu)
+
     if not detected_uids:
         conn.close()
-        return await m.answer("❌ টেক্সট থেকে কোনো বৈধ UID সনাক্ত করা যায়নি। অনুগ্রহ করে UID PASSWORD COOKIES ফরম্যাটে দিন।")
+        return await m.answer(
+            "❌ **কোনো বৈধ UID সনাক্ত করা যায়নি!**\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "অনুগ্রহ করে আপনার নষ্ট আইডির UID বা সম্পূর্ণ আইডি লাইন পেস্ট করুন।\n"
+            "💡 উদাহরণ: `61577030293219` অথবা `UID PASS COOKIE`",
+            parse_mode="Markdown"
+        )
+
+    # Check if detected UIDs belong to this sale in delivery_archive
+    if order_uids:
+        invalid_uids = [u for u in detected_uids if u not in order_uids]
+        if invalid_uids:
+            conn.close()
+            inv_str = ", ".join([f"`{u}`" for u in invalid_uids])
+            return await m.answer(
+                f"🚫 **অর্ডারের বাইরের UID সনাক্ত হয়েছে!**\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                f"নিচের UID গুলো আপনার অর্ডার `#{s_id}`-এর অন্তর্ভুক্ত নয়:\n{inv_str}\n\n"
+                f"⚠️ অন্য কোনো অর্ডারের বা বাইরের আইডি এখানে দেওয়া যাবে না। শুধুমাত্র অর্ডার `#{s_id}`-এ কেনা নষ্ট আইডিগুলো দিন।",
+                parse_mode="Markdown"
+            )
 
     # Check submitted quantity against purchased quantity in that order (cumulative check)
     prev_count = 0
@@ -5017,29 +5041,6 @@ async def process_replace_request(m: types.Message, state: FSMContext):
             f"⚠️ একটি অর্ডারে কেনা মোট পরিমাণের বেশি রিপ্লেস নেওয়া সম্পূর্ণ নিষিদ্ধ।",
             parse_mode="Markdown"
         )
-
-    # Check if UIDs belong to this sale in delivery_archive
-    archived_rows = conn.execute(
-        "SELECT data FROM delivery_archive WHERE sale_id=?",
-        (s_id,)
-    ).fetchall()
-    if archived_rows:
-        order_uids = set()
-        for a_row in archived_rows:
-            for u in extract_uids_from_text(a_row[0] or ""):
-                order_uids.add(u)
-        
-        invalid_uids = [u for u in detected_uids if u not in order_uids]
-        if invalid_uids:
-            conn.close()
-            inv_str = ", ".join([f"`{u}`" for u in invalid_uids])
-            return await m.answer(
-                f"🚫 **অর্ডারের বাইরের UID সনাক্ত হয়েছে!**\n"
-                "━━━━━━━━━━━━━━━━━━━━\n"
-                f"নিচের UID গুলো আপনার অর্ডার `#{s_id}`-এর অন্তর্ভুক্ত নয়:\n{inv_str}\n\n"
-                f"⚠️ অন্য কোনো অর্ডারের বা স্টোরের বাইরের আইডি এখানে সাবমিট করা যাবে না। শুধুমাত্র অর্ডার `#{s_id}`-এ প্রাপ্ত নষ্ট আইডিগুলো দিন।",
-                parse_mode="Markdown"
-            )
 
     # 1. Check for duplicate UIDs within the submitted message itself
     seen_in_msg = set()
@@ -5085,12 +5086,14 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         err_items = "\n".join([f"• `{u}` — *{desc}*" for u, desc in already_replaced])
         return await m.answer(
             f"🚫 **ডাবল রিপ্লেস নিষিদ্ধ (Already Replaced / Pending)!**\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
             f"নিচের UID গুলো ইতিমধ্যে পূর্বে রিপ্লেসের জন্য জমা দেওয়া হয়েছে বা রিপ্লেস প্রদান করা হয়েছে:\n\n"
             f"{err_items}\n\n"
-            f"⚠️ একই UID দিয়ে একাধিকবার ডাবল রিপ্লেস রিকোয়েস্ট দেওয়া সম্পূর্ণ নিষিদ্ধ। অনুগ্রহ করে শুধুমাত্র নতুন নষ্ট আইডি দিন অথবা বাতিল করতে /cancel লিখুন।",
+            f"⚠️ একই UID দিয়ে একাধিকবার ডাবল রিপ্লেস রিকোয়েস্ট দেওয়া সম্পূর্ণ নিষিদ্ধ। শুধুমাত্র নতুন নষ্ট আইডি দিন অথবা বাতিল করতে /cancel লিখুন।",
             parse_mode="Markdown"
         )
+
+    acc_count_warning = f"⚠️ __ইউজার {len(detected_uids)} টি আইডি সাবমিট করেছে!__" if len(detected_uids) > 1 else ""
 
     try:
         conn.execute(
@@ -5150,7 +5153,7 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         f"{cat_badge}"
         f"{seller_line}"
         f"{uid_line}"
-        f"📦 **{order_ref}** ({qty} pcs | Tier: {allowed_h}h)\n"
+        f"📦 **{order_ref}** ({s_qty} pcs | Tier: {allowed_h}h)\n"
         f"👤 **Name:** {m.from_user.first_name}\n"
         f"🔗 **User:** {username_display}\n"
         f"🆔 **ID:** `{m.from_user.id}`\n\n"
@@ -5170,12 +5173,22 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         try: await bot.send_message(admin[0], admin_msg, reply_markup=kb.as_markup())
         except: pass
         
-    await m.answer(
-        f"✅ **আপনার রিকোয়েস্টটি অ্যাডমিনের কাছে সফলভাবে পাঠানো হয়েছে!**\n\n"
-        f"📦 **অর্ডার:** {order_ref}\n"
+    confirm_msg = (
+        f"✅ **আপনার রিপ্লেস রিকোয়েস্ট সফলভাবে গৃহীত হয়েছে!**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 **অর্ডার নং:** `{order_ref}`\n"
         f"🎫 **টিকিট আইডি:** `#{ticket_id}`\n"
-        f"অ্যাডমিন চেক করে দ্রুত রিপ্লেস দিয়ে দিবে।"
+        f"🆔 **সাবমিটকৃত নষ্ট আইডি:** **{len(detected_uids)}টি**\n"
+        f"⏳ **বর্তমান স্ট্যাটাস:** `অ্যাডমিন পর্যালোচনায় (Pending)`\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📢 **অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করুন:**\n"
+        f"১. আমাদের অ্যাডমিন ও সাপোর্ট টিম আপনার রিকোয়েস্টটি গ্রহণ করেছে এবং আইডিগুলো ম্যানুয়ালি যাচাই করা হচ্ছে।\n"
+        f"২. সার্ভার চাপ বা কিউয়ের কারণে কিছুটা সময় লাগতে পারে, অনুগ্রহ করে ধৈর্য ধরুন।\n"
+        f"৩. 🛡️ **আতঙ্কিত (Panic) হওয়ার কোনো কারণ নেই!** আপনার জমা দেওয়া আইডিগুলো নিয়মানুযায়ী সঠিক ও রিপ্লেসযোগ্য হলে আপনি **১০০% রিপ্লেস পাবেন**।\n"
+        f"৪. এডমিন যাচাই সম্পন্ন করে রিপ্লেস দেওয়ামাত্রই বট আপনাকে স্বয়ংক্রিয় নোটিফিকেশনের মাধ্যমে নতুন আইডি পৌঁছে দেবে।\n\n"
+        f"🤝 আমাদের সাথে থাকার জন্য ধন্যবাদ।"
     )
+    await m.answer(confirm_msg, parse_mode="Markdown")
     await state.clear()
     
     asyncio.create_task(ticket_reminder(ticket_id, admins, admin_msg, kb))
