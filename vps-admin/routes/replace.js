@@ -214,7 +214,14 @@ router.get('/', (req, res) => {
   // Extract UIDs, find sellers, and enrich with order purchase telemetry
   const allRowUids = [];
   rows.forEach(r => {
-    r.detectedUids = extractUidsFromText(r.old_data);
+    if (r.detected_uids) {
+      r.detectedUids = r.detected_uids.split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      r.detectedUids = extractUidsFromText(r.old_data);
+    }
+    r.accountCount = r.detectedUids && r.detectedUids.length > 0
+      ? r.detectedUids.length
+      : ((r.old_data || '').split('\n').filter(Boolean).length || 1);
     allRowUids.push(...r.detectedUids);
 
     // Extract Order # and enrich with purchase telemetry
@@ -447,7 +454,7 @@ router.get('/', (req, res) => {
 // GET full data by ID (for modal viewer to avoid HTML attribute escaping issues)
 router.get('/:id/data', (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const row = db.prepare('SELECT id, user_id, username, category, old_data, replacement_data, replacement_file, reason, status, created_at, resolved_at FROM replace_requests WHERE id = ?').get(id);
+  const row = db.prepare('SELECT id, user_id, username, category, old_data, replacement_data, replacement_file, reason, status, created_at, resolved_at, detected_uids FROM replace_requests WHERE id = ?').get(id);
   if (!row) return res.status(404).json({ ok: false, error: 'Not found' });
   res.json({ ok: true, data: row });
 });

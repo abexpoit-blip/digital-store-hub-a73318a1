@@ -453,7 +453,7 @@
             <% } %>
             <button type="button" class="mt-1.5 text-[11px] text-sky-600 hover:text-sky-800 font-bold flex items-center gap-1"
                     onclick="openViewer(<%= r.id %>)">
-              <span>🔍</span> See Full Details (<%= (r.old_data || '').split('\n').filter(Boolean).length %> accounts)
+              <span>🔍</span> See Full Details (<%= r.accountCount || (r.detectedUids && r.detectedUids.length ? r.detectedUids.length : 1) %> accounts)
             </button>
           </td>
 
@@ -510,7 +510,7 @@
           <td class="py-3 px-4 text-right space-x-1 whitespace-nowrap">
             <% if (r.status === 'pending') { %>
               <button type="button" class="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold px-3 py-1.5 rounded-xl text-xs shadow-xs transition"
-                      onclick="openResolveModal(<%= r.id %>, '<%= r.user_id %>', '<%- (r.username || 'User').replace(/'/g, '') %>', '<%- (r.category || 'fb1000').replace(/'/g, '') %>', <%= (r.old_data || '').split('\n').filter(Boolean).length || 1 %>)">
+                      onclick="openResolveModal(<%= r.id %>, '<%= r.user_id %>', '<%- (r.username || 'User').replace(/'/g, '') %>', '<%- (r.category || 'fb1000').replace(/'/g, '') %>', <%= r.accountCount || (r.detectedUids && r.detectedUids.length ? r.detectedUids.length : 1) %>)">
                 🔄 Give Replace
               </button>
               <button type="button" onclick="openReplyModal(<%= r.id %>, '<%= r.user_id %>', '<%- (r.username || 'User').replace(/'/g, '') %>', '<%- (r.category || '').replace(/'/g, '') %>')"
@@ -850,7 +850,8 @@
           document.getElementById('viewerSub').textContent = 'Sent by ' + (row.resolved_by || 'admin');
           document.getElementById('viewerContent').textContent = row.replacement_data || '(No text data)';
         } else {
-          document.getElementById('viewerTitle').textContent = '📋 Broken Accounts Claimed by User';
+          var uCount = (row.detected_uids ? row.detected_uids.split(',').map(function(s){ return s.trim(); }).filter(Boolean).length : 0);
+          document.getElementById('viewerTitle').textContent = '📋 Broken Accounts Claimed by User' + (uCount > 0 ? ' (' + uCount + ' IDs)' : '');
           document.getElementById('viewerSub').textContent = (row.username || 'User') + ' (' + row.user_id + ')';
           document.getElementById('viewerContent').textContent = row.old_data || '(No data)';
         }
