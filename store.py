@@ -6068,15 +6068,29 @@ async def resume_pending_api_vpn_orders():
         print(f"[vpn_resume] Resuming pending API order {order_id} (#{api_order_id})")
         asyncio.create_task(poll_and_deliver_api_vpn_order(order_id, api_order_id, user_id, vpn_name, duration, emoji, price))
 
+async def webhook_guard():
+    """Periodically checks if an unauthorized webhook was set and clears it to prevent polling conflict."""
+    while True:
+        try:
+            await asyncio.sleep(60)
+            wh = await bot.get_webhook_info()
+            if wh.url:
+                print(f"[webhook_guard] Unauthorized webhook detected: {wh.url}. Automatically deleting webhook...", flush=True)
+                await bot.delete_webhook(drop_pending_updates=False)
+                print("[webhook_guard] Webhook removed. Polling restored.", flush=True)
+        except Exception:
+            pass
+
 async def main():
     init_db()
     try:
         asyncio.create_task(vpn_api_sync_catalog())
         asyncio.create_task(vpn_auto_fulfill_worker())
         asyncio.create_task(resume_pending_api_vpn_orders())
+        asyncio.create_task(webhook_guard())
     except Exception as _e_sync:
         print("[vpn_api_sync] startup sync error:", _e_sync)
-    await bot.delete_webhook(drop_pending_updates=True)
+    await bot.delete_webhook(drop_pending_updates=False)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
