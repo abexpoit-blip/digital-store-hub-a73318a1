@@ -107,6 +107,16 @@ QUOTES = [
 
 BOT_VERSION = "V 10.08"
 
+# --- BDT (DHAKA) TIMEZONE HELPERS ---
+def bdt_now():
+    return datetime.now(timezone(timedelta(hours=6)))
+
+def bdt_date_str():
+    return bdt_now().strftime("%Y-%m-%d")
+
+def bdt_time_str():
+    return bdt_now().strftime("%I:%M %p")
+
 # --- REPLACEMENT DYNAMIC TIERS & TIME HELPERS ---
 def get_replace_window_hours(qty: int, category: str = "") -> int:
     """
@@ -1239,10 +1249,36 @@ async def admin_add_bal(message: types.Message, command: CommandObject, state: F
         if not uid: return await message.answer(f"❌ User not found.")
         conn = _dbc()
         conn.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, uid))
+        new_bal = conn.execute("SELECT balance, username FROM users WHERE user_id = ?", (uid,)).fetchone()
+
+        now_bdt = bdt_now()
+        bst_date = now_bdt.strftime("%Y-%m-%d")
+        now_ts = int(now_bdt.timestamp())
+        admin_label = f"Admin @{message.from_user.username or message.from_user.first_name}"
+
+        try:
+            mc_cur = conn.cursor()
+            mc_cur.execute(
+                "INSERT INTO manual_credits (user_id, username, delta, balance_after, reason, admin_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (uid, (new_bal[1] if new_bal else ''), amount, (new_bal[0] if new_bal else 0), f"TG /addbalance by {admin_label}", admin_label, int(time.time() * 1000))
+            )
+            mc_id = mc_cur.lastrowid
+            req_id = f"manual_credit_{mc_id}" if mc_id else f"manual_{int(time.time())}_{random.randint(1000, 9999)}"
+            conn.execute(
+                "INSERT INTO payment_logs (req_id, user_id, username, amount, status, date, admin_name, timestamp, sender_num, method) VALUES (?, ?, ?, ?, 'approved', ?, ?, ?, ?, ?)",
+                (req_id, uid, (new_bal[1] if new_bal else None), amount, bst_date, admin_label, now_ts, "Admin Manual", "manual")
+            )
+        except Exception as _pe:
+            print(f"[addbalance] log insert error: {_pe}")
+
         conn.commit(); conn.close()
-        await bot.send_message(uid, f"🎁 **Added Balance:** {amount}৳")
-        await message.answer(f"✅ Added {amount}৳ to {target_input}")
-    except: await message.answer("❌ Error")
+        try:
+            await bot.send_message(uid, f"🎁 **ব্যালেন্স যুক্ত করা হয়েছে!**\n\n💰 যোগ করা পরিমাণ: **+{amount}৳**\n💳 বর্তমান ব্যালেন্স: **{new_bal[0] if new_bal else '?'}৳**", parse_mode="Markdown")
+        except Exception:
+            pass
+        await message.answer(f"✅ Added {amount}৳ to {target_input} (New balance: {new_bal[0] if new_bal else '?'}৳)")
+    except Exception as e:
+        await message.answer(f"❌ Error: {e}")
 
 @dp.message(Command("cutbalance"))
 async def admin_cut_bal(message: types.Message, command: CommandObject, state: FSMContext):
@@ -1256,10 +1292,25 @@ async def admin_cut_bal(message: types.Message, command: CommandObject, state: F
         if not uid: return await message.answer(f"❌ User not found.")
         conn = _dbc()
         conn.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, uid))
+        new_bal = conn.execute("SELECT balance, username FROM users WHERE user_id = ?", (uid,)).fetchone()
+
+        admin_label = f"Admin @{message.from_user.username or message.from_user.first_name}"
+        try:
+            conn.execute(
+                "INSERT INTO manual_credits (user_id, username, delta, balance_after, reason, admin_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (uid, (new_bal[1] if new_bal else ''), -amount, (new_bal[0] if new_bal else 0), f"TG /cutbalance by {admin_label}", admin_label, int(time.time() * 1000))
+            )
+        except Exception as _ce:
+            print(f"[cutbalance] log insert error: {_ce}")
+
         conn.commit(); conn.close()
-        await bot.send_message(uid, f"⚠️ **Deducted Balance:** {amount}৳")
-        await message.answer(f"✅ Cut {amount}৳ from {target_input}")
-    except: await message.answer("❌ Error")
+        try:
+            await bot.send_message(uid, f"⚠️ **ব্যালেন্স কর্তন করা হয়েছে!**\n\n🔻 কর্তন করা পরিমাণ: **-{amount}৳**\n💳 বর্তমান ব্যালেন্স: **{new_bal[0] if new_bal else '?'}৳**", parse_mode="Markdown")
+        except Exception:
+            pass
+        await message.answer(f"⚠️ Deducted {amount}৳ from {target_input} (New balance: {new_bal[0] if new_bal else '?'}৳)")
+    except Exception as e:
+        await message.answer(f"❌ Error: {e}")
 
 @dp.message(Command("check"))
 async def admin_check_bal(message: types.Message, command: CommandObject, state: FSMContext):
@@ -3143,9 +3194,10 @@ async def process_buy(m: types.Message, state: FSMContext):
         except Exception as _e:
             print(f"[buylimit] commit skip: {_e}")
         
-        current_time = datetime.now(timezone(timedelta(hours=6))).strftime("%I:%M %p")
+        now_bdt = bdt_now()
+        current_time = now_bdt.strftime("%I:%M %p")
         conn.execute("INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                       (m.from_user.id, m.from_user.first_name, cat, qty, total, datetime.now().strftime("%Y-%m-%d"), current_time))
+                       (m.from_user.id, m.from_user.first_name, cat, qty, total, now_bdt.strftime("%Y-%m-%d"), current_time))
 
         _lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx PC clon{Content Used}","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat, cat.upper())
         # [DELIVERY_FORMAT_PATCH_V1] — ask format before dumping
@@ -3197,7 +3249,8 @@ async def process_buy(m: types.Message, state: FSMContext):
                 types.InlineKeyboardButton(text="🔙 মূল মেনু (Home)", callback_data="back_home"),
             ]
         ])
-        report_time = "2 Hours" if qty < 10 else "6 Hours"
+        allowed_h = get_replace_window_hours(qty, cat)
+        report_time = f"{allowed_h} ঘণ্টা ({allowed_h} Hours)"
 
         # Instant text delivery directly in chat for up to 3 accounts
         _instant_block = ""
@@ -3210,7 +3263,7 @@ async def process_buy(m: types.Message, state: FSMContext):
 
         await m.answer(
             f"✅ **পেমেন্ট সফল!** — {_lbl} × {qty}\n"
-            f"⏱ রিপোর্ট টাইম: {report_time} • 🔐 লগইন গ্যারান্টি"
+            f"⏱ রিপ্লেস সময়সীমা: {report_time} • 🔐 লগইন গ্যারান্টি"
             f"{_instant_block}\n"
             f"📥 ফাইল ডাউনলোড করতে চাইলে নিচের ফরম্যাট বেছে নিন:",
             reply_markup=_kb,
@@ -3299,20 +3352,44 @@ async def dep_manual_start(c: types.CallbackQuery, state: FSMContext):
             "অনুগ্রহ করে ⚡ Auto Payment অথবা 💎 Binance ব্যবহার করুন।",
             parse_mode="Markdown"
         )
+    kb = InlineKeyboardBuilder()
+    kb.row(types.InlineKeyboardButton(text="💗 bKash (ম্যানুয়াল)", callback_data="dep_man_bkash"))
+    kb.row(types.InlineKeyboardButton(text="🟧 Nagad (ম্যানুয়াল)", callback_data="dep_man_nagad"))
+    kb.row(types.InlineKeyboardButton(text="🔙 ফিরে যান (Back)", callback_data="deposit"))
     await c.message.answer(
-        "📝 *ম্যানুয়াল ডিপোজিট (bKash / Nagad)*\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💗 *bKash (Personal / Send Money):* `{BKASH_NUMBER}`\n"
-        f"🟧 *Nagad (Personal / Send Money):* `{NAGAD_NUMBER}`\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "⚠️ *নির্দেশনা:*\n"
-        "1️⃣ উপরের নম্বরে bKash অথবা Nagad থেকে **Send Money** করুন।\n"
-        "2️⃣ মিনিমাম ডিপোজিট **১০৳**।\n"
-        "3️⃣ টাকা পাঠানো সম্পন্ন হলে নিচে **টাকার পরিমাণ** লিখুন।\n\n"
-        "💰 **কত টাকা পাঠিয়েছেন?** (শুধু সংখ্যা লিখুন, যেমন: `150`)",
+        "📝 *ম্যানুয়াল ডিপোজিট মাধ্যম বেছে নিন:*\n\n"
+        "আপনি কোন মাধ্যমে Send Money করতে চান? নিচে থেকে সিলেক্ট করুন:",
+        reply_markup=kb.as_markup(),
         parse_mode="Markdown"
     )
-    await state.update_data(deposit_method="manual")
+
+@dp.callback_query(F.data.in_(["dep_man_bkash", "dep_man_nagad"]))
+async def dep_man_choice(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    if not is_service_enabled("deposit_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer("💰 ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।")
+    if not is_service_enabled("manual_payment_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer("⚠️ ম্যানুয়াল পেমেন্ট সার্ভিস বর্তমানে বন্ধ রয়েছে।")
+
+    is_bkash = (c.data == "dep_man_bkash")
+    method_name = "bKash" if is_bkash else "Nagad"
+    num = BKASH_NUMBER if is_bkash else NAGAD_NUMBER
+    dep_m = "manual_bkash" if is_bkash else "manual_nagad"
+    icon = "💗" if is_bkash else "🟧"
+
+    await c.message.answer(
+        f"{icon} *{method_name} ম্যানুয়াল ডিপোজিট*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📱 *{method_name} (Personal / Send Money):* `{num}`\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"⚠️ *নির্দেশনা:*\n"
+        f"1️⃣ উপরের নম্বরে {method_name} থেকে **Send Money** করুন।\n"
+        f"2️⃣ মিনিমাম ডিপোজিট **১০৳**।\n"
+        f"3️⃣ টাকা পাঠানো সম্পন্ন হলে নিচে **টাকার পরিমাণ** লিখুন।\n\n"
+        f"💰 **কত টাকা পাঠিয়েছেন?** (শুধু সংখ্যা লিখুন, যেমন: `150`)",
+        parse_mode="Markdown"
+    )
+    await state.update_data(deposit_method=dep_m)
     await state.set_state(ShopStates.waiting_for_deposit_amount)
 
 @dp.callback_query(F.data == "dep_binance")
@@ -3379,15 +3456,16 @@ async def dep_amt(m: types.Message, state: FSMContext):
         return
 
     # ============ MANUAL (bKash / Nagad) ============
-    if _method == "manual":
+    if _method.startswith("manual"):
         if not val_str.isdigit() or int(val_str) < 10:
             return await m.answer("⚠️ মিনিমাম *১০ টাকা*। শুধু সংখ্যায় লিখুন (যেমন: `150`)", parse_mode="Markdown")
         amt = int(val_str)
         await state.update_data(amount_text=str(amt))
+        m_label = "bKash" if "bkash" in _method else ("Nagad" if "nagad" in _method else "bKash/Nagad")
         await m.answer(
             f"✅ ডিপোজিট পরিমাণ: *{amt}৳*\n\n"
-            "📱 **যে নম্বর থেকে টাকা পাঠিয়েছেন সেই bKash/Nagad নম্বর অথবা TrxID লিখুন:**\n"
-            "💡 *(যেমন: `017xxxxxxxx` অথবা `TrxID: BL93K...`)*",
+            f"📱 **যে {m_label} নম্বর থেকে টাকা পাঠিয়েছেন সেই নম্বর অথবা TrxID লিখুন:**\n"
+            f"💡 *(যেমন: `017xxxxxxxx` অথবা `TrxID: ...`)*",
             parse_mode="Markdown"
         )
         await state.set_state(ShopStates.waiting_for_deposit_num)
@@ -3454,17 +3532,19 @@ async def dep_submit(m: types.Message, state: FSMContext):
         return await m.answer("❌ আপনি সঠিক নিয়ম মানেননি। পেমেন্ট স্ক্রিনশট দেওয়া বাধ্যতামূলক।")
 
     data = await state.get_data()
-    now_ts = datetime.now(timezone.utc).timestamp()
-    
+    now_bdt = bdt_now()
+    now_ts = int(now_bdt.timestamp())
+    bdt_date = now_bdt.strftime("%Y-%m-%d")
+
     clean_amt = ''.join(filter(lambda x: x.isdigit(), data.get('amount_text', '0')))
     amt = int(clean_amt) if clean_amt else 0
     dep_method = data.get('deposit_method', 'manual')
     sender_val = data.get('sender') or ('Binance UID' if dep_method == 'binance' else 'Screenshot only')
-    
+
     # --- DEPOSIT ANTI-SPAM LOGIC ---
     conn = _dbc()
     last_dep = conn.execute("SELECT timestamp, amount FROM payment_logs WHERE user_id=? ORDER BY timestamp DESC LIMIT 1", (m.from_user.id,)).fetchone()
-    
+
     if last_dep and last_dep[0]:
         time_diff = now_ts - last_dep[0]
         if time_diff < 300: 
@@ -3482,7 +3562,7 @@ async def dep_submit(m: types.Message, state: FSMContext):
     try:
         conn.execute(
             "INSERT INTO payment_logs (req_id, user_id, username, amount, status, date, admin_name, timestamp, sender_num, method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (req_id, m.from_user.id, username_display, amt, 'pending', datetime.now().strftime("%Y-%m-%d"), "None", now_ts, sender_val, dep_method)
+            (req_id, m.from_user.id, username_display, amt, 'pending', bdt_date, "None", now_ts, sender_val, dep_method)
         )
         conn.commit()
     except Exception as e:
@@ -3495,7 +3575,15 @@ async def dep_submit(m: types.Message, state: FSMContext):
     kb.row(types.InlineKeyboardButton(text=f"✅ Add {amt}৳", callback_data=f"pay_ok_{req_id}_{amt}"),
            types.InlineKeyboardButton(text="❌ Reject", callback_data=f"pay_no_{req_id}"))
 
-    method_lbl = "💎 Binance USDT" if dep_method == "binance" else "📝 Manual (bKash/Nagad)"
+    if dep_method == "binance":
+        method_lbl = "💎 Binance USDT"
+    elif "bkash" in dep_method:
+        method_lbl = "💗 bKash (Manual)"
+    elif "nagad" in dep_method:
+        method_lbl = "🟧 Nagad (Manual)"
+    else:
+        method_lbl = "📝 Manual (bKash/Nagad)"
+
     admin_msg = (
         f"🔔 **NEW DEPOSIT REQUEST** 🔔\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
@@ -3520,10 +3608,10 @@ async def dep_submit(m: types.Message, state: FSMContext):
 @dp.callback_query(F.data.startswith("pay_"))
 async def admin_pay_action(c: types.CallbackQuery):
     await c.answer()
-    
+
     try: await c.message.edit_reply_markup(reply_markup=None)
     except: pass
-    
+
     parts = c.data.split("_")
     action = parts[1] 
     req_id = parts[2]
@@ -3549,15 +3637,23 @@ async def admin_pay_action(c: types.CallbackQuery):
         amount = int(parts[3])
         conn.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
         conn.execute("UPDATE payment_logs SET status='approved', amount=?, admin_name=? WHERE req_id=?", (amount, current_admin_name, req_id))
+        new_b = conn.execute("SELECT balance, username FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        try:
+            conn.execute(
+                "INSERT INTO manual_credits (user_id, username, delta, balance_after, reason, admin_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, (new_b[1] if new_b else ''), amount, (new_b[0] if new_b else 0), f"Approved dep {req_id}", current_admin_name, int(time.time() * 1000))
+            )
+        except Exception as _m_err:
+            print(f"[admin_pay_action] manual_credits error: {_m_err}")
         conn.commit()
-        
-        await bot.send_message(user_id, f"✅ **Received!** Balance Added: {amount}৳")
+
+        await bot.send_message(user_id, f"✅ **Received!** Balance Added: {amount}৳\n💳 Current Balance: {new_b[0] if new_b else '?'}৳")
         try: await c.message.edit_caption(caption=f"{c.message.caption}\n\n✅ **Approved by {current_admin_name}**")
         except: pass
     else:
         conn.execute("UPDATE payment_logs SET status='rejected', admin_name=? WHERE req_id=?", (current_admin_name, req_id))
         conn.commit()
-        
+
         await bot.send_message(user_id, "❌ **Rejected!** Invalid Transaction.")
         try: await c.message.edit_caption(caption=f"{c.message.caption}\n\n❌ **Rejected by {current_admin_name}**")
         except: pass
@@ -3771,9 +3867,9 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
             _nord_row = None
         if _nord_row:
             _stock_id, _vpn_info = _nord_row
-            _order_id = str(uuid.uuid4())[:8]
-            _now_ts = int(datetime.now().timestamp())
-            _cur_time = datetime.now(timezone(timedelta(hours=6))).strftime("%I:%M %p")
+            _now_ts = int(bdt_now().timestamp())
+            _cur_time = bdt_time_str()
+            _bdt_date = bdt_date_str()
             _uname = f"@{c.from_user.username}" if c.from_user.username else f"User {c.from_user.id}"
             # Dynamic package icon based on duration
             _pkg_lower = (str(pkg_name) + " " + str(pkg_id)).lower()
@@ -3805,13 +3901,13 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                 _scur.execute(
                     "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (c.from_user.id, _uname, f"VPN: {vpn_name}", 1, price,
-                     datetime.now().strftime("%Y-%m-%d"), _cur_time),
+                     _bdt_date, _cur_time),
                 )
                 _v_sale_id = _scur.lastrowid
                 conn.execute(
                     "INSERT INTO vpn_orders (order_id, user_id, vpn_name, duration, price, status, date, admin_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (_order_id, c.from_user.id, vpn_name, pkg_name, price,
-                     'delivered', datetime.now().strftime("%Y-%m-%d"), 'AUTO'),
+                     'delivered', _bdt_date, 'AUTO'),
                 )
                 try:
                     conn.execute(
@@ -3959,8 +4055,10 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
         order_id = str(uuid.uuid4())[:8]
         username_display = f"@{c.from_user.username}" if c.from_user.username else "No Username"
         real_name = c.from_user.first_name
-        current_time = datetime.now(timezone(timedelta(hours=6))).strftime("%I:%M %p")
-        now_ts = int(datetime.now().timestamp())
+        _now_bdt = bdt_now()
+        current_time = _now_bdt.strftime("%I:%M %p")
+        now_ts = int(_now_bdt.timestamp())
+        current_date = _now_bdt.strftime("%Y-%m-%d")
 
         conn.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (price, c.from_user.id))
         conn.commit()
@@ -3983,13 +4081,13 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                 """INSERT INTO vpn_orders
                    (order_id, user_id, vpn_name, duration, price, status, date, admin_name, api_order_id, api_service, api_status, api_response)
                    VALUES (?, ?, ?, ?, ?, 'delivered', ?, 'API-POOL-2/2', ?, ?, 'completed', ?)""",
-                (order_id, c.from_user.id, vpn_name, pkg_name, price, datetime.now().strftime("%Y-%m-%d"),
+                (order_id, c.from_user.id, vpn_name, pkg_name, price, current_date,
                  pool_api_oid or 'POOLED', s_code, str(account_data))
             )
             _scur = conn.cursor()
             _scur.execute(
                 "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (c.from_user.id, username_display, f"VPN: {vpn_name}", 1, price, datetime.now().strftime("%Y-%m-%d"), current_time)
+                (c.from_user.id, username_display, f"VPN: {vpn_name}", 1, price, current_date, current_time)
             )
             _v_sid = _scur.lastrowid
             try:
@@ -4077,13 +4175,13 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                     """INSERT INTO vpn_orders
                        (order_id, user_id, vpn_name, duration, price, status, date, admin_name, api_order_id, api_service, api_status, api_response)
                        VALUES (?, ?, ?, ?, ?, 'delivered', ?, 'API-POOL-1/2', ?, ?, 'completed', ?)""",
-                    (order_id, c.from_user.id, vpn_name, pkg_name, price, datetime.now().strftime("%Y-%m-%d"),
+                    (order_id, c.from_user.id, vpn_name, pkg_name, price, current_date,
                      api_order_id, s_code, str(account_data))
                 )
                 _scur = conn.cursor()
                 _scur.execute(
                     "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (c.from_user.id, username_display, f"VPN: {vpn_name}", 1, price, datetime.now().strftime("%Y-%m-%d"), current_time)
+                    (c.from_user.id, username_display, f"VPN: {vpn_name}", 1, price, current_date, current_time)
                 )
                 _v_sid = _scur.lastrowid
                 try:
@@ -4146,7 +4244,7 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                     """INSERT INTO vpn_orders
                        (order_id, user_id, vpn_name, duration, price, status, date, admin_name, api_order_id, api_service, api_status, api_response)
                        VALUES (?, ?, ?, ?, ?, 'api_pending', ?, 'API-PENDING', ?, ?, 'processing', ?)""",
-                    (order_id, c.from_user.id, vpn_name, pkg_name, price, datetime.now().strftime("%Y-%m-%d"),
+                    (order_id, c.from_user.id, vpn_name, pkg_name, price, current_date,
                      api_order_id, s_code, json.dumps(api_order_resp))
                 )
                 conn.commit()
@@ -4167,7 +4265,7 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                 """INSERT INTO vpn_orders
                    (order_id, user_id, vpn_name, duration, price, status, date, admin_name, api_service, api_status, api_response)
                    VALUES (?, ?, ?, ?, ?, 'pending', ?, 'None', ?, 'failed', ?)""",
-                (order_id, c.from_user.id, vpn_name, pkg_name, price, datetime.now().strftime("%Y-%m-%d"),
+                (order_id, c.from_user.id, vpn_name, pkg_name, price, current_date,
                  s_code, api_err_msg)
             )
             conn.commit()
@@ -4217,7 +4315,7 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
     
     try:
         conn.execute("INSERT INTO vpn_orders (order_id, user_id, vpn_name, duration, price, status, date, admin_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                     (order_id, c.from_user.id, vpn_name, pkg_name, price, 'pending', datetime.now().strftime("%Y-%m-%d"), "None"))
+                     (order_id, c.from_user.id, vpn_name, pkg_name, price, 'pending', bdt_date_str(), "None"))
         conn.commit()
     except Exception as e:
         await c.message.answer(f"❌ Error: {e}")
@@ -4293,8 +4391,9 @@ async def poll_and_deliver_api_vpn_order(order_id, api_order_id, user_id, vpn_na
             if not order_row or order_row[0] == "delivered":
                 conn.close()
                 return
-            now_ts = int(datetime.now().timestamp())
-            cur_time = datetime.now(timezone(timedelta(hours=6))).strftime("%I:%M %p")
+            now_ts = int(bdt_now().timestamp())
+            cur_time = bdt_time_str()
+            bdt_date = bdt_date_str()
 
             # Save into 2-user slot sharing pool
             v_id = re.sub(r'[^a-z0-9]', '', vpn_name.lower().replace('vpn', ''))[:20] or 'vpn'
@@ -4323,7 +4422,7 @@ async def poll_and_deliver_api_vpn_order(order_id, api_order_id, user_id, vpn_na
             )
             _scur = conn.execute(
                 "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (user_id, f"User {user_id}", f"VPN: {vpn_name}", 1, price, datetime.now().strftime("%Y-%m-%d"), cur_time)
+                (user_id, f"User {user_id}", f"VPN: {vpn_name}", 1, price, bdt_date, cur_time)
             )
             _v_sid = _scur.lastrowid
             try:
@@ -4401,8 +4500,9 @@ async def retry_vpn_api_delivery(c: types.CallbackQuery):
                 num = m_d.group(1)
                 unit = 'm' if 'm' in m_d.group(2) else 'd'
                 pkg_id_clean = f"{num}{unit}"
-            now_ts = int(time.time())
-            cur_time = datetime.now(timezone(timedelta(hours=6))).strftime("%I:%M %p")
+            now_ts = int(bdt_now().timestamp())
+            cur_time = bdt_time_str()
+            bdt_date = bdt_date_str()
             try:
                 cur = conn.execute(
                     "INSERT INTO vpn_stock_pool (vpn_id, pkg_id, service_code, data, delivered_count, api_order_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
@@ -4416,7 +4516,7 @@ async def retry_vpn_api_delivery(c: types.CallbackQuery):
             conn.execute("UPDATE vpn_orders SET status='delivered', admin_name='API-RETRY', api_order_id=?, api_service=?, api_status='completed', api_response=? WHERE order_id=?", (api_order_id, s_code, str(account_data), order_id))
             _scur = conn.execute(
                 "INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, 1, ?, ?, ?)",
-                (user_id, f"User {user_id}", f"VPN: {vpn_name}", price, datetime.now().strftime("%Y-%m-%d"), cur_time)
+                (user_id, f"User {user_id}", f"VPN: {vpn_name}", price, bdt_date, cur_time)
             )
             _v_sid = _scur.lastrowid
             try:
@@ -4583,9 +4683,9 @@ async def submit_vpn_delivery(m: types.Message, state: FSMContext):
     user_id, price, vpn_name, duration = order
     emoji = next((v for k, v in VPN_EMOJIS.items() if k.lower() in vpn_name.lower()), "⚛️")
     
-    current_time = datetime.now(timezone(timedelta(hours=6))).strftime("%I:%M %p")
+    current_time = bdt_time_str()
     conn.execute("INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                 (user_id, f"User {user_id}", f"VPN: {vpn_name}", 1, price, datetime.now().strftime("%Y-%m-%d"), current_time))
+                 (user_id, f"User {user_id}", f"VPN: {vpn_name}", 1, price, bdt_date_str(), current_time))
     conn.execute("UPDATE vpn_orders SET status='delivered', admin_name=? WHERE order_id=?", (admin_name, order_id))
     
     conn.commit()

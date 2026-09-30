@@ -43,14 +43,29 @@
   <form method="post" action="/users/<%= user.user_id %>/balance"
         class="bg-slate-900 border border-slate-800 p-5 rounded-xl">
     <div class="text-sm font-semibold mb-3">💰 Adjust Balance</div>
-    <div class="grid grid-cols-2 gap-3 mb-3">
-      <input type="number" name="delta" step="1" placeholder="Amount (e.g. +50 or -50)" required
-             class="bg-slate-800 border border-slate-700 text-white rounded px-3 py-2 text-sm"/>
-      <input type="text" name="reason" placeholder="Reason (audit log এ যাবে)" required
-             class="bg-slate-800 border border-slate-700 text-white rounded px-3 py-2 text-sm"/>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+      <div>
+        <label class="block text-[11px] text-slate-400 mb-1">পরিমাণ (Amount):</label>
+        <input type="number" name="delta" step="1" placeholder="+50 বা -50" required
+               class="w-full bg-slate-800 border border-slate-700 text-white rounded px-3 py-2 text-sm"/>
+      </div>
+      <div>
+        <label class="block text-[11px] text-slate-400 mb-1">পদ্ধতি (Method):</label>
+        <select name="method" class="w-full bg-slate-800 border border-slate-700 text-white rounded px-3 py-2 text-sm">
+          <option value="manual">Manual / Other</option>
+          <option value="manual_bkash">bKash (Manual)</option>
+          <option value="manual_nagad">Nagad (Manual)</option>
+          <option value="manual_binance">Binance (Manual)</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-[11px] text-slate-400 mb-1">কারণ / TrxID (Reason):</label>
+        <input type="text" name="reason" placeholder="কারণ / TrxID" required
+               class="w-full bg-slate-800 border border-slate-700 text-white rounded px-3 py-2 text-sm"/>
+      </div>
     </div>
     <button class="w-full bg-cyan-600 hover:bg-cyan-500 py-2 rounded text-sm font-semibold">Apply</button>
-    <p class="text-xs text-slate-500 mt-2">Positive = add, negative = deduct</p>
+    <p class="text-xs text-slate-500 mt-2">Positive = add (ডিপোজিট হিস্টোরিতে যোগ হবে), negative = deduct</p>
   </form>
 
   <% if (user.is_banned) { %>

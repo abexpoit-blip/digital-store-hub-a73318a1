@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { db, logAudit } = require('../db');
 const router = express.Router();
+const BOT_TOKEN = process.env.BOT_TOKEN || '8364765061:AAEoT6w2l74JDowWUns2EC5OT8wEcIji9Y4';
 
 function fmtDate(ts) {
   if (!ts) return '-';
@@ -110,10 +111,11 @@ router.get('/:id', (req, res) => {
   });
 });
 
-router.post('/:id/balance', (req, res) => {
+router.post('/:id/balance', async (req, res) => {
   const userId = parseInt(req.params.id, 10);
   const delta = parseInt(req.body.delta, 10);
   const reason = (req.body.reason || '').replace(/"/g, "'").trim();
+  const method = (req.body.method || 'manual').trim();
   if (!Number.isFinite(userId)) return res.redirect('/users?msg=Invalid+user');
   if (!Number.isFinite(delta) || delta === 0) return res.redirect(`/users/${userId}?msg=Invalid+amount`);
   // Atomic balance update — no read-then-write race
@@ -125,13 +127,54 @@ router.post('/:id/balance', (req, res) => {
   }
   const row = db.prepare('SELECT balance, username FROM users WHERE user_id = ?').get(userId);
   try {
-    db.prepare(
+    const mcRes = db.prepare(
       `INSERT INTO manual_credits (user_id, username, delta, balance_after, reason, admin_name, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(userId, (row && row.username) || '', delta, row ? row.balance : null, reason, 'admin', Date.now());
-  } catch (e) { console.warn('[users] manual_credits log failed:', e.message); }
+
+    if (delta > 0) {
+      const now = new Date();
+      const bst = new Date(now.getTime() + (6 * 3600 * 1000) + (now.getTimezoneOffset() * 60 * 1000));
+      const bstDate = bst.toISOString().slice(0, 10);
+      const nowTs = Math.floor(now.getTime() / 1000);
+      const reqId = 'manual_credit_' + (mcRes && mcRes.lastInsertRowid ? mcRes.lastInsertRowid : Date.now());
+      const adminLabel = `Admin (${reason || 'Manual'})`;
+
+      db.prepare(`
+        INSERT INTO payment_logs (req_id, user_id, username, amount, status, date, admin_name, timestamp, sender_num, method)
+        VALUES (?, ?, ?, ?, 'approved', ?, ?, ?, ?, ?)
+      `).run(
+        reqId,
+        userId,
+        (row && row.username) || '',
+        delta,
+        bstDate,
+        adminLabel,
+        nowTs,
+        'Admin Manual',
+        method
+      );
+    }
+  } catch (e) { console.warn('[users] manual_credits/payment_logs log failed:', e.message); }
+
   logAudit('admin', 'balance_adjust',
-    `user=${userId} delta=${delta} new=${row ? row.balance : '?'} reason="${reason}"`);
+    `user=${userId} delta=${delta} new=${row ? row.balance : '?'} reason="${reason}" method="${method}"`);
+
+  // Telegram notification to user
+  try {
+    let tgMsg = '';
+    if (delta > 0) {
+      tgMsg = `🎁 **ব্যালেন্স যুক্ত করা হয়েছে!**\n\n💰 যোগ করা পরিমাণ: **+${delta}৳**\n💳 বর্তমান ব্যালেন্স: **${row ? row.balance : '?'}৳**\n📝 বিবরণ: ${reason || 'অ্যাডমিন ক্রেডিট'}\n\nধন্যবাদ!`;
+    } else {
+      tgMsg = `⚠️ **ব্যালেন্স কর্তন করা হয়েছে!**\n\n🔻 কর্তন করা পরিমাণ: **${delta}৳**\n💳 বর্তমান ব্যালেন্স: **${row ? row.balance : '?'}৳**\n📝 কারণ: ${reason || 'অ্যাডমিন কর্তন'}`;
+    }
+    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: userId, text: tgMsg, parse_mode: 'Markdown' })
+    }).catch(err => console.warn('[users] tg notify error:', err.message));
+  } catch (_) {}
+
   res.redirect(`/users/${userId}?msg=` + encodeURIComponent(`Balance updated: ${delta > 0 ? '+' : ''}${delta} Tk`));
 });
 

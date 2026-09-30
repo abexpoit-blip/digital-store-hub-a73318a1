@@ -2,6 +2,31 @@ const express = require('express');
 const { db } = require('../db');
 const router = express.Router();
 
+// Auto-backfill positive manual_credits into payment_logs if missing
+try {
+  db.prepare(`
+    INSERT INTO payment_logs (req_id, user_id, username, amount, status, date, admin_name, timestamp, sender_num, method)
+    SELECT
+      'manual_credit_' || mc.id,
+      mc.user_id,
+      mc.username,
+      mc.delta,
+      'approved',
+      date(datetime(mc.created_at/1000, 'unixepoch', '+6 hours')),
+      'Admin (' || COALESCE(mc.reason, 'Manual') || ')',
+      CAST(mc.created_at/1000 AS INTEGER),
+      'Admin Manual',
+      'manual'
+    FROM manual_credits mc
+    WHERE mc.delta > 0
+      AND NOT EXISTS (
+        SELECT 1 FROM payment_logs pl WHERE pl.req_id = 'manual_credit_' || mc.id
+      )
+  `).run();
+} catch (e) {
+  console.warn('[deposits] manual_credits backfill skip/failed:', e.message);
+}
+
 function classifyDeposit(row) {
   const amt = Number(row.amount || 0);
   const method = String(row.method || '').toLowerCase();
