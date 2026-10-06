@@ -578,6 +578,8 @@
               <option value="fb1000_used">🎬 1000xxx Used (স্টক: <%= (stockCounts && stockCounts.fb1000_used) || 0 %>)</option>
               <option value="fb1000">💎 1000xxx Fresh (স্টক: <%= (stockCounts && stockCounts.fb1000) || 0 %>)</option>
               <option value="fb61">⚡ 61xxx Clon (স্টক: <%= (stockCounts && stockCounts.fb61) || 0 %>)</option>
+              <option value="tempid_2fa">🔐 Temp ID 2FA (স্টক: <%= (stockCounts && stockCounts.tempid_2fa) || 0 %>)</option>
+              <option value="tempid">🆔 Temp ID (স্টক: <%= (stockCounts && stockCounts.tempid) || 0 %>)</option>
             </select>
           </div>
           <div>
@@ -773,6 +775,10 @@
       var catStr = (category || '').toLowerCase();
       if (catStr.includes('used')) {
         catSelect.value = 'fb1000_used';
+      } else if (catStr.includes('2fa')) {
+        catSelect.value = 'tempid_2fa';
+      } else if (catStr.includes('temp')) {
+        catSelect.value = 'tempid';
       } else if (catStr.includes('61')) {
         catSelect.value = 'fb61';
       } else {

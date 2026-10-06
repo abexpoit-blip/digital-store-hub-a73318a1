@@ -6,13 +6,119 @@ const { db, logAudit, cleanupOldUidHistory } = require('../db');
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-const ALLOWED_CATEGORIES = ['fb61', 'fb1000', 'fb1000_used', 'tempid'];
+const ALLOWED_CATEGORIES = ['fb61', 'fb1000', 'fb1000_used', 'tempid', 'tempid_2fa'];
 const SEPARATOR = '###';
 const HISTORY_DAYS = 3;
 
+function isCookie(s) {
+  if (!s) return false;
+  const str = String(s).trim().toLowerCase();
+  if (['c_user=', 'xs=', 'datr=', 'sb=', 'fr=', ';', '[{"', '%3a'].some(k => str.includes(k))) return true;
+  if (str.includes('=') && str.length > 25) return true;
+  return false;
+}
+
+function is2FA(s) {
+  if (!s || isCookie(s)) return false;
+  const clean = String(s).replace(/\s+/g, '');
+  return /^[A-Za-z2-7]{16,64}$/.test(clean);
+}
+
+function cleanUid(val) {
+  if (val === null || val === undefined) return '';
+  let str = String(val).trim();
+  if (/^\d+(\.\d+)?[eE]\+\d+$/i.test(str)) {
+    try {
+      str = BigInt(Math.round(Number(str))).toString();
+    } catch (_) {
+      try { str = Number(str).toFixed(0); } catch (__) {}
+    }
+  }
+  return str;
+}
+
+function parseTempid2faItem(raw) {
+  if (!raw) return '';
+  const line = String(raw).trim();
+  if (!line) return '';
+
+  if (line.includes('|')) {
+    const parts = line.split('|').map(s => s.trim()).filter(Boolean);
+    if (parts.length >= 3) {
+      const uid = cleanUid(parts[0]);
+      const pw = parts[1];
+      const rest = parts.slice(2);
+      let twoFa = '';
+      let cookie = '';
+      for (const p of rest) {
+        if (isCookie(p)) cookie = p;
+        else if (is2FA(p)) twoFa = p;
+        else if (!twoFa) twoFa = p;
+        else cookie = p;
+      }
+      return `${uid} | ${pw} | ${twoFa}${cookie ? ' | ' + cookie : ''}`;
+    }
+  }
+
+  if (line.includes('\t')) {
+    const parts = line.split('\t').map(s => s.trim()).filter(Boolean);
+    if (parts.length >= 3) {
+      const uid = cleanUid(parts[0]);
+      const pw = parts[1];
+      const rest = parts.slice(2);
+      let twoFa = '';
+      let cookie = '';
+      for (const p of rest) {
+        if (isCookie(p)) cookie = p;
+        else if (is2FA(p)) twoFa = p;
+        else if (!twoFa) twoFa = p;
+        else cookie = p;
+      }
+      return `${uid} | ${pw} | ${twoFa}${cookie ? ' | ' + cookie : ''}`;
+    }
+  }
+
+  const match8 = line.match(/\b([A-Za-z2-7]{4}(?:\s+[A-Za-z2-7]{4}){7})\b/);
+  if (match8) {
+    const twoFa = match8[1].trim();
+    const before = line.slice(0, match8.index).trim();
+    const after = line.slice(match8.index + match8[0].length).trim();
+    const beforeTokens = before.split(/\s+/).filter(Boolean);
+    const uid = cleanUid(beforeTokens[0] || '');
+    const pw = beforeTokens[1] || '';
+    let cookie = after;
+    if (!cookie && beforeTokens.length > 2) {
+      cookie = beforeTokens.slice(2).join(' ');
+    }
+    return `${uid} | ${pw} | ${twoFa}${cookie ? ' | ' + cookie : ''}`;
+  }
+
+  const tokens = line.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 3) {
+    const uid = cleanUid(tokens[0]);
+    const pw = tokens[1];
+    const rest = tokens.slice(2);
+    if (is2FA(rest[0])) {
+      const twoFa = rest[0];
+      const cookie = rest.slice(1).join(' ');
+      return `${uid} | ${pw} | ${twoFa}${cookie ? ' | ' + cookie : ''}`;
+    }
+    if (is2FA(rest[rest.length - 1])) {
+      const twoFa = rest[rest.length - 1];
+      const cookie = rest.slice(0, -1).join(' ');
+      return `${uid} | ${pw} | ${twoFa}${cookie ? ' | ' + cookie : ''}`;
+    }
+    const twoFa = rest.join(' ');
+    return `${uid} | ${pw} | ${twoFa}`;
+  }
+
+  return line;
+}
+
 function extractUid(line) {
   if (!line) return '';
-  return String(line).trim().split(/\s+/)[0] || '';
+  const first = String(line).trim().split(/[|\s\t]+/)[0] || '';
+  return cleanUid(first);
 }
 
 function findHistoryMatches(uids) {
@@ -76,30 +182,48 @@ function renderPage(extra = {}) {
 // Supports:
 //   1) Multiple items on separate lines
 //   2) Multiple items separated by ###
-//   3) Each item: "UID PASS COOKIES" (space-separated, COOKIES can contain spaces — only first 2 spaces split)
-function parseStockItems(rawText) {
+//   3) Each item: "UID PASS COOKIES" or "UID | PASS | 2FA [| COOKIES]"
+function parseStockItems(rawText, category = '') {
   if (!rawText) return [];
-  // Split by newlines AND ### separator
   const chunks = rawText
     .split(/\r?\n|###/)
     .map(s => s.trim())
     .filter(Boolean);
+  if (category === 'tempid_2fa') {
+    return chunks.map(c => parseTempid2faItem(c)).filter(Boolean);
+  }
   return chunks;
 }
 
 // Parse Excel — supports either:
-//   A) Single column = full "UID PASS COOKIES" string per row
-//   B) 3 columns = UID | PASS | COOKIES (auto-joined with space, exactly like /add command)
-function parseExcelRow(row) {
-  // row is array of cells
+//   A) Single column = full "UID PASS COOKIES" or "UID | PASS | 2FA" string per row
+//   B) 3 columns = UID | PASS | 2FA (or COOKIES)
+//   C) 4 columns = UID | PASS | 2FA | COOKIES (or UID | PASS | COOKIES | 2FA)
+function parseExcelRow(row, category = '') {
   const nonEmpty = row.map(c => (c ?? '').toString().trim()).filter(Boolean);
   if (!nonEmpty.length) return null;
-  if (nonEmpty.length === 1) return nonEmpty[0]; // already-formatted single cell
+  if (category === 'tempid_2fa') {
+    if (nonEmpty.length === 1) return parseTempid2faItem(nonEmpty[0]);
+    if (nonEmpty.length >= 3) {
+      const uid = cleanUid(nonEmpty[0]);
+      const pw = nonEmpty[1];
+      const rest = nonEmpty.slice(2);
+      let twoFa = '';
+      let cookie = '';
+      for (const p of rest) {
+        if (isCookie(p)) cookie = p;
+        else if (is2FA(p)) twoFa = p;
+        else if (!twoFa) twoFa = p;
+        else cookie = p;
+      }
+      return `${uid} | ${pw} | ${twoFa}${cookie ? ' | ' + cookie : ''}`;
+    }
+    return null;
+  }
+  if (nonEmpty.length === 1) return nonEmpty[0];
   if (nonEmpty.length >= 3) {
-    // UID PASS COOKIES — join all with space (cookies may have multiple parts)
     return nonEmpty.join(' ');
   }
-  // 2 cells — likely incomplete, skip
   return null;
 }
 
@@ -135,7 +259,7 @@ router.post('/upload', upload.single('file'), (req, res) => {
 
   const items = [];
   for (let i = startIdx; i < rows.length; i++) {
-    const dataStr = parseExcelRow(rows[i]);
+    const dataStr = parseExcelRow(rows[i], targetCategory);
     if (dataStr) items.push({ category: targetCategory, data: dataStr, seller_name: sellerName || null });
   }
 
@@ -228,7 +352,7 @@ router.post('/manual', (req, res) => {
     ));
   }
 
-  const items = parseStockItems(req.body.data || '');
+  const items = parseStockItems(req.body.data || '', category);
   if (!items.length) {
     return res.redirect('/stock?msg=' + encodeURIComponent('❌ Data খালি'));
   }

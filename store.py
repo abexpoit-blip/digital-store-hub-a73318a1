@@ -118,30 +118,63 @@ def bdt_time_str():
     return bdt_now().strftime("%I:%M %p")
 
 # --- REPLACEMENT DYNAMIC TIERS & TIME HELPERS ---
-def get_replace_window_hours(qty: int, category: str = "") -> int:
+def get_replace_window_seconds(qty: int, category: str = "") -> int:
     """
-    Tier-based replace windows (Strict limits, 24h removed, max 12h):
-    1000xxx PC clon{Content Used} : strictly 2 hours
-    1-10 pcs  : 2 hours
-    11-30 pcs : 6 hours
-    31-50 pcs : 8 hours
-    51+ pcs   : 12 hours (maximum limit)
+    Tier-based replace windows in seconds:
+    tempid_2fa:
+      1 pc    : 10 minutes (600s)
+      2-5 pcs : 20 minutes (1200s)
+      6-10 pcs: 30 minutes (1800s)
+      11+ pcs : 2 hours (7200s)
+    fb1000_used: 2 hours (7200s)
+    Others:
+      1-10 pcs  : 2 hours (7200s)
+      11-30 pcs : 6 hours (21600s)
+      31-50 pcs : 8 hours (28800s)
+      51+ pcs   : 12 hours (43200s)
     """
     cat_str = str(category).lower().strip()
-    if "used" in cat_str or cat_str == "fb1000_used":
-        return 2
     try:
         q = int(qty)
     except Exception:
         q = 1
+
+    if cat_str == "tempid_2fa":
+        if q == 1:
+            return 10 * 60
+        elif q <= 5:
+            return 20 * 60
+        elif q <= 10:
+            return 30 * 60
+        else:
+            return 2 * 3600
+
+    if "used" in cat_str or cat_str == "fb1000_used":
+        return 2 * 3600
+
     if q <= 10:
-        return 2
+        return 2 * 3600
     elif q <= 30:
-        return 6
+        return 6 * 3600
     elif q <= 50:
-        return 8
+        return 8 * 3600
     else:
-        return 12
+        return 12 * 3600
+
+def get_replace_window_hours(qty: int, category: str = "") -> int:
+    sec = get_replace_window_seconds(qty, category)
+    return max(1, sec // 3600)
+
+def get_replace_window_text(qty: int, category: str = "") -> str:
+    sec = get_replace_window_seconds(qty, category)
+    h = sec // 3600
+    m = (sec % 3600) // 60
+    if h > 0 and m > 0:
+        return f"{h} ঘণ্টা {m} মিনিট"
+    elif h > 0:
+        return f"{h} ঘণ্টা ({h} Hours)"
+    else:
+        return f"{m} মিনিট ({m} Minutes)"
 
 def get_sale_epoch(sale_id: int, date_str: str, time_str: str) -> int:
     """Return unix timestamp (seconds) of sale delivery or creation."""
@@ -431,6 +464,7 @@ def init_db():
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_bmig', '50')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_bmfb', '60')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_tempid', '15')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_tempid_2fa', '18')")
     # VPN Provider API Defaults
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_url', 'https://vpn.sajeebtechonline.top/api.php')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_key', 'TTECH_0dd4e0099d624b574026fc182a22466016104bb5dd4bf601')")
@@ -715,6 +749,123 @@ def _pending_gc():
 
 # === dfmt helpers (moved up for priority) ===
 
+def is_cookie(s):
+    s = str(s).strip()
+    if not s:
+        return False
+    if any(k in s.lower() for k in ('c_user=', 'xs=', 'datr=', 'sb=', 'fr=', ';', '[{"', '%3a')):
+        return True
+    if '=' in s and len(s) > 25:
+        return True
+    return False
+
+def is_2fa(s):
+    s = str(s).strip()
+    if not s or is_cookie(s):
+        return False
+    clean = re.sub(r'\s+', '', s)
+    if re.fullmatch(r'^[A-Za-z2-7]{16,64}$', clean):
+        return True
+    return False
+
+def parse_tempid_2fa_line(line):
+    """
+    Parses a Temp ID 2FA stock line or upload item.
+    Returns: (uid, password, two_fa, cookies)
+    Handles:
+      - UID | PASSWORD | 2FA
+      - UID | PASSWORD | 2FA | COOKIES
+      - UID | PASSWORD | COOKIES | 2FA
+      - Space-separated with grouped 2FA (e.g. 8 blocks of 4 chars)
+      - Tab-separated
+      - Scientific notation UID from Excel (e.g. 6.15952E+13)
+    """
+    line = str(line).strip()
+    if not line:
+        return '', '', '', ''
+
+    def clean_uid_val(u):
+        u = str(u).strip()
+        try:
+            if re.match(r'^\d+(\.\d+)?[eE]\+\d+$', u):
+                return str(int(float(u)))
+        except Exception:
+            pass
+        return u
+
+    # 1. Pipe delimiter
+    if '|' in line:
+        parts = [p.strip() for p in line.split('|') if p.strip()]
+        if len(parts) >= 3:
+            uid = clean_uid_val(parts[0])
+            pw = parts[1]
+            rest = parts[2:]
+            two_fa = ''
+            cookie = ''
+            for p in rest:
+                if is_cookie(p):
+                    cookie = p
+                elif is_2fa(p):
+                    two_fa = p
+                elif not two_fa:
+                    two_fa = p
+                else:
+                    cookie = p
+            return uid, pw, two_fa, cookie
+
+    # 2. Tab delimiter
+    if '\t' in line:
+        parts = [p.strip() for p in line.split('\t') if p.strip()]
+        if len(parts) >= 3:
+            uid = clean_uid_val(parts[0])
+            pw = parts[1]
+            rest = parts[2:]
+            two_fa = ''
+            cookie = ''
+            for p in rest:
+                if is_cookie(p):
+                    cookie = p
+                elif is_2fa(p):
+                    two_fa = p
+                elif not two_fa:
+                    two_fa = p
+                else:
+                    cookie = p
+            return uid, pw, two_fa, cookie
+
+    # 3. Space-delimited with 8-group 2FA (e.g. QUVI AQV3 JCT4 UCF5 G42O PHSH BAVF FIQT)
+    two_fa_match = re.search(r'\b([A-Za-z2-7]{4}(?:\s+[A-Za-z2-7]{4}){7})\b', line)
+    if two_fa_match:
+        two_fa = two_fa_match.group(1).strip()
+        before = line[:two_fa_match.start()].strip()
+        after = line[two_fa_match.end():].strip()
+        before_tokens = before.split()
+        uid = clean_uid_val(before_tokens[0]) if len(before_tokens) > 0 else ''
+        pw = before_tokens[1] if len(before_tokens) > 1 else ''
+        cookie = after
+        if not cookie and len(before_tokens) > 2:
+            cookie = ' '.join(before_tokens[2:])
+        return uid, pw, two_fa, cookie
+
+    # 4. Standard space tokens
+    tokens = line.split()
+    if len(tokens) >= 3:
+        uid = clean_uid_val(tokens[0])
+        pw = tokens[1]
+        rest = tokens[2:]
+        if is_2fa(rest[0]):
+            two_fa = rest[0]
+            cookie = ' '.join(rest[1:]) if len(rest) > 1 else ''
+            return uid, pw, two_fa, cookie
+        if is_2fa(rest[-1]):
+            two_fa = rest[-1]
+            cookie = ' '.join(rest[:-1])
+            return uid, pw, two_fa, cookie
+        two_fa = ' '.join(rest)
+        return uid, pw, two_fa, ''
+
+    return line, '', '', ''
+
 def _parse_delivery_line(line):
     """Parse: 'UID PASSWORD COOKIES...' → (uid, password, cookies).
     Uses maxsplit=2 so cookies keep their spaces."""
@@ -734,25 +885,32 @@ def _parse_delivery_line(line):
 
 def _fmt_txt_sync(items, lbl, qty):
     lines = [f"=== {lbl} × {qty} ==="]
+    is_2fa_cat = "2fa" in str(lbl).lower()
     for idx, item in enumerate(items or [], 1):
         if isinstance(item, (tuple, list)):
             raw = item[-1] if item else ""
         else:
             raw = str(item or "")
         text = str(raw or "").strip()
-        parts = text.split(None, 2)
-        uid = parts[0] if len(parts) >= 1 else ""
-        pw  = parts[1] if len(parts) >= 2 else ""
-        ck  = parts[2] if len(parts) >= 3 else ""
-        lines.append(f"\n--- #{idx} ---\nUID: {uid}\nPASS: {pw}\nCOOKIES: {ck}")
+        if is_2fa_cat:
+            uid, pw, two_fa, ck = parse_tempid_2fa_line(text)
+            blk = f"\n--- #{idx} ---\nUID: {uid}\nPASS: {pw}\n2FA: {two_fa}"
+            if ck:
+                blk += f"\nCOOKIES: {ck}"
+            lines.append(blk)
+        else:
+            parts = text.split(None, 2)
+            uid = parts[0] if len(parts) >= 1 else ""
+            pw  = parts[1] if len(parts) >= 2 else ""
+            ck  = parts[2] if len(parts) >= 3 else ""
+            lines.append(f"\n--- #{idx} ---\nUID: {uid}\nPASS: {pw}\nCOOKIES: {ck}")
     return ("\n".join(lines)).encode("utf-8")
 
 
 
 # === DSH XLSX DELIVERY HELPER START ===
 def _fmt_xlsx_sync(items, lbl, qty):
-    """Excel delivery. Accepts list of raw strings OR (sid, raw) tuples.
-    Format each line as: UID PASSWORD COOKIES (cookies keep spaces)."""
+    """Excel delivery. Accepts list of raw strings OR (sid, raw) tuples."""
     import io
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
@@ -760,7 +918,12 @@ def _fmt_xlsx_sync(items, lbl, qty):
     wb = Workbook()
     ws = wb.active
     ws.title = (str(lbl)[:31] or "Delivery")
-    ws.append(["No", "UID", "PASSWORD", "COOKIES"])
+
+    is_2fa_cat = "2fa" in str(lbl).lower()
+    if is_2fa_cat:
+        ws.append(["No", "UID", "PASSWORD", "2FA", "COOKIES"])
+    else:
+        ws.append(["No", "UID", "PASSWORD", "COOKIES"])
 
     hdr_fill = PatternFill("solid", start_color="1F4E78")
     hdr_font = Font(name="Arial", bold=True, color="FFFFFF")
@@ -773,16 +936,24 @@ def _fmt_xlsx_sync(items, lbl, qty):
         if isinstance(raw, (tuple, list)):
             raw = raw[-1] if raw else ""
         text = str(raw or "").strip()
-        parts = text.split(None, 2)  # max 2 splits → cookies keep spaces
-        uid = parts[0] if len(parts) >= 1 else ""
-        pw  = parts[1] if len(parts) >= 2 else ""
-        ck  = parts[2] if len(parts) >= 3 else ""
-        ws.append([idx, uid, pw, ck])
+        if is_2fa_cat:
+            uid, pw, two_fa, ck = parse_tempid_2fa_line(text)
+            ws.append([idx, uid, pw, two_fa, ck])
+        else:
+            parts = text.split(None, 2)  # max 2 splits → cookies keep spaces
+            uid = parts[0] if len(parts) >= 1 else ""
+            pw  = parts[1] if len(parts) >= 2 else ""
+            ck  = parts[2] if len(parts) >= 3 else ""
+            ws.append([idx, uid, pw, ck])
 
     ws.column_dimensions["A"].width = 6
     ws.column_dimensions["B"].width = 22
     ws.column_dimensions["C"].width = 18
-    ws.column_dimensions["D"].width = 90
+    if is_2fa_cat:
+        ws.column_dimensions["D"].width = 42
+        ws.column_dimensions["E"].width = 90
+    else:
+        ws.column_dimensions["D"].width = 90
     buf = io.BytesIO(); wb.save(buf); return buf.getvalue()
 
 
@@ -941,6 +1112,7 @@ class _DfmtDeliveryMiddleware(_DfmtBaseMiddleware):
                 _cat = _rows[0][2] or "item"
                 _label = {
                     "fb61": "FB 61", "fb1000": "FB 1000", "tempid": "Temp ID",
+                    "tempid_2fa": "Temp ID 2FA",
                     "ig": "Instagram", "fb": "Facebook", "bmig": "BM IG", "bmfb": "BM FB",
                 }.get(_cat, _cat.upper())
                 _meta = {
@@ -1075,8 +1247,8 @@ async def _delivery_format_cb(c: types.CallbackQuery):
                 return await c.answer("⚠️ Data নেই। Admin কে জানান।", show_alert=True)
             _cat = _rows[0][2] or "ITEM"
             _owner = _rows[0][3]
-            _lbl = {"fb61":"FB 61","fb1000":"FB 1000","tempid":"Temp ID",
-                    "ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}                    .get(_cat, _cat.upper())
+            _lbl = {"fb61":"FB 61","fb1000":"FB 1000","tempid":"Temp ID","tempid_2fa":"Temp ID 2FA",
+                    "ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(_cat, _cat.upper())
             meta = {"user_id": _owner, "cat": _cat, "lbl": _lbl,
                     "qty": len(_rows),
                     "items": [(r[0], r[1]) for r in _rows],
@@ -1223,15 +1395,15 @@ async def execute_send_notice(c: types.CallbackQuery, state: FSMContext):
 async def admin_set_price(message: types.Message, command: CommandObject, state: FSMContext):
     await state.clear()
     if not is_admin(message.from_user.id): return
-    if not command.args: return await message.answer("❌ Format: `/setprice ig 50` or `/setprice tempid 15`")
+    if not command.args: return await message.answer("❌ Format: `/setprice ig 50` or `/setprice tempid_2fa 18`")
     try:
         parts = command.args.split()
         input_cat, price = parts[0].lower(), int(parts[1])
         
         if input_cat == 'ig': actual_cat = 'bmig'
         elif input_cat == 'fb': actual_cat = 'bmfb'
-        elif input_cat in ['fb61', 'fb1000', 'bmig', 'bmfb', 'tempid']: actual_cat = input_cat
-        else: return await message.answer("❌ Use: ig, fb, fb61, fb1000, tempid")
+        elif input_cat in ['fb61', 'fb1000', 'fb1000_used', 'bmig', 'bmfb', 'tempid', 'tempid_2fa']: actual_cat = input_cat
+        else: return await message.answer("❌ Use: ig, fb, fb61, fb1000, fb1000_used, tempid, tempid_2fa")
         
         set_price_db(actual_cat, price)
         await message.answer(f"✅ Updated: {actual_cat} -> {price}৳")
@@ -1514,10 +1686,16 @@ async def admin_add_stock(message: types.Message, command: CommandObject, state:
             
             tokens = b.split()
             if len(tokens) >= 2:
-                if category == 'tempid':
+                if category == 'tempid_2fa':
+                     u, p, tf, ck = parse_tempid_2fa_line(b)
+                     uid_target = u or tokens[0]
+                     formatted = f"{u} | {p} | {tf}" + (f" | {ck}" if ck else "")
+                elif category == 'tempid':
+                     uid_target = tokens[0]
                      ck = " ".join(tokens[2:]) if len(tokens) > 2 else "No Cookie"
                      formatted = f"🆔 **Temp ID:** `{tokens[0]}`\n🔑 **PASS:** `{tokens[1]}`\n🍪 **COOKIE:** `{ck}`"
                 else:
+                     uid_target = tokens[0]
                      formatted = f"🆔 **FB ID:** `{tokens[0]}`\n🔑 **PASS:** `{tokens[1]}`\n🍪 **COOKIE:** `{' '.join(tokens[2:])}`"
                 
                 cursor.execute("INSERT INTO stock (category, data, seller_name) VALUES (?, ?, ?)", (category, formatted, seller_name))
@@ -1529,7 +1707,7 @@ async def admin_add_stock(message: types.Message, command: CommandObject, state:
                             seller_name = COALESCE(excluded.seller_name, uid_history.seller_name),
                             last_seen_at = excluded.last_seen_at,
                             upload_count = uid_history.upload_count + 1
-                    """, (tokens[0], category, seller_name, now_ts, now_ts))
+                    """, (uid_target, category, seller_name, now_ts, now_ts))
                 except Exception:
                     pass
                 count += 1
@@ -2905,16 +3083,19 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
         f_used = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb1000_used'").fetchone()[0]
         f6 = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb61'").fetchone()[0]
         t_id = conn.execute("SELECT COUNT(*) FROM stock WHERE category='tempid'").fetchone()[0]
+        t_2fa = conn.execute("SELECT COUNT(*) FROM stock WHERE category='tempid_2fa'").fetchone()[0]
         p1 = get_price('fb1000')
         p_used = get_price('fb1000_used')
         p6 = get_price('fb61')
         pt = get_price('tempid')
+        pt_2fa = get_price('tempid_2fa')
         conn.close()
         kb = InlineKeyboardBuilder()
         kb.row(types.InlineKeyboardButton(text=f"🆔 FB 1000 Fresh ({f1}) ➜ {p1}৳", callback_data="buy_fb1000", style="success"))
         kb.row(types.InlineKeyboardButton(text=f"🎬 1000xxx PC clon{{Content Used}} ({f_used}) ➜ {p_used}৳", callback_data="used_terms", style="primary"))
         kb.row(types.InlineKeyboardButton(text=f"🆔 FB 61 ({f6}) ➜ {p6}৳", callback_data="buy_fb61", style="primary"))
         kb.row(types.InlineKeyboardButton(text=f"🆔 Temp ID ({t_id}) ➜ {pt}৳", callback_data="buy_tempid", style="primary"))
+        kb.row(types.InlineKeyboardButton(text=f"🔐 Temp ID 2FA ({t_2fa}) ➜ {pt_2fa}৳", callback_data="buy_tempid_2fa", style="primary"))
         kb.row(types.InlineKeyboardButton(text="🔙 ফিরে যান", callback_data="back_home"))
         await m.answer("📥 **আইডি ক্যাটাগরি মেনু**", reply_markup=kb.as_markup())
 
@@ -3010,7 +3191,7 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
         kb = InlineKeyboardBuilder()
         for sale in user_sales:
             s_id, s_cat, s_qty, s_tot, s_date, s_time = sale
-            lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx Used","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(s_cat, s_cat.upper())
+            lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx Used","tempid":"Temp ID","tempid_2fa":"Temp ID 2FA","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(s_cat, s_cat.upper())
             btn_text = f"📦 #{s_id} | {lbl} ({s_qty} pcs)"
             kb.row(types.InlineKeyboardButton(text=btn_text, callback_data=f"rep_ord_{s_id}", style="primary"))
         kb.row(types.InlineKeyboardButton(text="📜 শর্তাবলী ও নিয়ম (Terms)", callback_data="terms_policy", style="primary"))
@@ -3046,11 +3227,13 @@ async def show_cat(c: types.CallbackQuery):
     f_used = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb1000_used'").fetchone()[0]
     f6 = conn.execute("SELECT COUNT(*) FROM stock WHERE category='fb61'").fetchone()[0]
     t_id = conn.execute("SELECT COUNT(*) FROM stock WHERE category='tempid'").fetchone()[0]
+    t_2fa = conn.execute("SELECT COUNT(*) FROM stock WHERE category='tempid_2fa'").fetchone()[0]
     
     p1 = get_price('fb1000')
     p_used = get_price('fb1000_used')
     p6 = get_price('fb61')
     pt = get_price('tempid')
+    pt_2fa = get_price('tempid_2fa')
     conn.close()
     
     kb = InlineKeyboardBuilder()
@@ -3058,6 +3241,7 @@ async def show_cat(c: types.CallbackQuery):
     kb.row(types.InlineKeyboardButton(text=f"🎬 1000xxx PC clon{{Content Used}} ({f_used}) ➜ {p_used}৳", callback_data="used_terms"))
     kb.row(types.InlineKeyboardButton(text=f"🆔 FB 61 ({f6}) ➜ {p6}৳", callback_data="buy_fb61"))
     kb.row(types.InlineKeyboardButton(text=f"🆔 Temp ID ({t_id}) ➜ {pt}৳", callback_data="buy_tempid"))
+    kb.row(types.InlineKeyboardButton(text=f"🔐 Temp ID 2FA ({t_2fa}) ➜ {pt_2fa}৳", callback_data="buy_tempid_2fa"))
     kb.row(types.InlineKeyboardButton(text="🔙 ফিরে যান", callback_data="back_home"))
     await c.message.edit_text("📥 **আইডি ক্যাটাগরি মেনু**", reply_markup=kb.as_markup())
 
@@ -3131,7 +3315,7 @@ async def buy_qty_start(c: types.CallbackQuery, state: FSMContext):
             "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
             parse_mode="Markdown"
         )
-    cat = c.data.split("_")[1]
+    cat = c.data.split("_", 1)[1]
     await state.update_data(cat=cat)
     await c.message.answer(f"🔢 আপনি কতটি নিতে চান? সংখ্যাটি লিখুন (যেমন: 1):")
     await state.set_state(ShopStates.waiting_for_qty)
@@ -3199,7 +3383,7 @@ async def process_buy(m: types.Message, state: FSMContext):
         conn.execute("INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
                        (m.from_user.id, m.from_user.first_name, cat, qty, total, now_bdt.strftime("%Y-%m-%d"), current_time))
 
-        _lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx PC clon{Content Used}","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat, cat.upper())
+        _lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx PC clon{Content Used}","tempid":"Temp ID","tempid_2fa":"Temp ID 2FA","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat, cat.upper())
         # [DELIVERY_FORMAT_PATCH_V1] — ask format before dumping
         # Get sale_id (last inserted), delete stock, archive, then ask format
         _sale_id = cursor.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -3239,6 +3423,18 @@ async def process_buy(m: types.Message, state: FSMContext):
                 "✅ শুধু **login issue** হলে replace সম্ভব\n\n"
                 "নিয়মের বাইরে replace request দিলে **reject** করা হবে।"
             )
+        elif cat == "tempid_2fa":
+            await m.answer(
+                "⚠️ **Temp ID 2FA — গুরুত্বপূর্ণ নিয়ম**\n\n"
+                "⏱ **Replace Time:**\n"
+                "• ১ পিস: ১০ মিনিট (10 Min)\n"
+                "• ২-৫ পিস: ২০ মিনিট (20 Min)\n"
+                "• ৬-১০ পিস: ৩০ মিনিট (30 Min)\n"
+                "• ১০ পিসের উপরে: ২ ঘণ্টা (2 Hours)\n\n"
+                "❌ Verify হয়ে গেলে replace **হবে না**\n"
+                "✅ শুধু **login issue** হলে replace সম্ভব\n\n"
+                "নিয়মের বাইরে replace request দিলে **reject** করা হবে।"
+            )
 
         _kb = types.InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -3249,8 +3445,7 @@ async def process_buy(m: types.Message, state: FSMContext):
                 types.InlineKeyboardButton(text="🔙 মূল মেনু (Home)", callback_data="back_home"),
             ]
         ])
-        allowed_h = get_replace_window_hours(qty, cat)
-        report_time = f"{allowed_h} ঘণ্টা ({allowed_h} Hours)"
+        report_time = get_replace_window_text(qty, cat)
 
         # Instant text delivery directly in chat for up to 3 accounts
         _instant_block = ""
@@ -3258,7 +3453,14 @@ async def process_buy(m: types.Message, state: FSMContext):
             _items_txt = []
             for _idx, _item in enumerate(_delivered, 1):
                 _raw = _item[1].strip() if _item else ""
-                _items_txt.append(f"🔹 **আইডি #{_idx}:**\n`{_raw}`")
+                if cat == "tempid_2fa":
+                    _u, _p, _tf, _ck = parse_tempid_2fa_line(_raw)
+                    _ib = f"🔹 **আইডি #{_idx}:**\n🆔 **UID:** `{_u}`\n🔑 **PASS:** `{_p}`\n🔐 **2FA:** `{_tf}`"
+                    if _ck:
+                        _ib += f"\n🍪 **COOKIE:** `{_ck}`"
+                    _items_txt.append(_ib)
+                else:
+                    _items_txt.append(f"🔹 **আইডি #{_idx}:**\n`{_raw}`")
             _instant_block = "\n\n📦 **আপনার ইনস্ট্যান্ট ডেলিভারি:**\n" + "\n\n".join(_items_txt) + "\n"
 
         await m.answer(
@@ -4823,11 +5025,11 @@ async def support_replace_start(c: types.CallbackQuery, state: FSMContext):
     
     for sale in user_sales:
         s_id, s_cat, s_qty, s_tot, s_date, s_time = sale
-        lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx Used","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(s_cat, s_cat.upper())
+        lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx Used","tempid":"Temp ID","tempid_2fa":"Temp ID 2FA","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(s_cat, s_cat.upper())
         
         s_epoch = get_sale_epoch(s_id, s_date, s_time)
-        allowed_h = get_replace_window_hours(s_qty, s_cat)
-        is_expired = (now_ts - s_epoch) > (allowed_h * 3600)
+        allowed_sec = get_replace_window_seconds(s_qty, s_cat)
+        is_expired = (now_ts - s_epoch) > allowed_sec
         has_active_rep = False
 
         if is_expired:
@@ -4837,7 +5039,7 @@ async def support_replace_start(c: types.CallbackQuery, state: FSMContext):
             ).fetchone()
             if last_rep and last_rep[0]:
                 r_ep = int(last_rep[0] / 1000 if last_rep[0] > 1e11 else last_rep[0])
-                if (now_ts - r_ep) <= (allowed_h * 3600):
+                if (now_ts - r_ep) <= allowed_sec:
                     is_expired = False
                     has_active_rep = True
 
@@ -4853,6 +5055,7 @@ async def support_replace_start(c: types.CallbackQuery, state: FSMContext):
         "━━━━━━━━━━━━━━━━━━━━\n"
         "কোন অর্ডারের নষ্ট আইডি আপনি রিপ্লেস করতে চান তা নিচে থেকে সিলেক্ট করুন:\n\n"
         "⏱️ **আমাদের অটোমেটিক রিপ্লেস গ্যারান্টি:**\n"
+        "▫️ Temp ID 2FA: **১০ মি. / ২০ মি. / ৩০ মি. / ২ ঘণ্টা** (পরিমাণ অনুযায়ী)\n"
         "▫️ 1000xxx PC clon{{Content Used}}: **২ ঘণ্টা** ফিক্সড গ্যারান্টি\n"
         "▫️ ১ – ১০ পিস (অন্যান্য): **২ ঘণ্টা** গ্যারান্টি\n"
         "▫️ ১১ – ৩০ পিস: **৬ ঘণ্টা** গ্যারান্টি\n"
@@ -4875,12 +5078,12 @@ async def select_replace_order(c: types.CallbackQuery, state: FSMContext):
         return await c.message.answer("❌ অর্ডারটি পাওয়া যায়নি।")
         
     sale_id, u_id, uname, cat_name, qty, total, d_str, t_str = sale
-    lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx PC clon{Content Used}","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat_name, cat_name.upper())
+    lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx PC clon{Content Used}","tempid":"Temp ID","tempid_2fa":"Temp ID 2FA","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat_name, cat_name.upper())
     
     sale_epoch = get_sale_epoch(sale_id, d_str, t_str)
     now_ts = int(__import__("time").time())
-    allowed_h = get_replace_window_hours(qty, cat_name)
-    allowed_sec = allowed_h * 3600
+    allowed_sec = get_replace_window_seconds(qty, cat_name)
+    allowed_txt = get_replace_window_text(qty, cat_name)
 
     # Check if there is a recent replacement issued for this order
     last_rep = conn.execute(
@@ -4909,10 +5112,10 @@ async def select_replace_order(c: types.CallbackQuery, state: FSMContext):
             f"📦 **অর্ডার নং:** `#{sale_id}`\n"
             f"🏷️ **আইটেম:** {lbl} ({qty} pcs)\n"
             f"🕒 **কেনার সময়:** {d_str} | {t_str}\n"
-            f"⏳ **অনুমোদিত রিপ্লেস উইন্ডো:** {allowed_h} ঘণ্টা\n"
+            f"⏳ **অনুমোদিত রিপ্লেস উইন্ডো:** {allowed_txt}\n"
             f"⌛ **অতিবাহিত সময়:** {elapsed_str}\n"
             "━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"⚠️ **দুঃখিত!** আপনার অর্ডারের জন্য নির্ধারিত **{allowed_h} ঘণ্টার** রিপ্লেস সময়সীমা শেষ হয়ে গেছে।\n\n"
+            f"⚠️ **দুঃখিত!** আপনার অর্ডারের জন্য নির্ধারিত **{allowed_txt}** রিপ্লেস সময়সীমা শেষ হয়ে গেছে।\n\n"
             "📜 আমাদের অটোমেটিক সিকিউরিটি ও টার্মস পলিসি অনুযায়ী নির্ধারিত সময় পার হওয়ার পর সিস্টেম থেকে কোনো রিপ্লেস গ্রহণ করা সম্ভব নয়।"
         )
         return await c.message.edit_text(expired_msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
@@ -4925,7 +5128,7 @@ async def select_replace_order(c: types.CallbackQuery, state: FSMContext):
         replace_sale_id=sale_id,
         replace_qty=qty,
         replace_cat=cat_name,
-        replace_allowed_hours=allowed_h,
+        replace_allowed_hours=max(1, allowed_sec // 3600),
         replace_sale_time=f"{d_str} {t_str}",
         replace_sale_epoch=effective_epoch
     )
@@ -4942,12 +5145,12 @@ async def select_replace_order(c: types.CallbackQuery, state: FSMContext):
         f"📦 **অর্ডার নং:** `#{sale_id}`\n"
         f"🏷️ **আইটেম:** {lbl} ({qty} pcs)\n"
         f"🕒 **কেনার সময়:** {d_str} | {t_str}\n"
-        f"⏳ **অনুমোদিত গ্যারান্টি:** {allowed_h} ঘণ্টা\n"
+        f"⏳ **অনুমোদিত গ্যারান্টি:** {allowed_txt}\n"
         f"⏱️ **বাকি সময় আছে:** {rem_str}{re_rep_note}\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
         "📌 **নিয়মাবলী ও সুবিধা:**\n"
         "১. নষ্ট আইডিগুলো সরাসরি এখানে পেস্ট করুন (Auto-Detect সক্রিয়)।\n"
-        "২. আপনি শুধুমাত্র UID অথবা সম্পূর্ণ আইডি লাইন (UID PASS COOKIE) যেকোনো ফরম্যাটে দিতে পারেন।\n"
+        "২. আপনি শুধুমাত্র UID অথবা সম্পূর্ণ আইডি লাইন (UID PASS 2FA COOKIE) যেকোনো ফরম্যাটে দিতে পারেন।\n"
         "৩. টেক্সট মেসেজ অথবা .txt ফাইল উভয়ই সাপোর্ট করবে।\n"
         "৪. পূর্বে প্রাপ্ত রিপ্লেস আইডি নষ্ট হলে তাও এখানে সাবমিট করতে পারবেন।\n\n"
         "✅ আপনি কি নষ্ট আইডি সাবমিট করতে প্রস্তুত?"
@@ -4967,8 +5170,8 @@ async def rep_agree_action(c: types.CallbackQuery, state: FSMContext):
         
     s_id, s_uid, s_cat, s_qty, s_date, s_time = sale
     s_epoch = get_sale_epoch(s_id, s_date, s_time)
-    allowed_h = get_replace_window_hours(s_qty, s_cat)
-    allowed_sec = allowed_h * 3600
+    allowed_sec = get_replace_window_seconds(s_qty, s_cat)
+    allowed_txt = get_replace_window_text(s_qty, s_cat)
     now_ts = int(time.time())
 
     # Check if there is a recent replacement issued for this order
@@ -4993,10 +5196,10 @@ async def rep_agree_action(c: types.CallbackQuery, state: FSMContext):
             f"🚫 **রিপ্লেস সময়সীমা অতিক্রম করেছে (Time Expired)!**\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             f"📦 **অর্ডার নং:** `#{s_id}` ({s_qty} pcs)\n"
-            f"⏳ **অনুমোদিত রিপ্লেস উইন্ডো:** {allowed_h} ঘণ্টা\n"
+            f"⏳ **অনুমোদিত রিপ্লেস উইন্ডো:** {allowed_txt}\n"
             f"⌛ **অতিবাহিত সময়:** {format_duration(elapsed_sec)}\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            f"⚠️ আপনার অর্ডারের জন্য নির্ধারিত **{allowed_h} ঘণ্টার** রিপ্লেস সময়সীমা শেষ হয়ে গেছে। নির্ধারিত সময়ের বাইরে কোনো রিপ্লেস গ্রহণ করা সম্ভব নয়।",
+            f"⚠️ আপনার অর্ডারের জন্য নির্ধারিত **{allowed_txt}** রিপ্লেস সময়সীমা শেষ হয়ে গেছে। নির্ধারিত সময়ের বাইরে কোনো রিপ্লেস গ্রহণ করা সম্ভব নয়।",
             reply_markup=kb.as_markup(), parse_mode="Markdown"
         )
         
@@ -5004,7 +5207,7 @@ async def rep_agree_action(c: types.CallbackQuery, state: FSMContext):
         replace_sale_id=s_id,
         replace_qty=s_qty,
         replace_cat=s_cat,
-        replace_allowed_hours=allowed_h,
+        replace_allowed_hours=max(1, allowed_sec // 3600),
         replace_sale_time=f"{s_date} {s_time}",
         replace_sale_epoch=s_epoch
     )
@@ -5012,12 +5215,12 @@ async def rep_agree_action(c: types.CallbackQuery, state: FSMContext):
     await c.message.edit_text(
         f"✍️ **অর্ডার `#{sale_id}`-এর নষ্ট আইডি দিন:**\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📦 কেনা পরিমাণ: **{s_qty}টি** | ⏱️ রিপ্লেস সময়সীমা: **{allowed_h} ঘণ্টা**\n\n"
+        f"📦 কেনা পরিমাণ: **{s_qty}টি** | ⏱️ রিপ্লেস সময়সীমা: **{allowed_txt}**\n\n"
         f"💡 **সহজ নিয়ম (Auto-Detect সক্রিয়):**\n"
         f"নষ্ট আইডিগুলো সরাসরি কপি করে এখানে পেস্ট করুন (অথবা .txt ফাইল দিন)। আমাদের সিস্টেম স্বয়ংক্রিয়ভাবে সঠিক UID সনাক্ত করে নেবে।\n\n"
         f"📌 আপনি যেকোনো সুবিধাজনক ফরম্যাটে দিতে পারেন:\n"
         f"• শুধুমাত্র UID (যেমন: `61577030293219`)\n"
-        f"• অথবা পুরো আইডি লাইন (যেমন: `UID PASS COOKIE` বা `UID|PASS|COOKIE`)\n"
+        f"• অথবা পুরো আইডি লাইন (যেমন: `UID PASS 2FA COOKIE` বা `UID|PASS|2FA`)\n"
         f"• একাধিক আইডি থাকলে প্রতি লাইনে একটি করে দিন।\n\n"
         f"⚠️ এই অর্ডারে প্রাপ্ত আইডির বাইরের কোনো আইডি দিলে তা গ্রহণ হবে না।\n"
         f"_(বাতিল করতে চাইলে /cancel লিখুন)_",
@@ -5079,8 +5282,9 @@ async def process_replace_request(m: types.Message, state: FSMContext):
 
     s_id, s_uid, s_uname, s_cat, s_qty, s_tot, s_date, s_time = sale
     s_epoch = get_sale_epoch(s_id, s_date, s_time)
-    allowed_h = get_replace_window_hours(s_qty, s_cat)
-    allowed_sec = allowed_h * 3600
+    allowed_sec = get_replace_window_seconds(s_qty, s_cat)
+    allowed_txt = get_replace_window_text(s_qty, s_cat)
+    allowed_h = max(1, allowed_sec // 3600)
     now_ts = int(time.time())
 
     ticket_id = str(uuid.uuid4())[:8]
@@ -5173,10 +5377,10 @@ async def process_replace_request(m: types.Message, state: FSMContext):
             f"🚫 **অর্ডারের রিপ্লেস সময়সীমা অতিক্রম করেছে (Time Expired)!**\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             f"📦 **অর্ডার নং:** `#{s_id}` ({s_qty} pcs)\n"
-            f"⏳ **অনুমোদিত সময়সীমা:** {allowed_h} ঘণ্টা\n"
+            f"⏳ **অনুমোদিত সময়সীমা:** {allowed_txt}\n"
             f"⌛ **অতিবাহিত সময়:** {format_duration(elapsed_sec)}\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            f"⚠️ আপনার মূল অর্ডারের জন্য নির্ধারিত **{allowed_h} ঘণ্টার** রিপ্লেস সময়সীমা শেষ হয়ে গেছে। মূল অর্ডারের আইডি নির্ধারিত সময়ের বাইরে রিপ্লেস গ্রহণ করা সম্ভব নয়।",
+            f"⚠️ আপনার মূল অর্ডারের জন্য নির্ধারিত **{allowed_txt}** রিপ্লেস সময়সীমা শেষ হয়ে গেছে। মূল অর্ডারের আইডি নির্ধারিত সময়ের বাইরে রিপ্লেস গ্রহণ করা সম্ভব নয়।",
             reply_markup=kb.as_markup(), parse_mode="Markdown"
         )
 
@@ -5194,10 +5398,10 @@ async def process_replace_request(m: types.Message, state: FSMContext):
                 f"🚫 **রি-রিপ্লেসের সময়সীমা অতিক্রম করেছে (Time Expired)!**\n"
                 "━━━━━━━━━━━━━━━━━━━━\n"
                 f"📦 **অর্ডার নং:** `#{s_id}` (পূর্বে প্রাপ্ত রিপ্লেস আইডি)\n"
-                f"⏳ **অনুমোদিত সময়সীমা:** {allowed_h} ঘণ্টা\n"
+                f"⏳ **অনুমোদিত সময়সীমা:** {allowed_txt}\n"
                 f"⌛ **অতিবাহিত সময়:** {format_duration(rep_elapsed_sec)}\n"
                 "━━━━━━━━━━━━━━━━━━━━\n"
-                f"⚠️ পূর্বে দেওয়া রিপ্লেস আইডির জন্য নির্ধারিত **{allowed_h} ঘণ্টার** সময়সীমা শেষ হয়ে গেছে।",
+                f"⚠️ পূর্বে দেওয়া রিপ্লেস আইডির জন্য নির্ধারিত **{allowed_txt}** সময়সীমা শেষ হয়ে গেছে।",
                 reply_markup=kb.as_markup(), parse_mode="Markdown"
             )
 
@@ -5290,7 +5494,7 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         _rep_ts = int(utc_now_ts * 1000)
         _rep_uname = f"@{m.from_user.username}" if m.from_user.username else (m.from_user.first_name or f"User_{m.from_user.id}")
         rep_cat = s_cat or st_data.get("replace_cat", "fb1000")
-        db_cat_label = "1000xxx PC clon{Content Used}" if (rep_cat == "fb1000_used" or "used" in str(rep_cat).lower()) else ({"fb61":"FB 61","fb1000":"FB 1000 Fresh","tempid":"Temp ID"}.get(rep_cat, rep_cat))
+        db_cat_label = "1000xxx PC clon{Content Used}" if (rep_cat == "fb1000_used" or "used" in str(rep_cat).lower()) else ({"fb61":"FB 61","fb1000":"FB 1000 Fresh","tempid":"Temp ID","tempid_2fa":"Temp ID 2FA"}.get(rep_cat, rep_cat))
 
         # Find sellers for UIDs
         uid_seller_map = find_sellers_for_uids(detected_uids)
@@ -5344,7 +5548,7 @@ async def process_replace_request(m: types.Message, state: FSMContext):
         f"{cat_badge}"
         f"{seller_line}"
         f"{uid_line}"
-        f"📦 **{order_ref}** ({s_qty} pcs | Tier: {allowed_h}h)\n"
+        f"📦 **{order_ref}** ({s_qty} pcs | Tier: {allowed_txt})\n"
         f"👤 **Name:** {m.from_user.first_name}\n"
         f"🔗 **User:** {username_display}\n"
         f"🆔 **ID:** `{m.from_user.id}`\n\n"
@@ -5356,7 +5560,7 @@ async def process_replace_request(m: types.Message, state: FSMContext):
     if len(user_data_text) > 60:
         kb.row(types.InlineKeyboardButton(text="📄 See Full Details", callback_data=f"tick_view_{ticket_id}"))
     kb.row(types.InlineKeyboardButton(text="🔄 Replace", callback_data=f"tick_rep_{ticket_id}"))
-    kb.row(types.InlineKeyboardButton(text=f"⏱ Time Over ({allowed_h}h)", callback_data=f"tick_timeover_{ticket_id}_{allowed_h}"))
+    kb.row(types.InlineKeyboardButton(text=f"⏱ Time Over ({allowed_txt})", callback_data=f"tick_timeover_{ticket_id}_{allowed_h}"))
     kb.row(types.InlineKeyboardButton(text="✉️ Reply", callback_data=f"tick_reply_{ticket_id}"))
     kb.row(types.InlineKeyboardButton(text="🔕 Cancel Reminder", callback_data=f"tick_cancelrem_{ticket_id}"))
     
@@ -5850,7 +6054,7 @@ async def my_orders_handler(c: types.CallbackQuery):
     lines = ["📦 **আপনার সাম্প্রতিক ৫টি অর্ডার:**\n━━━━━━━━━━━━━━━━━━━━"]
     for s in sales:
         sid, cat, qty, total, dt, tm = s
-        lbl = {"fb61":"FB 61","fb1000":"FB 1000","tempid":"Temp ID","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat, cat.upper())
+        lbl = {"fb61":"FB 61","fb1000":"FB 1000","tempid":"Temp ID","tempid_2fa":"Temp ID 2FA","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat, cat.upper())
         lines.append(f"• **Order #{sid}** | {lbl} × {qty} | `{total}৳`\n  📅 {dt} {tm or ''}")
         kb.row(
             types.InlineKeyboardButton(text=f"📊 #{sid} Excel", callback_data=f"dfmt:xlsx:{sid}"),

@@ -201,14 +201,20 @@ router.get('/', (req, res) => {
 
   const rows = db.prepare(sql).all(...params);
 
-  function getWindowHours(qty, cat) {
-    const c = String(cat || '').toLowerCase();
-    if (c.includes('used')) return 2;
+  function getWindowSeconds(qty, cat) {
+    const c = String(cat || '').toLowerCase().trim();
     const q = Number(qty || 1);
-    if (q <= 10) return 2;
-    if (q <= 30) return 6;
-    if (q <= 50) return 8;
-    return 12;
+    if (c === 'tempid_2fa') {
+      if (q === 1) return 10 * 60;
+      if (q <= 5) return 20 * 60;
+      if (q <= 10) return 30 * 60;
+      return 2 * 3600;
+    }
+    if (c.includes('used') || c === 'fb1000_used') return 2 * 3600;
+    if (q <= 10) return 2 * 3600;
+    if (q <= 30) return 6 * 3600;
+    if (q <= 50) return 8 * 3600;
+    return 12 * 3600;
   }
 
   // Extract UIDs, find sellers, and enrich with order purchase telemetry
@@ -266,9 +272,11 @@ router.get('/', (req, res) => {
             const mins = Math.floor((elapsedSec % 3600) / 60);
             r._orderElapsed = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
 
-            const winHours = getWindowHours(sale.qty, sale.category);
-            r._orderWindow = `${winHours}h`;
-            r._orderWindowStatus = elapsedSec <= (winHours * 3600) ? 'valid' : 'expired';
+            const winSec = getWindowSeconds(sale.qty, sale.category);
+            const wH = Math.floor(winSec / 3600);
+            const wM = Math.floor((winSec % 3600) / 60);
+            r._orderWindow = wH > 0 ? (wM > 0 ? `${wH}h ${wM}m` : `${wH}h`) : `${wM}m`;
+            r._orderWindowStatus = elapsedSec <= winSec ? 'valid' : 'expired';
           }
         }
       } catch (_) {}
@@ -447,6 +455,8 @@ router.get('/', (req, res) => {
     fb1000_used: db.prepare("SELECT COUNT(*) AS c FROM stock WHERE category='fb1000_used'").get().c,
     fb1000: db.prepare("SELECT COUNT(*) AS c FROM stock WHERE category='fb1000'").get().c,
     fb61: db.prepare("SELECT COUNT(*) AS c FROM stock WHERE category='fb61'").get().c,
+    tempid: db.prepare("SELECT COUNT(*) AS c FROM stock WHERE category='tempid'").get().c,
+    tempid_2fa: db.prepare("SELECT COUNT(*) AS c FROM stock WHERE category='tempid_2fa'").get().c,
   };
   res.render('replace', { rows, status, counts, q, cat, stockCounts, sellerReports, dateReports, msg: req.query.msg || null });
 });
