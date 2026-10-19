@@ -64,7 +64,7 @@ except Exception as _e_v4:  # never break the bot because of this patch
 VPS_ADMIN_URL   = os.environ.get("VPS_ADMIN_URL", "http://localhost:3000")
 DOWNLOAD_SECRET = os.environ.get("DOWNLOAD_SECRET", "")
 
-def create_zinipay_invoice(user_id: int, username: str, amount: int):
+def _sync_create_zinipay_invoice(user_id: int, username: str, amount: int):
     """admin panel এর /zinipay/create-invoice কে call করে — returns payment_url or None"""
     try:
         r = _zp_requests.post(
@@ -81,6 +81,10 @@ def create_zinipay_invoice(user_id: int, username: str, amount: int):
     except Exception as e:
         print(f"[zinipay] exception: {e}")
         return None
+
+async def create_zinipay_invoice(user_id: int, username: str, amount: int):
+    import asyncio
+    return await asyncio.to_thread(_sync_create_zinipay_invoice, user_id, username, amount)
 # ===== /ZiniPay Helper =====
 
 load_dotenv()
@@ -2204,10 +2208,13 @@ def find_sellers_for_uids(uids: list[str]) -> dict[str, str]:
             row = conn.execute("SELECT seller_name FROM uid_history WHERE uid=? AND seller_name IS NOT NULL AND seller_name != '' LIMIT 1", (uid,)).fetchone()
             if row and row[0]:
                 seller_map[uid] = row[0]
-        # 2. delivery_archive for missing
+        # 2. delivery_archive for missing (search recent 15000 deliveries first)
         missing = [u for u in uids if u not in seller_map]
         for uid in missing:
-            row = conn.execute("SELECT seller_name FROM delivery_archive WHERE data LIKE ? AND seller_name IS NOT NULL AND seller_name != '' ORDER BY id DESC LIMIT 1", (f"%{uid}%",)).fetchone()
+            row = conn.execute(
+                "SELECT seller_name FROM delivery_archive WHERE id >= (SELECT COALESCE(MAX(id)-15000, 1) FROM delivery_archive) AND data LIKE ? AND seller_name IS NOT NULL AND seller_name != '' ORDER BY id DESC LIMIT 1",
+                (f"%{uid}%",)
+            ).fetchone()
             if row and row[0]:
                 seller_map[uid] = row[0]
         # 3. stock for any still missing
@@ -2289,11 +2296,18 @@ async def check_and_warn_vpn_balance(current_bal=None):
     except Exception as e:
         print(f"[vpn_bal_warn] error: {e}")
 
+_VPN_FAIL_COOLDOWN = {}
+
 async def vpn_auto_fulfill_worker():
     await asyncio.sleep(15) # initial delay on boot
     while True:
         try:
             await asyncio.sleep(60)
+            now_ts = int(time.time())
+            # Clean expired cooldowns
+            expired_keys = [k for k, v in _VPN_FAIL_COOLDOWN.items() if v <= now_ts]
+            for k in expired_keys: _VPN_FAIL_COOLDOWN.pop(k, None)
+
             bal_res = await vpn_api_get_balance()
             if bal_res.get("status") != "success":
                 continue
@@ -2315,6 +2329,8 @@ async def vpn_auto_fulfill_worker():
 
             for p_order in pending_orders:
                 p_oid, p_uid, p_vname, p_dur, p_price, p_scode = p_order
+                if _VPN_FAIL_COOLDOWN.get(p_oid, 0) > now_ts:
+                    continue
                 conn = _dbc()
                 check = conn.execute("SELECT status, admin_name FROM vpn_orders WHERE order_id = ?", (p_oid,)).fetchone()
                 if not check or check[0] != 'pending' or (check[1] and check[1] not in ('None', '', 'API-PENDING')):
@@ -2457,6 +2473,7 @@ async def vpn_auto_fulfill_worker():
                 else:
                     err_msg = api_order_resp.get("message", "API Error")
                     print(f"[vpn_auto_fulfill] API failed for {p_oid}: {err_msg}")
+                    _VPN_FAIL_COOLDOWN[p_oid] = now_ts + 600  # 10 min cooldown
                     if "balance" in err_msg.lower():
                         await check_and_warn_vpn_balance(0)
                         break
@@ -3346,63 +3363,69 @@ async def process_buy(m: types.Message, state: FSMContext):
             await state.clear()
             await m.answer(
                 f"❌ **অপর্যাপ্ত ব্যালেন্স!**\n"
-                f"প্রয়োজন: **total৳**\nআছে: **{{bal}}৳**\n"
-                f"আরও দরকার: **{{_need}}৳**\n\n"
+                f"প্রয়োজন: **{total}৳**\nআছে: **{bal}৳**\n"
+                f"আরও দরকার: **{_need}৳**\n\n"
                 f"👇 নিচের button থেকে deposit করুন:",
                 reply_markup=_kb.as_markup()
             )
             return
 
         conn = _dbc(); cursor = conn.cursor()
-        items = cursor.execute("SELECT id, data, seller_name FROM stock WHERE category=? LIMIT ?", (cat, qty)).fetchall()
-        if len(items) < qty: conn.close(); return await m.answer(f"❌ স্টক নেই! আছে: {len(items)}টি")
-
-        # [BUYLIMIT_HOOK] 10 pcs / 10 min (FB 1000xx only)
-        _bl_ok, _bl_used, _bl_left, _bl_allowed = _bl_allow(m.from_user.id, qty, cat)
-        if not _bl_ok:
-            try:
-                await m.answer(_bl_block_text(_bl_used, _bl_left, qty, _bl_allowed), parse_mode="Markdown")
-            except Exception:
-                await m.answer(_bl_block_text(_bl_used, _bl_left, qty, _bl_allowed))
-            try:
-                await state.clear()
-            except Exception:
-                pass
-            return
-        conn.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (total, m.from_user.id))
-        # [BUYLIMIT_HOOK] commit
         try:
-            _bl_u, _bl_l = _bl_commit(m.from_user.id, qty, cat)
-            if _bl_l:
-                await m.answer(_bl_ok_text(_bl_u, _bl_l), parse_mode="Markdown")
-        except Exception as _e:
-            print(f"[buylimit] commit skip: {_e}")
-        
-        now_bdt = bdt_now()
-        current_time = now_bdt.strftime("%I:%M %p")
-        conn.execute("INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                       (m.from_user.id, m.from_user.first_name, cat, qty, total, now_bdt.strftime("%Y-%m-%d"), current_time))
+            conn.execute("BEGIN IMMEDIATE")
+            items = cursor.execute("SELECT id, data, seller_name FROM stock WHERE category=? LIMIT ?", (cat, qty)).fetchall()
+            if len(items) < qty:
+                conn.rollback()
+                return await m.answer(f"❌ স্টক নেই! আছে: {len(items)}টি")
 
-        _lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx PC clon{Content Used}","tempid":"Temp ID","tempid_2fa":"Temp ID 2FA","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat, cat.upper())
-        # [DELIVERY_FORMAT_PATCH_V1] — ask format before dumping
-        # Get sale_id (last inserted), delete stock, archive, then ask format
-        _sale_id = cursor.execute("SELECT last_insert_rowid()").fetchone()[0]
-        _now_ts = int(__import__("time").time())
-        _uname = (f"@{m.from_user.username}" if m.from_user.username else None)
-        _delivered = []
-        for i in items:
-            cursor.execute("DELETE FROM stock WHERE id = ?", (i[0],))
-            _delivered.append((i[0], i[1]))
-            s_name = i[2] if len(i) > 2 else None
+            # [BUYLIMIT_HOOK] 10 pcs / 10 min (FB 1000xx only)
+            _bl_ok, _bl_used, _bl_left, _bl_allowed = _bl_allow(m.from_user.id, qty, cat)
+            if not _bl_ok:
+                conn.rollback()
+                try:
+                    await m.answer(_bl_block_text(_bl_used, _bl_left, qty, _bl_allowed), parse_mode="Markdown")
+                except Exception:
+                    await m.answer(_bl_block_text(_bl_used, _bl_left, qty, _bl_allowed))
+                try:
+                    await state.clear()
+                except Exception:
+                    pass
+                return
+            conn.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (total, m.from_user.id))
+            # [BUYLIMIT_HOOK] commit
             try:
-                conn.execute(
-                    "INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at, seller_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (_sale_id, m.from_user.id, _uname, cat, i[0], i[1], 'bot', _now_ts, s_name),
-                )
-            except Exception:
-                pass
-        conn.commit()
-        conn.close()
+                _bl_u, _bl_l = _bl_commit(m.from_user.id, qty, cat)
+                if _bl_l:
+                    await m.answer(_bl_ok_text(_bl_u, _bl_l), parse_mode="Markdown")
+            except Exception as _e:
+                print(f"[buylimit] commit skip: {_e}")
+            
+            now_bdt = bdt_now()
+            current_time = now_bdt.strftime("%I:%M %p")
+            conn.execute("INSERT INTO sales (user_id, username, category, qty, total, date, time) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                           (m.from_user.id, m.from_user.first_name, cat, qty, total, now_bdt.strftime("%Y-%m-%d"), current_time))
+
+            _lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx PC clon{Content Used}","tempid":"Temp ID","tempid_2fa":"Temp ID 2FA","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(cat, cat.upper())
+            # [DELIVERY_FORMAT_PATCH_V1] — ask format before dumping
+            # Get sale_id (last inserted), delete stock, archive, then ask format
+            _sale_id = cursor.execute("SELECT last_insert_rowid()").fetchone()[0]
+            _now_ts = int(__import__("time").time())
+            _uname = (f"@{m.from_user.username}" if m.from_user.username else None)
+            _delivered = []
+            for i in items:
+                cursor.execute("DELETE FROM stock WHERE id = ?", (i[0],))
+                _delivered.append((i[0], i[1]))
+                s_name = i[2] if len(i) > 2 else None
+                try:
+                    conn.execute(
+                        "INSERT INTO delivery_archive (sale_id, user_id, username, category, stock_id, data, source, delivered_at, seller_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (_sale_id, m.from_user.id, _uname, cat, i[0], i[1], 'bot', _now_ts, s_name),
+                    )
+                except Exception:
+                    pass
+            conn.commit()
+        finally:
+            conn.close()
 
         # Stash for callback
         try:
@@ -3631,7 +3654,7 @@ async def dep_amt(m: types.Message, state: FSMContext):
         amt = int(val_str)
         username = f"@{m.from_user.username}" if m.from_user.username else m.from_user.first_name
         wait_msg = await m.answer("⏳ পেমেন্ট লিংক তৈরি হচ্ছে...")
-        payment_url = create_zinipay_invoice(m.from_user.id, username, amt)
+        payment_url = await create_zinipay_invoice(m.from_user.id, username, amt)
         try: await wait_msg.delete()
         except: pass
         if not payment_url:
@@ -6310,34 +6333,38 @@ try:
 
         msg = await m.answer("⏳ Pending payment check করছি...")
 
-        approved = 0
-        pending = 0
-        failed = 0
-        lines = []
+        def _check_rows_sync(p_rows):
+            appr = 0
+            pend = 0
+            fail = 0
+            res_lines = []
+            for req_id, amount in p_rows:
+                try:
+                    url = f"{_VPS_URL_CHK}/zinipay/check/{_parse_chk.quote(str(req_id))}?secret={_parse_chk.quote(_DL_SECRET_CHK)}"
+                    with _req_chk.urlopen(url, timeout=10) as r:
+                        data = _json_chk.loads(r.read().decode())
 
-        for req_id, amount in rows:
-            try:
-                url = f"{_VPS_URL_CHK}/zinipay/check/{_parse_chk.quote(str(req_id))}?secret={_parse_chk.quote(_DL_SECRET_CHK)}"
-                with _req_chk.urlopen(url, timeout=15) as r:
-                    data = _json_chk.loads(r.read().decode())
+                    status = str(data.get("status", "")).lower()
+                    txid = data.get("transaction_id") or "-"
 
-                status = str(data.get("status", "")).lower()
-                txid = data.get("transaction_id") or "-"
+                    if status == "approved":
+                        appr += 1
+                        icon = "✅"
+                    elif status == "pending":
+                        pend += 1
+                        icon = "⏳"
+                    else:
+                        fail += 1
+                        icon = "❌"
 
-                if status == "approved":
-                    approved += 1
-                    icon = "✅"
-                elif status == "pending":
-                    pending += 1
-                    icon = "⏳"
-                else:
-                    failed += 1
-                    icon = "❌"
+                    res_lines.append(f"{icon} {req_id} | ৳{amount} | {status} | {txid}")
+                except Exception as e:
+                    fail += 1
+                    res_lines.append(f"❌ {req_id} | ৳{amount} | error: {e}")
+            return appr, pend, fail, res_lines
 
-                lines.append(f"{icon} {req_id} | ৳{amount} | {status} | {txid}")
-            except Exception as e:
-                failed += 1
-                lines.append(f"❌ {req_id} | ৳{amount} | error: {e}")
+        import asyncio as _asyncio_chk
+        approved, pending, failed, lines = await _asyncio_chk.to_thread(_check_rows_sync, rows)
 
         text = (
             "💳 ZiniPay Payment Status\n\n"
