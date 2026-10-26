@@ -1,7 +1,52 @@
 <%- include('partials/header', { title: 'Manual Credits', msg, currentPath }) %>
 
-<h1 class="text-2xl font-bold mb-1">🎁 Manual Balance Credits</h1>
-<p class="text-sm text-slate-400 mb-5">Admin এর দেওয়া/কাটা balance এর সম্পূর্ণ ট্র্যাকিং — কে কতবার নিয়েছে সব দেখা যাবে।</p>
+<div class="flex flex-wrap items-center justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-2xl font-bold mb-1">🎁 Manual Balance Credits</h1>
+    <p class="text-sm text-slate-400">Admin এর দেওয়া/কাটা balance এর সম্পূর্ণ ট্র্যাকিং ও ইনস্ট্যান্ট ব্যালেন্স যোগ/কর্তন।</p>
+  </div>
+  <button onclick="document.getElementById('adjustModal').classList.toggle('hidden')" class="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold px-4 py-2 rounded-xl text-sm shadow-lg flex items-center gap-2">
+    <span>➕</span> ব্যালেন্স যোগ / কর্তন
+  </button>
+</div>
+
+<!-- Modal / Quick Adjust Box -->
+<div id="adjustModal" class="hidden bg-slate-900 border border-emerald-500/30 p-5 rounded-2xl mb-6 shadow-2xl">
+  <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
+    <h3 class="text-base font-bold text-white flex items-center gap-2">
+      <span class="text-emerald-400">⚡</span> ম্যানুয়াল ব্যালেন্স অ্যাডজাস্টমেন্ট (Add / Deduct Balance)
+    </h3>
+    <button type="button" onclick="document.getElementById('adjustModal').classList.add('hidden')" class="text-slate-400 hover:text-white text-lg font-bold">&times;</button>
+  </div>
+  <form action="/credits/adjust" method="POST" class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+    <div>
+      <label class="block text-xs font-semibold text-slate-400 mb-1">ইউজার ID বা @username</label>
+      <input type="text" name="target" placeholder="@username বা 12345678" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none" />
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-slate-400 mb-1">অ্যাকশন</label>
+      <select name="action" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+        <option value="add">➕ ব্যালেন্স যোগ করুন (+)</option>
+        <option value="cut">🔻 ব্যালেন্স কর্তন করুন (-)</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-slate-400 mb-1">পরিমাণ (৳)</label>
+      <input type="number" name="amount" min="1" placeholder="100" required class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none" />
+    </div>
+    <div>
+      <label class="block text-xs font-semibold text-slate-400 mb-1">কারণ / বিবরণ</label>
+      <input type="text" name="reason" placeholder="Refund / Manual Topup" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none" />
+    </div>
+    <div>
+      <input type="hidden" name="method" value="manual" />
+      <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded-lg text-sm transition">
+        সাবমিট করুন
+      </button>
+    </div>
+  </form>
+  <p class="text-xs text-slate-500 mt-2">ℹ️ সাবমিট করলে ইউজারের অ্যাকাউন্টে ব্যালেন্স ইনস্ট্যান্ট আপডেট হবে, লগ যুক্ত হবে এবং টেলিগ্রামে নোটিফিকেশন যাবে।</p>
+</div>
 
 <form method="get" class="flex flex-wrap gap-2 mb-5">
   <input name="q" value="<%= q %>" placeholder="Search username / user id"

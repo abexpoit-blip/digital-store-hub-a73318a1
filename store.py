@@ -512,16 +512,85 @@ def format_pkg_name(pkg_id):
     if pkg_id.endswith('y'): return f"{pkg_id[:-1]} Years Package"
     return pkg_id.upper()
 
-def get_id_by_username(input_str):
+def get_user_record_by_input(input_str):
+    """
+    Search for user by user_id or username with exact match priority,
+    falling back to log search, prefix, and partial match.
+    Returns: (user_id, username, balance) or None
+    """
     input_str = str(input_str).strip()
-    if input_str.isdigit(): return int(input_str)
+    if not input_str:
+        return None
 
-    clean_name = input_str.replace("@", "").lower()
     conn = _dbc()
-    query = "SELECT user_id FROM users WHERE LOWER(username) LIKE ? OR LOWER(username) = ?"
-    res = conn.execute(query, (f"%{clean_name}%", f"@{clean_name}")).fetchone()
-    conn.close()
-    return res[0] if res else None
+    try:
+        # 1. Exact numeric user_id match
+        if input_str.isdigit():
+            uid = int(input_str)
+            row = conn.execute("SELECT user_id, username, balance FROM users WHERE user_id=?", (uid,)).fetchone()
+            if row:
+                return row
+            # Could be a username composed solely of digits
+            row = conn.execute("SELECT user_id, username, balance FROM users WHERE LOWER(username) = ?", (input_str.lower(),)).fetchone()
+            if row:
+                return row
+            # If not yet in users table, return None (or caller can create)
+            return (uid, None, 0)
+
+        clean_name = input_str.lstrip("@").strip().lower()
+        exact_at = f"@{clean_name}"
+
+        # 2. Exact match in users table
+        row = conn.execute(
+            "SELECT user_id, username, balance FROM users WHERE LOWER(username) = ? OR LOWER(username) = ? LIMIT 1",
+            (exact_at, clean_name)
+        ).fetchone()
+        if row:
+            return row
+
+        # 3. Check payment_logs, sales, manual_credits for historical username mapping
+        for tbl in ('payment_logs', 'sales', 'manual_credits'):
+            try:
+                log_row = conn.execute(
+                    f"SELECT user_id FROM {tbl} WHERE LOWER(username) = ? OR LOWER(username) = ? ORDER BY id DESC LIMIT 1",
+                    (exact_at, clean_name)
+                ).fetchone()
+                if log_row and log_row[0]:
+                    u_row = conn.execute("SELECT user_id, username, balance FROM users WHERE user_id=?", (log_row[0],)).fetchone()
+                    if u_row:
+                        return u_row
+            except Exception:
+                pass
+
+        # 4. Prefix match in users table
+        pfx_rows = conn.execute(
+            "SELECT user_id, username, balance FROM users WHERE LOWER(username) LIKE ? OR LOWER(username) LIKE ?",
+            (f"{clean_name}%", f"@{clean_name}%")
+        ).fetchall()
+        if len(pfx_rows) == 1:
+            return pfx_rows[0]
+
+        # 5. Single unique partial match fallback
+        like_rows = conn.execute(
+            "SELECT user_id, username, balance FROM users WHERE LOWER(username) LIKE ? LIMIT 5",
+            (f"%{clean_name}%",)
+        ).fetchall()
+        if len(like_rows) == 1:
+            return like_rows[0]
+        elif len(like_rows) > 1:
+            # Prefer match where lstrip('@') equals clean_name
+            for r in like_rows:
+                if str(r[1] or '').lstrip('@').lower() == clean_name:
+                    return r
+            return like_rows[0]
+
+        return None
+    finally:
+        conn.close()
+
+def get_id_by_username(input_str):
+    rec = get_user_record_by_input(input_str)
+    return rec[0] if rec else None
 
 # --- STATES ---
 class ShopStates(StatesGroup):
@@ -543,17 +612,26 @@ def get_user_data(user_id, username=None, first_name="Unknown"):
     cursor = conn.cursor()
     user = cursor.execute("SELECT balance, username, is_banned FROM users WHERE user_id=?", (user_id,)).fetchone()
 
-    display_name = f"@{username}" if username else first_name
+    clean_username = f"@{str(username).lstrip('@').strip()}" if (username and str(username).strip()) else None
 
     if not user:
+        display_name = clean_username or first_name or f"User_{user_id}"
         cursor.execute("INSERT INTO users (user_id, username, balance, is_banned) VALUES (?, ?, 0, 0)", (user_id, display_name))
         conn.commit()
         res = (0, display_name, 0)
     else:
-        if user[1] != display_name:
-            cursor.execute("UPDATE users SET username=? WHERE user_id=?", (display_name, user_id))
+        current_name = user[1]
+        # Only update if a genuine username is provided, or if existing name is empty
+        # Never erase an existing @username with first_name!
+        if clean_username and current_name != clean_username:
+            cursor.execute("UPDATE users SET username=? WHERE user_id=?", (clean_username, user_id))
             conn.commit()
-        res = (user[0], user[1], user[2])
+            current_name = clean_username
+        elif not current_name and first_name:
+            cursor.execute("UPDATE users SET username=? WHERE user_id=?", (first_name, user_id))
+            conn.commit()
+            current_name = first_name
+        res = (user[0], current_name, user[2])
     conn.close()
     return res
 
@@ -583,8 +661,8 @@ def get_main_reply_keyboard():
         input_field_placeholder="Choose an option..."
     )
 
-async def show_dashboard_ui(user_id, first_name, bot_instance, chat_id):
-    bal, uname, banned = get_user_data(user_id, None, first_name)
+async def show_dashboard_ui(user_id, first_name, bot_instance, chat_id, username=None):
+    bal, uname, banned = get_user_data(user_id, username, first_name)
     if banned:
         await bot_instance.send_message(chat_id, "🚫 **YOU ARE BANNED** 🚫\nএই বটটি ব্যবহার করার অনুমতি আপনার নেই।")
         return
@@ -1417,42 +1495,84 @@ async def admin_set_price(message: types.Message, command: CommandObject, state:
 async def admin_add_bal(message: types.Message, command: CommandObject, state: FSMContext):
     await state.clear()
     if not is_admin(message.from_user.id): return
-    if not command.args: return await message.answer("❌ Format: `/addbalance @user 100`")
+    if not command.args: return await message.answer("❌ ফরম্যাট: `/addbalance @user 100` অথবা `/addbalance 12345678 100`")
     try:
         parts = command.args.split()
-        target_input, amount = parts[0], int(parts[1])
-        uid = get_id_by_username(target_input)
-        if not uid: return await message.answer(f"❌ User not found.")
+        target_input = parts[0]
+        amount = int(parts[1])
+        if amount <= 0:
+            return await message.answer("❌ ব্যালেন্স যোগ করতে পজিটিভ সংখ্যা দিন (যেমন: 100)")
+
+        user_rec = get_user_record_by_input(target_input)
+        if not user_rec:
+            return await message.answer(f"❌ ইউজার পাওয়া যায়নি: '{target_input}'\nসঠিক @username অথবা সংখ্যাযুক্ত Telegram User ID দিন।")
+
+        uid, uname, old_bal = user_rec
         conn = _dbc()
+        db_user = conn.execute("SELECT balance, username FROM users WHERE user_id = ?", (uid,)).fetchone()
+        if not db_user:
+            clean_name = uname or (target_input if target_input.startswith('@') else f"User_{uid}")
+            conn.execute("INSERT INTO users (user_id, username, balance, is_banned) VALUES (?, ?, 0, 0)", (uid, clean_name))
+            old_bal = 0
+            uname = clean_name
+        else:
+            old_bal = db_user[0] or 0
+            if db_user[1]: uname = db_user[1]
+
+        new_balance = old_bal + amount
         conn.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, uid))
-        new_bal = conn.execute("SELECT balance, username FROM users WHERE user_id = ?", (uid,)).fetchone()
 
         now_bdt = bdt_now()
         bst_date = now_bdt.strftime("%Y-%m-%d")
         now_ts = int(now_bdt.timestamp())
         admin_label = f"Admin @{message.from_user.username or message.from_user.first_name}"
+        reason_txt = f"TG /addbalance by {admin_label}"
 
         try:
             mc_cur = conn.cursor()
             mc_cur.execute(
                 "INSERT INTO manual_credits (user_id, username, delta, balance_after, reason, admin_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (uid, (new_bal[1] if new_bal else ''), amount, (new_bal[0] if new_bal else 0), f"TG /addbalance by {admin_label}", admin_label, int(time.time() * 1000))
+                (uid, (uname or ''), amount, new_balance, reason_txt, admin_label, int(time.time() * 1000))
             )
             mc_id = mc_cur.lastrowid
             req_id = f"manual_credit_{mc_id}" if mc_id else f"manual_{int(time.time())}_{random.randint(1000, 9999)}"
             conn.execute(
                 "INSERT INTO payment_logs (req_id, user_id, username, amount, status, date, admin_name, timestamp, sender_num, method) VALUES (?, ?, ?, ?, 'approved', ?, ?, ?, ?, ?)",
-                (req_id, uid, (new_bal[1] if new_bal else None), amount, bst_date, admin_label, now_ts, "Admin Manual", "manual")
+                (req_id, uid, uname, amount, bst_date, admin_label, now_ts, "Admin Manual", "manual")
             )
         except Exception as _pe:
             print(f"[addbalance] log insert error: {_pe}")
 
         conn.commit(); conn.close()
+
+        user_notified = False
         try:
-            await bot.send_message(uid, f"🎁 **ব্যালেন্স যুক্ত করা হয়েছে!**\n\n💰 যোগ করা পরিমাণ: **+{amount}৳**\n💳 বর্তমান ব্যালেন্স: **{new_bal[0] if new_bal else '?'}৳**", parse_mode="Markdown")
+            await bot.send_message(
+                uid,
+                f"🎁 **ব্যালেন্স যুক্ত করা হয়েছে!**\n━━━━━━━━━━━━━━━━━━━━\n"
+                f"💰 যোগ করা পরিমাণ: **+{amount}৳**\n"
+                f"💳 বর্তমান ব্যালেন্স: **{new_balance}৳**\n"
+                f"🕒 সময়: {now_bdt.strftime('%d %b %Y, %I:%M %p')}\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"ℹ️ আপনার প্রোফাইল থেকে ব্যালেন্স হিস্ট্রি দেখতে পারেন।",
+                parse_mode="Markdown"
+            )
+            user_notified = True
         except Exception:
-            pass
-        await message.answer(f"✅ Added {amount}৳ to {target_input} (New balance: {new_bal[0] if new_bal else '?'}৳)")
+            user_notified = False
+
+        status_notify = "✅ ইউজারকে টেলিগ্রামে মেসেজ পাঠানো হয়েছে" if user_notified else "⚠️ ইউজারকে মেসেজ পাঠানো যায়নি (বট ব্লক অথবা স্টার্ট করেনি)"
+        await message.answer(
+            f"✅ **ব্যালেন্স সফলভাবে যোগ করা হয়েছে!**\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 ইউজার: **{uname or 'N/A'}**\n"
+            f"🆔 ID: `{uid}`\n"
+            f"💵 আগের ব্যালেন্স: **{old_bal}৳**\n"
+            f"➕ যোগ: **+{amount}৳**\n"
+            f"💰 বর্তমান ব্যালেন্স: **{new_balance}৳**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"{status_notify}",
+            parse_mode="Markdown"
+        )
     except Exception as e:
         await message.answer(f"❌ Error: {e}")
 
@@ -1460,31 +1580,73 @@ async def admin_add_bal(message: types.Message, command: CommandObject, state: F
 async def admin_cut_bal(message: types.Message, command: CommandObject, state: FSMContext):
     await state.clear()
     if not is_admin(message.from_user.id): return
-    if not command.args: return await message.answer("❌ Format: `/cutbalance @user 50`")
+    if not command.args: return await message.answer("❌ ফরম্যাট: `/cutbalance @user 50` অথবা `/cutbalance 12345678 50`")
     try:
         parts = command.args.split()
-        target_input, amount = parts[0], int(parts[1])
-        uid = get_id_by_username(target_input)
-        if not uid: return await message.answer(f"❌ User not found.")
-        conn = _dbc()
-        conn.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, uid))
-        new_bal = conn.execute("SELECT balance, username FROM users WHERE user_id = ?", (uid,)).fetchone()
+        target_input = parts[0]
+        amount = int(parts[1])
+        if amount <= 0:
+            return await message.answer("❌ কর্তন করার জন্য পজিটিভ সংখ্যা দিন (যেমন: 50)")
 
+        user_rec = get_user_record_by_input(target_input)
+        if not user_rec:
+            return await message.answer(f"❌ ইউজার পাওয়া যায়নি: '{target_input}'")
+
+        uid, uname, old_bal = user_rec
+        conn = _dbc()
+        db_user = conn.execute("SELECT balance, username FROM users WHERE user_id = ?", (uid,)).fetchone()
+        if not db_user:
+            conn.close()
+            return await message.answer(f"❌ ডেটাবেজে এই ইউজার পাওয়া যায়নি।")
+
+        old_bal = db_user[0] or 0
+        if db_user[1]: uname = db_user[1]
+
+        new_balance = max(0, old_bal - amount)
+        actual_cut = old_bal - new_balance
+        conn.execute("UPDATE users SET balance = ? WHERE user_id = ?", (new_balance, uid))
+
+        now_bdt = bdt_now()
         admin_label = f"Admin @{message.from_user.username or message.from_user.first_name}"
+        reason_txt = f"TG /cutbalance by {admin_label}"
+
         try:
             conn.execute(
                 "INSERT INTO manual_credits (user_id, username, delta, balance_after, reason, admin_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (uid, (new_bal[1] if new_bal else ''), -amount, (new_bal[0] if new_bal else 0), f"TG /cutbalance by {admin_label}", admin_label, int(time.time() * 1000))
+                (uid, (uname or ''), -actual_cut, new_balance, reason_txt, admin_label, int(time.time() * 1000))
             )
         except Exception as _ce:
             print(f"[cutbalance] log insert error: {_ce}")
 
         conn.commit(); conn.close()
+
+        user_notified = False
         try:
-            await bot.send_message(uid, f"⚠️ **ব্যালেন্স কর্তন করা হয়েছে!**\n\n🔻 কর্তন করা পরিমাণ: **-{amount}৳**\n💳 বর্তমান ব্যালেন্স: **{new_bal[0] if new_bal else '?'}৳**", parse_mode="Markdown")
+            await bot.send_message(
+                uid,
+                f"⚠️ **ব্যালেন্স কর্তন করা হয়েছে!**\n━━━━━━━━━━━━━━━━━━━━\n"
+                f"🔻 কর্তন করা পরিমাণ: **-{actual_cut}৳**\n"
+                f"💳 বর্তমান ব্যালেন্স: **{new_balance}৳**\n"
+                f"🕒 সময়: {now_bdt.strftime('%d %b %Y, %I:%M %p')}\n"
+                f"━━━━━━━━━━━━━━━━━━━━",
+                parse_mode="Markdown"
+            )
+            user_notified = True
         except Exception:
-            pass
-        await message.answer(f"⚠️ Deducted {amount}৳ from {target_input} (New balance: {new_bal[0] if new_bal else '?'}৳)")
+            user_notified = False
+
+        status_notify = "✅ ইউজারকে নোটিফিকেশন পাঠানো হয়েছে" if user_notified else "⚠️ ইউজারকে মেসেজ পাঠানো যায়নি"
+        await message.answer(
+            f"⚠️ **ব্যালেন্স কর্তন সম্পন্ন!**\n━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 ইউজার: **{uname or 'N/A'}**\n"
+            f"🆔 ID: `{uid}`\n"
+            f"💵 আগের ব্যালেন্স: **{old_bal}৳**\n"
+            f"🔻 কর্তন: **-{actual_cut}৳**\n"
+            f"💰 বর্তমান ব্যালেন্স: **{new_balance}৳**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"{status_notify}",
+            parse_mode="Markdown"
+        )
     except Exception as e:
         await message.answer(f"❌ Error: {e}")
 
@@ -1493,7 +1655,7 @@ async def admin_check_bal(message: types.Message, command: CommandObject, state:
     await state.clear()
     if not is_admin(message.from_user.id): return
     target = command.args.strip() if command.args else ""
-    if not target: return await message.answer("❌ `/check @user` or `/check all`")
+    if not target: return await message.answer("❌ ফরম্যাট: `/check @user` অথবা `/check 12345678` অথবা `/check all`")
 
     conn = _dbc()
 
@@ -1503,72 +1665,100 @@ async def admin_check_bal(message: types.Message, command: CommandObject, state:
 
         if not rows: return await message.answer("📂 No users with balance.")
 
-        report = "💰 USER BALANCES LIST:\n"
+        report = "💰 **USER BALANCES LIST:**\n━━━━━━━━━━━━━━━━━━━━\n"
         for idx, r in enumerate(rows, 1):
             name = r[0] if r[0] else "User"
-            report += f"{idx}. {name} | ID: {r[1]} | Bal: {r[2]}৳\n"
+            report += f"{idx}. {name} | ID: `{r[1]}` | Bal: **{r[2]}৳**\n"
 
         if len(report) > 4000:
             for x in range(0, len(report), 4000):
-                await message.answer(report[x:x+4000])
+                await message.answer(report[x:x+4000], parse_mode="Markdown")
         else:
-            await message.answer(report)
+            await message.answer(report, parse_mode="Markdown")
         return
 
-    uid = get_id_by_username(target)
-    if not uid:
+    user_rec = get_user_record_by_input(target)
+    if not user_rec:
         conn.close()
-        return await message.answer("❌ User not found.")
+        return await message.answer(f"❌ ইউজার পাওয়া যায়নি: '{target}'")
 
-    res = conn.execute("SELECT balance, username FROM users WHERE user_id=?", (uid,)).fetchone()
+    uid, uname, bal = user_rec
+    res = conn.execute("SELECT balance, username, is_banned FROM users WHERE user_id=?", (uid,)).fetchone()
+
     # FETCH LAST 5 DEPOSITS
-    last_deps = conn.execute("SELECT amount, date, timestamp FROM payment_logs WHERE user_id=? AND status='approved' ORDER BY timestamp DESC LIMIT 5", (uid,)).fetchall()
+    last_deps = conn.execute("SELECT amount, date, timestamp, method FROM payment_logs WHERE user_id=? AND status='approved' ORDER BY timestamp DESC LIMIT 5", (uid,)).fetchall()
+
+    # Total orders & spent
+    order_stat = conn.execute("SELECT count(*), coalesce(sum(total),0) FROM sales WHERE user_id=?", (uid,)).fetchone()
+    total_orders = order_stat[0] if order_stat else 0
+    total_spent = order_stat[1] if order_stat else 0
+
+    # MANUAL CREDITS
+    try:
+        _mc = conn.execute(
+            "SELECT delta, reason, admin_name, created_at, balance_after FROM manual_credits "
+            "WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (uid,)).fetchall()
+        _tot = conn.execute(
+            "SELECT COALESCE(SUM(delta),0), COUNT(*) FROM manual_credits WHERE user_id=?",
+            (uid,)).fetchone()
+    except Exception:
+        _mc, _tot = [], (0, 0)
+
     conn.close()
 
-    if res: 
-        deps_list = ""
+    if not res:
+        current_bal = bal or 0
+        display_name = uname or target
+        banned_str = " (অ্যাকাউন্ট এখনও শুরু করেনি)"
+    else:
+        current_bal = res[0]
+        display_name = res[1] or uname or "User"
+        banned_str = " 🚫 [BANNED]" if res[2] else ""
 
-        # MANUAL_CREDIT_BLOCK
-        try:
-            _c2 = _dbc()
-            _mc = _c2.execute(
-                "SELECT delta, reason, admin_name, created_at FROM manual_credits "
-                "WHERE user_id=? ORDER BY created_at DESC LIMIT 5", (uid,)).fetchall()
-            _tot = _c2.execute(
-                "SELECT COALESCE(SUM(delta),0), COUNT(*) FROM manual_credits WHERE user_id=?",
-                (uid,)).fetchone()
-            _c2.close()
-        except Exception:
-            _mc, _tot = [], (0, 0)
-        if _mc:
-            from datetime import datetime as _dt, timedelta as _td
-            deps_list += "\n\n🎁 MANUAL BALANCE (Admin):\n"
-            for _m in _mc:
-                _ts = _m[3] or 0
-                if _ts > 1e12: _ts = _ts / 1000
-                _t = (_dt.utcfromtimestamp(_ts) + _td(hours=6)).strftime('%d %b %Y, %I:%M %p')
-                _sign = '+' if (_m[0] or 0) >= 0 else ''
-                _rsn = (' — ' + _m[1]) if _m[1] else ''
-                _adm = (' [' + _m[2] + ']') if _m[2] else ''
-                deps_list += f"• {_sign}{_m[0]}৳ | {_t}{_rsn}{_adm}\n"
-            deps_list += f"📊 Total: {'+' if _tot[0]>=0 else ''}{_tot[0]}৳ ({_tot[1]} বার)\n"
-            if _tot[1] >= 3:
-                deps_list += "⚠️ এই user বারবার manual balance নিয়েছে!\n"
-        else:
-            deps_list += "\n\n🎁 Manual Balance: কখনো দেওয়া হয়নি\n"
-        if last_deps:
-            for d in last_deps:
-                if len(d) > 2 and d[2]:
-                    dt_str = datetime.fromtimestamp(d[2], timezone(timedelta(hours=6))).strftime('%Y-%m-%d %I:%M %p')
-                else:
-                    dt_str = d[1]
-                deps_list += f"\n ├ {d[0]}৳ (📅 {dt_str})"
-        else:
-            deps_list = "\n └ No approved deposits yet."
-            
-        await message.answer(f"👤 Name: {res[1]}\n🆔 ID: `{uid}`\n💰 Balance: **{res[0]}৳**\n\n📥 **Last 5 Deposits:**{deps_list}")
-    else: 
-        await message.answer("User data missing.")
+    from datetime import datetime as _dt, timedelta as _td
+
+    msg_lines = [
+        f"👤 **ইউজার স্টেটাস ও ব্যালেন্স রিপোর্ট**",
+        f"━━━━━━━━━━━━━━━━━━━━",
+        f"👤 নাম: **{display_name}**{banned_str}",
+        f"🆔 ID: `{uid}`",
+        f"💰 বর্তমান ব্যালেন্স: **{current_bal}৳**",
+        f"🛍️ মোট অর্ডার: **{total_orders}টি** | খরচ: **{total_spent}৳**",
+        f"━━━━━━━━━━━━━━━━━━━━",
+        f"🎁 **ম্যানুয়াল ব্যালেন্স / রিফান্ড হিস্ট্রি:**"
+    ]
+
+    if _mc:
+        for _m in _mc:
+            _ts = _m[3] or 0
+            if _ts > 1e12: _ts = _ts / 1000
+            _t = (_dt.utcfromtimestamp(_ts) + _td(hours=6)).strftime('%d %b %Y, %I:%M %p')
+            _sign = '+' if (_m[0] or 0) >= 0 else ''
+            _rsn = f" | {_m[1]}" if _m[1] else ""
+            _adm = f" [{_m[2]}]" if _m[2] else ""
+            _after = f" (ছিল: {_m[4]}৳)" if len(_m) > 4 and _m[4] is not None else ""
+            msg_lines.append(f"• {_sign}{_m[0]}৳{_after} — {_t}{_rsn}{_adm}")
+        msg_lines.append(f"📊 মোট ম্যানুয়াল: {'+' if _tot[0]>=0 else ''}{_tot[0]}৳ ({_tot[1]} বার)")
+        if _tot[1] >= 3:
+            msg_lines.append("⚠️ সতর্কতা: এই ইউজারকে একাধিকবার ম্যানুয়াল ব্যালেন্স দেওয়া হয়েছে!")
+    else:
+        msg_lines.append("• কোনো ম্যানুয়াল ব্যালেন্স/রিফান্ড রেকর্ড নেই।")
+
+    msg_lines.append("━━━━━━━━━━━━━━━━━━━━")
+    msg_lines.append("📥 **অনুমোদিত ডিপোজিট হিস্ট্রি:**")
+
+    if last_deps:
+        for d in last_deps:
+            if len(d) > 2 and d[2]:
+                dt_str = datetime.fromtimestamp(d[2], timezone(timedelta(hours=6))).strftime('%d %b %Y, %I:%M %p')
+            else:
+                dt_str = d[1]
+            method_str = f" ({d[3]})" if len(d) > 3 and d[3] else ""
+            msg_lines.append(f"• +{d[0]}৳{method_str} — 📅 {dt_str}")
+    else:
+        msg_lines.append("• কোনো অনুমোদিত ডিপোজিট পাওয়া যায়নি।")
+
+    await message.answer("\n".join(msg_lines), parse_mode="Markdown")
 
 @dp.message(Command("ban"))
 async def admin_ban(message: types.Message, command: CommandObject, state: FSMContext):
@@ -3033,7 +3223,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await message.answer("✨ **BasicTrick Digital Store** এ স্বাগতম! ✨\n👇 নিচের প্রিমিয়াম কিবোর্ড বাটনগুলো থেকে আপনার কাঙ্ক্ষিত অপশন বেছে নিন:", reply_markup=get_main_reply_keyboard())
     except Exception:
         pass
-    await show_dashboard_ui(message.from_user.id, message.from_user.first_name, bot, message.chat.id)
+    await show_dashboard_ui(message.from_user.id, message.from_user.first_name, bot, message.chat.id, message.from_user.username)
 
 @dp.message(F.text.in_([
     "👤 Profile", "👤 প্রোফাইল",
@@ -3060,6 +3250,7 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
         total_spent = order_stat[1] if order_stat else 0
         kb = InlineKeyboardBuilder()
         kb.row(types.InlineKeyboardButton(text="📦 আমার অর্ডারসমূহ (Order History)", callback_data="my_orders", style="primary"))
+        kb.row(types.InlineKeyboardButton(text="📜 ব্যালেন্স হিস্ট্রি (Balance Log)", callback_data="my_balance_history", style="success"))
         kb.row(types.InlineKeyboardButton(text="🔙 ব্যাক", callback_data="back_home"))
         p_text = (
             f"👤 **ইউজার প্রোফাইল**\n"
@@ -3228,7 +3419,7 @@ async def back_home(c: types.CallbackQuery, state: FSMContext):
         return await c.message.answer(get_maintenance_msg(), parse_mode="Markdown")
 
     await c.message.delete()
-    await show_dashboard_ui(c.from_user.id, c.from_user.first_name, bot, c.message.chat.id)
+    await show_dashboard_ui(c.from_user.id, c.from_user.first_name, bot, c.message.chat.id, c.from_user.username)
 
 @dp.callback_query(F.data == "catalog")
 async def show_cat(c: types.CallbackQuery):
@@ -3828,7 +4019,7 @@ async def dep_submit(m: types.Message, state: FSMContext):
 
     await m.answer("⏳ আপনার ডিপোজিট রিকোয়েস্ট জমা হয়েছে! অ্যাডমিন চেক করে ব্যালেন্স যোগ করে দেবে।")
     await state.clear()
-    await show_dashboard_ui(m.from_user.id, m.from_user.first_name, bot, m.chat.id)
+    await show_dashboard_ui(m.from_user.id, m.from_user.first_name, bot, m.chat.id, m.from_user.username)
 
 @dp.callback_query(F.data.startswith("pay_"))
 async def admin_pay_action(c: types.CallbackQuery):
@@ -6043,6 +6234,7 @@ async def profile(c: types.CallbackQuery):
 
     kb = InlineKeyboardBuilder()
     kb.row(types.InlineKeyboardButton(text="📦 আমার অর্ডারসমূহ (Order History)", callback_data="my_orders"))
+    kb.row(types.InlineKeyboardButton(text="📜 ব্যালেন্স হিস্ট্রি (Balance Log)", callback_data="my_balance_history"))
     kb.row(types.InlineKeyboardButton(text="🔙 ব্যাক", callback_data="back_home"))
 
     text = (
@@ -6057,6 +6249,108 @@ async def profile(c: types.CallbackQuery):
         f"বিগত অর্ডারের ফাইল দেখতে নিচে 'আমার অর্ডারসমূহ' বাটনে চাপুন।"
     )
     await c.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="Markdown")
+
+@dp.callback_query(F.data == "my_balance_history")
+async def my_balance_history_handler(c: types.CallbackQuery):
+    await c.answer()
+    uid = c.from_user.id
+    bal, uname, _ = get_user_data(uid, c.from_user.username, c.from_user.first_name)
+
+    conn = _dbc()
+    # 1. Fetch manual credits
+    try:
+        mc_rows = conn.execute(
+            "SELECT delta, balance_after, reason, created_at, admin_name FROM manual_credits "
+            "WHERE user_id=? ORDER BY created_at DESC LIMIT 10", (uid,)
+        ).fetchall()
+    except Exception:
+        mc_rows = []
+
+    # 2. Fetch approved deposits
+    try:
+        dep_rows = conn.execute(
+            "SELECT amount, date, timestamp, method FROM payment_logs "
+            "WHERE user_id=? AND status='approved' ORDER BY timestamp DESC LIMIT 10", (uid,)
+        ).fetchall()
+    except Exception:
+        dep_rows = []
+
+    conn.close()
+
+    from datetime import datetime as _dt, timedelta as _td
+
+    logs = []
+    for r in mc_rows:
+        delta, bal_after, reason, created_at, admin_name = r
+        ts = (created_at or 0)
+        if ts > 1e12: ts = ts / 1000
+        logs.append({
+            'ts': ts,
+            'type': 'manual',
+            'delta': delta,
+            'balance_after': bal_after,
+            'reason': reason or 'অ্যাডমিন ক্রেডিট / রিফান্ড',
+            'method': 'admin'
+        })
+
+    for d in dep_rows:
+        amount, d_date, d_ts, method = d
+        ts = d_ts or 0
+        if not ts and d_date:
+            try:
+                ts = int(_dt.strptime(d_date, "%Y-%m-%d").timestamp())
+            except Exception:
+                ts = 0
+        already_in = False
+        for l in logs:
+            if l['type'] == 'manual' and abs(l['ts'] - ts) < 5 and l['delta'] == amount:
+                already_in = True
+                break
+        if not already_in:
+            logs.append({
+                'ts': ts,
+                'type': 'deposit',
+                'delta': amount,
+                'balance_after': None,
+                'reason': f"অনুমোদিত ডিপোজিট ({method or 'Payment'})",
+                'method': method or 'Auto/Manual'
+            })
+
+    logs.sort(key=lambda x: x['ts'], reverse=True)
+
+    kb = InlineKeyboardBuilder()
+    kb.row(types.InlineKeyboardButton(text="🔙 প্রোফাইলে ফিরে যান", callback_data="profile"))
+
+    if not logs:
+        text = (
+            f"📜 **ব্যালেন্স ট্রানজ্যাকশন হিস্ট্রি**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"💰 বর্তমান ব্যালেন্স: `{bal}৳`\n\n"
+            f"ℹ️ আপনার কোনো ব্যালেন্স ট্রানজ্যাকশন বা ম্যানুয়াল হিস্ট্রি নেই।"
+        )
+        return await c.message.edit_text(text, reply_markup=kb.as_markup(), parse_mode="Markdown")
+
+    text_lines = [
+        f"📜 **ব্যালেন্স ট্রানজ্যাকশন হিস্ট্রি**",
+        f"━━━━━━━━━━━━━━━━━━━━",
+        f"💰 বর্তমান ব্যালেন্স: **{bal}৳**",
+        f"━━━━━━━━━━━━━━━━━━━━"
+    ]
+
+    for item in logs[:10]:
+        t_str = (_dt.utcfromtimestamp(item['ts']) + _td(hours=6)).strftime('%d %b %Y, %I:%M %p') if item['ts'] else 'Unknown Time'
+        sign = '+' if item['delta'] > 0 else ''
+        icon = '🎁' if item['type'] == 'manual' else '💳'
+        bal_str = f" | ব্যালেন্স ছিল: `{item['balance_after']}৳`" if item['balance_after'] is not None else ""
+        text_lines.append(f"{icon} **{sign}{item['delta']}৳**{bal_str}")
+        text_lines.append(f"   🕒 {t_str}")
+        text_lines.append(f"   📝 {item['reason']}")
+        text_lines.append("")
+
+    text_lines.append("━━━━━━━━━━━━━━━━━━━━")
+    text_lines.append("ℹ️ সর্বশেষ ১০টি ট্রানজ্যাকশন প্রদর্শিত হয়েছে।")
+
+    await c.message.edit_text("\n".join(text_lines), reply_markup=kb.as_markup(), parse_mode="Markdown")
 
 
 @dp.callback_query(F.data == "my_orders")
