@@ -2,7 +2,7 @@
 const express = require('express');
 const { db, logAudit } = require('../db');
 const router = express.Router();
-const BOT_TOKEN = process.env.BOT_TOKEN || '8364765061:AAEoT6w2l74JDowWUns2EC5OT8wEcIji9Y4';
+const BOT_TOKEN = process.env.BOT_TOKEN;
 
 function fmtDate(ts) {
   if (!ts) return '-';

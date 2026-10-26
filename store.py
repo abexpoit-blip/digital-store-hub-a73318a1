@@ -87,11 +87,19 @@ async def create_zinipay_invoice(user_id: int, username: str, amount: int):
     return await asyncio.to_thread(_sync_create_zinipay_invoice, user_id, username, amount)
 # ===== /ZiniPay Helper =====
 
-load_dotenv()
-
+_env_candidates = [
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+    "/root/digital-store-hub/.env",
+    "/root/.env"
+]
+for _ep in _env_candidates:
+    if os.path.exists(_ep):
+        load_dotenv(_ep, override=False)
 
 # --- CONFIGURATION ---
-TOKEN = "8364765061:AAEoT6w2l74JDowWUns2EC5OT8wEcIji9Y4"
+TOKEN = os.getenv("BOT_TOKEN", "").strip()
+if not TOKEN:
+    raise RuntimeError("CRITICAL: BOT_TOKEN is missing! Please configure BOT_TOKEN in .env file.")
 OWNER_ID = 5311644406
 ADMIN_USER = "@samexpoit"
 GROUP_LINK = "https://t.me/basictrick"
