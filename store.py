@@ -151,6 +151,9 @@ def get_replace_window_seconds(qty: int, category: str = "") -> int:
     except Exception:
         q = 1
 
+    if "proton" in cat_str:
+        return 7 * 24 * 3600
+
     if cat_str == "tempid_2fa":
         if q == 1:
             return 10 * 60
@@ -179,6 +182,9 @@ def get_replace_window_hours(qty: int, category: str = "") -> int:
 
 def get_replace_window_text(qty: int, category: str = "") -> str:
     sec = get_replace_window_seconds(qty, category)
+    d = sec // 86400
+    if d > 0:
+        return f"{d} দিন ({d} Days)"
     h = sec // 3600
     m = (sec % 3600) // 60
     if h > 0 and m > 0:
@@ -212,6 +218,12 @@ def get_sale_epoch(sale_id: int, date_str: str, time_str: str) -> int:
 def format_duration(seconds: int) -> str:
     """Format duration in seconds into human-readable Bengali string."""
     seconds = max(0, int(seconds))
+    days = seconds // 86400
+    if days > 0:
+        rem_hours = (seconds % 86400) // 3600
+        if rem_hours > 0:
+            return f"{days} দিন {rem_hours} ঘণ্টা"
+        return f"{days} দিন"
     hours = seconds // 3600
     minutes = (seconds % 3600) // 60
     if hours > 0 and minutes > 0:
@@ -4227,7 +4239,11 @@ async def vpn_confirm_order(c: types.CallbackQuery, state: FSMContext):
     kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data=f"vpn_sel_{vpn_id}"),
            types.InlineKeyboardButton(text="❌ Close", callback_data="back_home"))
            
-    msg = f"┏━━━━━━━━━━━━━━━━━━━━━┓\n┣ {emoji} **{vpn_name}**\n┗━━━━━━━━━━━━━━━━━━━━━┛\n📦 **প্যাকেজ:** {pkg_name}\n💰 **মূল্য:** {price} টাকা\n\n⚠️ **অর্ডার কনফার্ম করবেন?**"
+    warranty_notice = ""
+    if "proton" in str(vpn_name).lower() or vpn_id == "proton":
+        warranty_notice = "\n🛡️ **ওয়ারেন্টি:** ৭ দিনের ফুল রিপ্লেস গ্যারান্টি!"
+
+    msg = f"┏━━━━━━━━━━━━━━━━━━━━━┓\n┣ {emoji} **{vpn_name}**\n┗━━━━━━━━━━━━━━━━━━━━━┛\n📦 **প্যাকেজ:** {pkg_name}\n💰 **মূল্য:** {price} টাকা{warranty_notice}\n\n⚠️ **অর্ডার কনফার্ম করবেন?**"
     await c.message.edit_text(msg, reply_markup=kb.as_markup())
 
 @dp.callback_query(F.data.startswith("vpn_buy_"))
@@ -4533,6 +4549,15 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
             conn.commit()
             conn.close()
 
+            extra_vpn_notice = ""
+            if "proton" in str(vpn_name).lower() or vpn_id == "proton":
+                extra_vpn_notice = (
+                    "\n━━━━━━━━━━━━━━━━━━━━\n"
+                    "🛡️ **রিপ্লেস ওয়ারেন্টি পলিসি:**\n"
+                    "⚠️ এই Proton VPN এ **৭ দিনের ফুল রিপ্লেস গ্যারান্টি** রয়েছে।\n"
+                    "মেয়াদকালীন কোনো সমস্যা হলে বা নষ্ট হলে ৭ দিনের মধ্যে আমাদের সাপোর্টে যোগাযোগ করে রিপ্লেস নিতে পারবেন।"
+                )
+
             # Deliver to user
             user_delivery_msg = (
                 f"🎉 **আপনার VPN অর্ডার ডেলিভারি সম্পন্ন হয়েছে!** 🎉\n"
@@ -4542,7 +4567,7 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                 f"⚡ **ডেলিভারি মেথড:** Instant Verified Delivery\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"🔐 **আপনার একাউন্ট ডিটেইলস:**\n"
-                f"```text\n{account_data}\n```\n"
+                f"```text\n{account_data}\n```{extra_vpn_notice}\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"🆔 Order: `{order_id}`\n"
                 f"💡 *(কপি করতে ওপরের বক্সে ক্লিক করুন)*\n"
@@ -4628,6 +4653,15 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                 conn.commit()
                 conn.close()
 
+                extra_vpn_notice = ""
+                if "proton" in str(vpn_name).lower() or vpn_id == "proton":
+                    extra_vpn_notice = (
+                        "\n━━━━━━━━━━━━━━━━━━━━\n"
+                        "🛡️ **রিপ্লেস ওয়ারেন্টি পলিসি:**\n"
+                        "⚠️ এই Proton VPN এ **৭ দিনের ফুল রিপ্লেস গ্যারান্টি** রয়েছে।\n"
+                        "মেয়াদকালীন কোনো সমস্যা হলে বা নষ্ট হলে ৭ দিনের মধ্যে আমাদের সাপোর্টে যোগাযোগ করে রিপ্লেস নিতে পারবেন।"
+                    )
+
                 # Deliver to user
                 user_delivery_msg = (
                     f"🎉 **আপনার VPN অর্ডার ডেলিভারি সম্পন্ন হয়েছে!** 🎉\n"
@@ -4637,7 +4671,7 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                     f"⚡ **ডেলিভারি মেথড:** Instant Auto-Delivery\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"🔐 **আপনার অ্যাকাউন্ট ডিটেইলস:**\n"
-                    f"```text\n{account_data}\n```\n"
+                    f"```text\n{account_data}\n```{extra_vpn_notice}\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"🆔 Order: `{order_id}`\n"
                     f"💡 *(কপি করতে ওপরের বক্সে ক্লিক করুন)*\n"
