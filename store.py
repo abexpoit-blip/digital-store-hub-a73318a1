@@ -2546,13 +2546,15 @@ async def vpn_auto_fulfill_worker():
 
                 now_ts = int(time.time())
 
-                # 1. First check slot sharing pool (1 VPN to 2 distinct users)
-                pool_row = conn.execute("""
-                    SELECT id, data, delivered_count FROM vpn_stock_pool
-                    WHERE vpn_id = ? AND pkg_id = ? AND delivered_count < 2
-                      AND id NOT IN (SELECT stock_id FROM vpn_pool_deliveries WHERE user_id = ?)
-                    ORDER BY delivered_count DESC, id ASC LIMIT 1
-                """, (v_id, pkg_id, p_uid)).fetchone()
+                # 1. First check slot sharing pool (NORD VPN ONLY)
+                pool_row = None
+                if v_id == 'nord':
+                    pool_row = conn.execute("""
+                        SELECT id, data, delivered_count FROM vpn_stock_pool
+                        WHERE vpn_id = 'nord' AND pkg_id = ? AND delivered_count < 2
+                          AND id NOT IN (SELECT stock_id FROM vpn_pool_deliveries WHERE user_id = ?)
+                        ORDER BY delivered_count DESC, id ASC LIMIT 1
+                    """, (pkg_id, p_uid)).fetchone()
 
                 if pool_row:
                     pool_id, acc_data, deliv_count = pool_row
@@ -2620,12 +2622,16 @@ async def vpn_auto_fulfill_worker():
 
                     if account_data:
                         conn = _dbc()
-                        cur = conn.execute(
-                            "INSERT INTO vpn_stock_pool (vpn_id, pkg_id, service_code, data, delivered_count, api_order_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
-                            (v_id, pkg_id, svc_code, str(account_data), api_oid, now_ts)
-                        )
-                        new_pool_id = cur.lastrowid
-                        conn.execute("INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)", (new_pool_id, p_uid, p_oid, now_ts))
+                        if v_id == 'nord':
+                            try:
+                                cur = conn.execute(
+                                    "INSERT INTO vpn_stock_pool (vpn_id, pkg_id, service_code, data, delivered_count, api_order_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+                                    (v_id, pkg_id, svc_code, str(account_data), api_oid, now_ts)
+                                )
+                                new_pool_id = cur.lastrowid
+                                conn.execute("INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)", (new_pool_id, p_uid, p_oid, now_ts))
+                            except Exception as _ep:
+                                print(f"[vpn_pool_worker_insert] error: {_ep}")
                         conn.execute(
                             "UPDATE vpn_orders SET status='delivered', admin_name='API-AUTO', api_order_id=?, api_service=?, api_status='completed', api_response=? WHERE order_id=?",
                             (api_oid, svc_code, str(account_data), p_oid)
@@ -4487,14 +4493,16 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
         conn.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (price, c.from_user.id))
         conn.commit()
 
-        # === 1 VPN 2 USERS SLOT SHARING POOL CHECK ===
+        # === 1 VPN 2 USERS SLOT SHARING POOL CHECK (NORD VPN ONLY) ===
         # Deliver slot 2 if an account exists that was not given to this user
-        pool_row = conn.execute("""
-            SELECT id, data, delivered_count, api_order_id FROM vpn_stock_pool
-            WHERE vpn_id = ? AND pkg_id = ? AND delivered_count < 2
-              AND id NOT IN (SELECT stock_id FROM vpn_pool_deliveries WHERE user_id = ?)
-            ORDER BY delivered_count DESC, id ASC LIMIT 1
-        """, (vpn_id, pkg_id, c.from_user.id)).fetchone()
+        pool_row = None
+        if vpn_id == 'nord':
+            pool_row = conn.execute("""
+                SELECT id, data, delivered_count, api_order_id FROM vpn_stock_pool
+                WHERE vpn_id = 'nord' AND pkg_id = ? AND delivered_count < 2
+                  AND id NOT IN (SELECT stock_id FROM vpn_pool_deliveries WHERE user_id = ?)
+                ORDER BY delivered_count DESC, id ASC LIMIT 1
+            """, (pkg_id, c.from_user.id)).fetchone()
 
         if pool_row:
             pool_id, account_data, deliv_count, pool_api_oid = pool_row
@@ -4583,17 +4591,18 @@ async def process_vpn_buy(c: types.CallbackQuery, state: FSMContext):
                         break
 
             if account_data:
-                # INSTANT DELIVERY SUCCESS -> SAVE TO POOL (delivered_count = 1)
-                try:
-                    cur = conn.execute(
-                        "INSERT INTO vpn_stock_pool (vpn_id, pkg_id, service_code, data, delivered_count, api_order_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
-                        (vpn_id, pkg_id, s_code, str(account_data), api_order_id, now_ts)
-                    )
-                    new_pool_id = cur.lastrowid
-                    conn.execute("INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)",
-                                 (new_pool_id, c.from_user.id, order_id, now_ts))
-                except Exception as _ep:
-                    print(f"[vpn_pool_insert] error: {_ep}")
+                # SAVE TO POOL (NORD VPN ONLY)
+                if vpn_id == 'nord':
+                    try:
+                        cur = conn.execute(
+                            "INSERT INTO vpn_stock_pool (vpn_id, pkg_id, service_code, data, delivered_count, api_order_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+                            (vpn_id, pkg_id, s_code, str(account_data), api_order_id, now_ts)
+                        )
+                        new_pool_id = cur.lastrowid
+                        conn.execute("INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)",
+                                     (new_pool_id, c.from_user.id, order_id, now_ts))
+                    except Exception as _ep:
+                        print(f"[vpn_pool_insert] error: {_ep}")
 
                 conn.execute(
                     """INSERT INTO vpn_orders
@@ -4819,7 +4828,7 @@ async def poll_and_deliver_api_vpn_order(order_id, api_order_id, user_id, vpn_na
             cur_time = bdt_time_str()
             bdt_date = bdt_date_str()
 
-            # Save into 2-user slot sharing pool
+            # Save into 2-user slot sharing pool (NORD VPN ONLY)
             v_id = re.sub(r'[^a-z0-9]', '', vpn_name.lower().replace('vpn', ''))[:20] or 'vpn'
             pkg_id_clean = pkg_name.lower().replace(' ', '')
             m_d = re.search(r'(\d+)\s*(d|day|m|mo|month)', pkg_id_clean)
@@ -4827,18 +4836,19 @@ async def poll_and_deliver_api_vpn_order(order_id, api_order_id, user_id, vpn_na
                 num = m_d.group(1)
                 unit = 'm' if 'm' in m_d.group(2) else 'd'
                 pkg_id_clean = f"{num}{unit}"
-            try:
-                cur = conn.execute(
-                    "INSERT INTO vpn_stock_pool (vpn_id, pkg_id, service_code, data, delivered_count, api_order_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
-                    (v_id, pkg_id_clean, None, str(account_data), api_order_id, now_ts)
-                )
-                new_pool_id = cur.lastrowid
-                conn.execute(
-                    "INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)",
-                    (new_pool_id, user_id, order_id, now_ts)
-                )
-            except Exception as _epool:
-                print(f"[vpn_pool_poll] save failed: {_epool}")
+            if v_id == 'nord':
+                try:
+                    cur = conn.execute(
+                        "INSERT INTO vpn_stock_pool (vpn_id, pkg_id, service_code, data, delivered_count, api_order_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+                        (v_id, pkg_id_clean, None, str(account_data), api_order_id, now_ts)
+                    )
+                    new_pool_id = cur.lastrowid
+                    conn.execute(
+                        "INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)",
+                        (new_pool_id, user_id, order_id, now_ts)
+                    )
+                except Exception as _epool:
+                    print(f"[vpn_pool_poll] save failed: {_epool}")
 
             conn.execute(
                 "UPDATE vpn_orders SET status='delivered', admin_name='API-POOL-1/2', api_status='completed', api_response=? WHERE order_id=?",
@@ -4927,15 +4937,16 @@ async def retry_vpn_api_delivery(c: types.CallbackQuery):
             now_ts = int(bdt_now().timestamp())
             cur_time = bdt_time_str()
             bdt_date = bdt_date_str()
-            try:
-                cur = conn.execute(
-                    "INSERT INTO vpn_stock_pool (vpn_id, pkg_id, service_code, data, delivered_count, api_order_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
-                    (v_id, pkg_id_clean, s_code, str(account_data), api_order_id, now_ts)
-                )
-                new_pool_id = cur.lastrowid
-                conn.execute("INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)", (new_pool_id, user_id, order_id, now_ts))
-            except Exception as _e_pool:
-                print(f"[vpn_retry_pool] error: {_e_pool}")
+            if v_id == 'nord':
+                try:
+                    cur = conn.execute(
+                        "INSERT INTO vpn_stock_pool (vpn_id, pkg_id, service_code, data, delivered_count, api_order_id, created_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+                        (v_id, pkg_id_clean, s_code, str(account_data), api_order_id, now_ts)
+                    )
+                    new_pool_id = cur.lastrowid
+                    conn.execute("INSERT INTO vpn_pool_deliveries (stock_id, user_id, order_id, delivered_at) VALUES (?, ?, ?, ?)", (new_pool_id, user_id, order_id, now_ts))
+                except Exception as _e_pool:
+                    print(f"[vpn_retry_pool] error: {_e_pool}")
 
             conn.execute("UPDATE vpn_orders SET status='delivered', admin_name='API-RETRY', api_order_id=?, api_service=?, api_status='completed', api_response=? WHERE order_id=?", (api_order_id, s_code, str(account_data), order_id))
             _scur = conn.execute(
