@@ -490,7 +490,7 @@ def init_db():
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_tempid', '15')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_tempid_2fa', '18')")
     # VPN Provider API Defaults
-    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_url', 'https://vpn.sajeebtechonline.top/api.php')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_url', 'https://easyxearn.site/api.php')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_key', 'TTECH_0dd4e0099d624b574026fc182a22466016104bb5dd4bf601')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_auto_order', '1')")
     cursor.execute("INSERT OR IGNORE INTO vpn_brands (vpn_id, vpn_name) VALUES ('potato', 'Potato VPN')")
@@ -2211,7 +2211,7 @@ async def admin_stats_weekly(message: types.Message, state: FSMContext):
         await message.answer(f"❌ Error computing weekly stats: {e}")
 
 # --- VPN PROVIDER API CLIENT & AUTOMATION HELPERS ---
-VPN_API_DEFAULT_URL = "https://vpn.sajeebtechonline.top/api.php"
+VPN_API_DEFAULT_URL = "https://easyxearn.site/api.php"
 VPN_API_DEFAULT_KEY = "TTECH_0dd4e0099d624b574026fc182a22466016104bb5dd4bf601"
 
 def _sync_vpn_api_call(action: str, **kwargs):
@@ -2497,7 +2497,7 @@ async def check_and_warn_vpn_balance(current_bal=None):
                 f"⚠️ **VPN প্রোভাইডার ব্যালেন্স সতর্কবার্তা!** ⚠️\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"💰 বর্তমান ব্যালেন্স: **{current_bal} BDT**\n"
-                f"🔌 প্রোভাইডার: `vpn.sajeebtechonline.top`\n\n"
+                f"🔌 প্রোভাইডার: `easyxearn.site`\n\n"
                 f"⚠️ ব্যালেন্স কমে এসেছে বা শেষ হয়ে গেছে। অনুগ্রহ করে প্রোভাইডার অ্যাকাউন্টে ব্যালেন্স রিলোড করুন যাতে কাস্টমারদের অর্ডার আটকে না থাকে।"
             )
             for a in admins:
@@ -2710,7 +2710,7 @@ async def admin_vpn_balance(message: types.Message):
         await status_msg.edit_text(
             f"💰 **VPN Provider Live Balance:**\n━━━━━━━━━━━━━━━━━━━━\n"
             f"💵 ব্যালেন্স: **{bal} {curr}**\n"
-            f"🔌 প্রোভাইডার: `vpn.sajeebtechonline.top`\n"
+            f"🔌 প্রোভাইডার: `easyxearn.site`\n"
             f"⚡ স্ট্যাটাস: **Active**",
             parse_mode="Markdown"
         )

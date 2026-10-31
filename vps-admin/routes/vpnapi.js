@@ -1,5 +1,5 @@
 // VPN Provider API — sync brand / package / days info from the reseller API.
-// Provider: https://vpn.sajeebtechonline.top/api.php  (actions: services, balance, order, status)
+// Provider: https://easyxearn.site/api.php  (actions: services, balance, order, status)
 // NOTE: This page only syncs catalog info (brand, package, days, availability).
 //       Selling price is NOT touched here — price is managed in /vpn.
 const express = require('express');
@@ -8,7 +8,7 @@ const { URL } = require('url');
 const { db, logAudit } = require('../db');
 const router = express.Router();
 
-const DEFAULT_API_URL = 'https://vpn.sajeebtechonline.top/api.php';
+const DEFAULT_API_URL = 'https://easyxearn.site/api.php';
 const DEFAULT_API_KEY = 'TTECH_0dd4e0099d624b574026fc182a22466016104bb5dd4bf601';
 
 // ---------- schema ----------
