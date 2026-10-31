@@ -131,6 +131,9 @@
       <span class="text-amber-800 font-semibold flex items-center gap-1.5">
         <span class="h-1.5 w-1.5 rounded-full <%= pendingPayments > 0 ? 'bg-amber-500 animate-ping' : 'bg-emerald-500' %>"></span>
         <%= pendingPayments %> Pending Review
+        <% if (typeof pendingBinance !== 'undefined' && pendingBinance > 0) { %>
+          <span class="bg-amber-100 text-amber-800 border border-amber-300 font-mono px-1.5 py-0.5 rounded font-bold">💎 <%= pendingBinance %> Binance</span>
+        <% } %>
       </span>
       <a href="/deposits" class="text-sky-700 hover:text-sky-800 font-extrabold transition">Audit →</a>
     </div>

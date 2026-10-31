@@ -87,8 +87,77 @@ async function tgSendPhotoIdOrUrl(chatId, photoIdOrUrl, caption = '') {
   return { ok: !!j.ok, desc: j.description || '' };
 }
 
+async function runAsyncBroadcast({ recipients, text, file, imageUrl, adminName }) {
+  const hasPhoto = !!(file || imageUrl);
+  let cachedPhotoId = imageUrl || null;
+  const isCaptionShort = text.length <= 1024;
+  const photoCaption = isCaptionShort ? text : '';
+
+  // If file buffer is present, upload once to get fileId
+  if (file && !cachedPhotoId && recipients.length > 0) {
+    try {
+      const r = await tgSendPhotoBuffer(recipients[0], file.buffer, file.originalname, photoCaption);
+      if (r && r.fileId) cachedPhotoId = r.fileId;
+    } catch (_) {}
+  }
+
+  let sent = 0, failed = 0;
+  const blockedUids = [];
+  const concurrency = 15;
+  const delayMs = 40; // ~25 req/sec
+
+  let idx = 0;
+  async function worker() {
+    while (idx < recipients.length) {
+      const myIdx = idx++;
+      const uid = recipients[myIdx];
+      try {
+        let ok = false;
+        if (hasPhoto && cachedPhotoId) {
+          const r = await tgSendPhotoIdOrUrl(uid, cachedPhotoId, photoCaption);
+          if (r.ok) {
+            ok = true;
+            if (!isCaptionShort && text) await tgSendMessage(uid, text);
+          } else if (r.desc && /blocked|forbidden|deactivated|not found/i.test(r.desc)) {
+            blockedUids.push(uid);
+          }
+        } else {
+          const r = await tgSendMessage(uid, text);
+          if (r.ok) {
+            ok = true;
+          } else if (r.desc && /blocked|forbidden|deactivated|not found/i.test(r.desc)) {
+            blockedUids.push(uid);
+          }
+        }
+        if (ok) sent++; else failed++;
+      } catch (err) {
+        failed++;
+        if (/blocked|forbidden|deactivated|not found/i.test(err.message)) {
+          blockedUids.push(uid);
+        }
+      }
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+
+  const workers = Array.from({ length: concurrency }, () => worker());
+  await Promise.all(workers);
+
+  if (blockedUids.length > 0) {
+    try {
+      const stmt = db.prepare('UPDATE users SET bot_blocked = 1 WHERE user_id = ?');
+      const updateMany = db.transaction((uids) => {
+        for (const u of uids) stmt.run(u);
+      });
+      updateMany(blockedUids);
+    } catch (_) {}
+  }
+
+  logAudit(adminName, 'notice_broadcast_complete', `target=all hasPhoto=${hasPhoto} sent=${sent} failed=${failed} blocked=${blockedUids.length}`);
+}
+
 router.get('/', (req, res) => {
-  const totalUsers = db.prepare('SELECT COUNT(*) AS c FROM users WHERE COALESCE(is_banned,0)=0').get().c;
+  const totalUsers = db.prepare('SELECT COUNT(*) AS c FROM users WHERE COALESCE(is_banned,0)=0 AND COALESCE(bot_blocked,0)=0').get().c;
   res.render('notice', {
     msg: req.query.msg || null,
     totalUsers,
@@ -109,67 +178,40 @@ router.post('/send', upload.single('photo'), async (req, res) => {
     return res.redirect('/notice?msg=' + encodeURIComponent('❌ BOT_TOKEN missing in .env'));
   }
 
-  let recipients = [];
+  const adminName = (req.session && req.session.admin) || 'Web Admin';
+
   if (target === 'all') {
-    recipients = db.prepare('SELECT user_id FROM users WHERE COALESCE(is_banned,0)=0').all().map(r => r.user_id);
+    const recipients = db.prepare('SELECT user_id FROM users WHERE COALESCE(is_banned,0)=0 AND COALESCE(bot_blocked,0)=0').all().map(r => r.user_id);
+    
+    // Non-blocking high speed background broadcast
+    runAsyncBroadcast({ recipients, text, file, imageUrl, adminName }).catch(err => {
+      console.error('[notice] broadcast error:', err);
+    });
+
+    logAudit(adminName, 'notice_send_initiated', `target=all total=${recipients.length} hasPhoto=${!!(file||imageUrl)}`);
+    return res.redirect('/notice?msg=' + encodeURIComponent(`🚀 নোটিশ পাঠানো ব্যাকগ্রাউন্ডে শুরু হয়েছে (${recipients.length} জন সক্রিয় ইউজার)! এটি প্রায় ১-২ মিনিটের মধ্যে সম্পন্ন হবে।`));
   } else {
+    // Single user instant send
     const id = parseInt(target, 10);
     if (!id) return res.redirect('/notice?msg=' + encodeURIComponent('❌ Invalid user_id'));
-    recipients = [id];
-  }
 
-  let sent = 0, failed = 0;
-  const hasPhoto = !!(file || imageUrl);
-
-  if (hasPhoto) {
-    let cachedPhotoId = imageUrl || null;
-    const isCaptionShort = text.length <= 1024;
-    const photoCaption = isCaptionShort ? text : '';
-
-    for (let i = 0; i < recipients.length; i++) {
-      const uid = recipients[i];
-      try {
-        let photoSent = false;
-        if (cachedPhotoId) {
-          // Fast send using Telegram file_id or URL
-          const r = await tgSendPhotoIdOrUrl(uid, cachedPhotoId, photoCaption);
-          if (r.ok) photoSent = true;
-        } else if (file) {
-          // Upload buffer once to obtain Telegram file_id
-          const r = await tgSendPhotoBuffer(uid, file.buffer, file.originalname, photoCaption);
-          if (r.ok) {
-            photoSent = true;
-            if (r.fileId) cachedPhotoId = r.fileId;
-          }
-        }
-
-        if (photoSent) {
-          // If text was too long for caption (>1024 chars), send text as follow-up message
-          if (!isCaptionShort && text) {
-            await tgSendMessage(uid, text);
-          }
-          sent++;
-        } else {
-          failed++;
-        }
-      } catch (_) {
-        failed++;
+    let sent = false;
+    try {
+      if (file) {
+        const r = await tgSendPhotoBuffer(id, file.buffer, file.originalname, text);
+        sent = r.ok;
+      } else if (imageUrl) {
+        const r = await tgSendPhotoIdOrUrl(id, imageUrl, text);
+        sent = r.ok;
+      } else {
+        const r = await tgSendMessage(id, text);
+        sent = r.ok;
       }
-      await new Promise(r => setTimeout(r, 40));
-    }
-  } else {
-    // Pure text notice
-    for (const uid of recipients) {
-      try {
-        const r = await tgSendMessage(uid, text);
-        if (r.ok) sent++; else failed++;
-      } catch (_) { failed++; }
-      await new Promise(r => setTimeout(r, 40));
-    }
-  }
+    } catch (_) {}
 
-  logAudit('admin', 'notice_send', `target=${target} hasPhoto=${hasPhoto} sent=${sent} failed=${failed}`);
-  res.redirect('/notice?msg=' + encodeURIComponent(`✅ Notice Sent: ${sent}, Failed: ${failed}`));
+    logAudit(adminName, 'notice_single_send', `target=${id} sent=${sent}`);
+    return res.redirect('/notice?msg=' + encodeURIComponent(sent ? `✅ ইউজার ${id}-কে নোটিশ সফলভাবে পাঠানো হয়েছে!` : `❌ ইউজার ${id}-কে নোটিশ পাঠানো ব্যর্থ হয়েছে।`));
+  }
 });
 
 module.exports = router;

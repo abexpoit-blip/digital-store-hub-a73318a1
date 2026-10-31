@@ -4,9 +4,9 @@ import time
 
 # === DB CONNECT HELPER (busy_timeout fix) ===
 def _dbc(path='/root/store.db'):
-    _c = sqlite3.connect(path, timeout=15)
+    _c = sqlite3.connect(path, timeout=30)
     try:
-        _c.execute("PRAGMA busy_timeout=15000")
+        _c.execute("PRAGMA busy_timeout=30000")
         _c.execute("PRAGMA journal_mode=WAL")
         _c.execute("PRAGMA synchronous=NORMAL")
     except Exception:
@@ -416,6 +416,22 @@ def init_db():
     for col in ["detected_uids", "seller_name"]:
         try: cursor.execute(f"ALTER TABLE replace_requests ADD COLUMN {col} TEXT")
         except: pass
+    try: cursor.execute("ALTER TABLE users ADD COLUMN bot_blocked INTEGER DEFAULT 0")
+    except: pass
+
+    # High-performance query indexes
+    for _idx in [
+        "CREATE INDEX IF NOT EXISTS idx_stock_cat ON stock(category)",
+        "CREATE INDEX IF NOT EXISTS idx_sales_user ON sales(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_sales_cat ON sales(category)",
+        "CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(date)",
+        "CREATE INDEX IF NOT EXISTS idx_pl_status ON payment_logs(status)",
+        "CREATE INDEX IF NOT EXISTS idx_pl_method ON payment_logs(method)",
+        "CREATE INDEX IF NOT EXISTS idx_replace_status ON replace_requests(status)",
+        "CREATE INDEX IF NOT EXISTS idx_replace_user ON replace_requests(user_id)",
+    ]:
+        try: cursor.execute(_idx)
+        except: pass
 
     # 1 VPN 2 Users Slot Sharing Pool
     cursor.execute('''CREATE TABLE IF NOT EXISTS vpn_stock_pool (
@@ -651,6 +667,10 @@ def get_user_data(user_id, username=None, first_name="Unknown"):
             cursor.execute("UPDATE users SET username=? WHERE user_id=?", (first_name, user_id))
             conn.commit()
             current_name = first_name
+        try:
+            cursor.execute("UPDATE users SET bot_blocked=0 WHERE user_id=? AND bot_blocked=1", (user_id,))
+            conn.commit()
+        except: pass
         res = (user[0], current_name, user[2])
     conn.close()
     return res
@@ -1445,6 +1465,133 @@ async def process_notice_content(message: types.Message, state: FSMContext):
     
     await message.reply("👆 এই মেসেজটি নোটিশ হিসেবে পাঠাতে চান?", reply_markup=kb.as_markup())
 
+async def _fast_broadcast_worker(target_bot: Bot, admin_id: int, n_type: str, n_file: str, formatted_text: str):
+    import time
+    start_time = time.time()
+    conn = _dbc()
+    users = conn.execute("SELECT user_id FROM users WHERE COALESCE(is_banned, 0)=0 AND COALESCE(bot_blocked, 0)=0").fetchall()
+    conn.close()
+
+    total = len(users)
+    sent = 0
+    failed = 0
+    blocked_uids = []
+
+    status_msg = None
+    try:
+        status_msg = await target_bot.send_message(
+            admin_id,
+            f"🚀 **নোটিশ পাঠানো ব্যাকগ্রাউন্ডে শুরু হয়েছে!**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"👥 মোট টার্গেট: **{total} জন ইউজার**\n"
+            f"⚡ গতি: ~২৫ মেসেজ/সেকেন্ড (Telegram Max Safe Rate)\n"
+            f"⏳ রিয়েল-টাইম প্রোগ্রেস নিচে আপডেট হবে..."
+        )
+    except Exception:
+        pass
+
+    sem = asyncio.Semaphore(15)
+    rate_lock = asyncio.Lock()
+    last_tokens = 25.0
+    last_check = time.time()
+    rate_limit = 25.0
+
+    async def rate_limit_tick():
+        nonlocal last_tokens, last_check
+        async with rate_lock:
+            now = time.time()
+            elapsed = now - last_check
+            last_check = now
+            last_tokens = min(rate_limit, last_tokens + elapsed * rate_limit)
+            if last_tokens < 1.0:
+                wait_time = (1.0 - last_tokens) / rate_limit
+                await asyncio.sleep(wait_time)
+                last_tokens = 0.0
+            else:
+                last_tokens -= 1.0
+
+    async def send_to_one(uid):
+        nonlocal sent, failed
+        async with sem:
+            await rate_limit_tick()
+            try:
+                if n_type == 'photo':
+                    try:
+                        await target_bot.send_photo(uid, n_file, caption=formatted_text[:1024], parse_mode="Markdown")
+                    except Exception:
+                        await target_bot.send_photo(uid, n_file, caption=formatted_text[:1024])
+                    if len(formatted_text) > 1024:
+                        await target_bot.send_message(uid, formatted_text[1024:])
+                elif n_type == 'document':
+                    try:
+                        await target_bot.send_document(uid, n_file, caption=formatted_text[:1024], parse_mode="Markdown")
+                    except Exception:
+                        await target_bot.send_document(uid, n_file, caption=formatted_text[:1024])
+                    if len(formatted_text) > 1024:
+                        await target_bot.send_message(uid, formatted_text[1024:])
+                else:
+                    try:
+                        await target_bot.send_message(uid, formatted_text, parse_mode="Markdown")
+                    except Exception:
+                        await target_bot.send_message(uid, formatted_text)
+                sent += 1
+            except Exception as e:
+                failed += 1
+                err_str = str(e).lower()
+                if "blocked" in err_str or "forbidden" in err_str or "deactivated" in err_str or "not found" in err_str:
+                    blocked_uids.append(uid)
+
+    batch_size = 200
+    for i in range(0, total, batch_size):
+        chunk = users[i:i + batch_size]
+        tasks = [send_to_one(u[0]) for u in chunk]
+        await asyncio.gather(*tasks, return_exceptions=True)
+        if status_msg and (i + batch_size) < total:
+            try:
+                pct = int(((i + len(chunk)) / total) * 100)
+                await status_msg.edit_text(
+                    f"🚀 **নোটিশ পাঠানো চলছে... ({pct}%)**\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"👥 প্রসেসড: **{i + len(chunk)}/{total}**\n"
+                    f"✅ সফল: **{sent}** | ❌ ব্যর্থ: **{failed}**\n"
+                    f"⏱ চলমান সময়: **{int(time.time() - start_time)} সেকেন্ড**"
+                )
+            except Exception:
+                pass
+
+    total_time = max(1, int(time.time() - start_time))
+    mins = total_time // 60
+    secs = total_time % 60
+    time_str = f"{mins} মিনিট {secs} সেকেন্ড" if mins > 0 else f"{secs} সেকেন্ড"
+
+    if blocked_uids:
+        try:
+            c = _dbc()
+            c.executemany("UPDATE users SET bot_blocked=1 WHERE user_id=?", [(u,) for u in blocked_uids])
+            c.commit()
+            c.close()
+        except Exception:
+            pass
+
+    final_report = (
+        f"✅ **নোটিশ ব্রডকাস্ট সম্পন্ন!**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"👥 মোট টার্গেট: **{total} জন**\n"
+        f"✅ সফল ডেলিভারি: **{sent}**\n"
+        f"❌ ব্যর্থ (ব্লকড/ডিলিটেড): **{failed}**\n"
+        f"⚡ গড় গতি: **{round(sent / total_time, 1)} msg/sec**\n"
+        f"⏱ মোট সময়: **{time_str}**\n"
+        f"━━━━━━━━━━━━━━━━━━━━"
+    )
+    try:
+        if status_msg:
+            await status_msg.edit_text(final_report)
+        else:
+            await target_bot.send_message(admin_id, final_report)
+    except Exception:
+        try: await target_bot.send_message(admin_id, final_report)
+        except Exception: pass
+
 @dp.callback_query(F.data == "confirm_send_notice")
 async def execute_send_notice(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
@@ -1455,43 +1602,48 @@ async def execute_send_notice(c: types.CallbackQuery, state: FSMContext):
     n_type = data.get('n_type')
     n_file = data.get('n_file')
     n_text = data.get('n_text', '')
+    await state.clear()
     
     formatted_text = f"┏━━━━━━━━━━━━━━━━━━━━━┓\n┣ 📢 **ADMIN NOTICE**\n┗━━━━━━━━━━━━━━━━━━━━━┛\n\n{n_text}"
+    asyncio.create_task(_fast_broadcast_worker(bot, c.from_user.id, n_type, n_file, formatted_text))
 
-    await c.message.answer("⏳ Sending Notice to all users... This might take a while.")
-    
+@dp.message(Command("pending"))
+async def admin_pending_deposits(message: types.Message):
+    if not is_admin(message.from_user.id): return
     conn = _dbc()
-    users = conn.execute("SELECT user_id FROM users").fetchall()
+    rows = conn.execute(
+        "SELECT req_id, user_id, username, amount, method, sender_num, date, timestamp "
+        "FROM payment_logs WHERE status='pending' AND (method IN ('binance', 'manual', 'bkash', 'nagad') OR method IS NULL OR method='') "
+        "ORDER BY timestamp DESC LIMIT 25"
+    ).fetchall()
     conn.close()
 
-    count = 0
-    for user in users:
-        try:
-            if n_type == 'photo':
-                try:
-                    await bot.send_photo(user[0], n_file, caption=formatted_text[:1024], parse_mode="Markdown")
-                except Exception:
-                    await bot.send_photo(user[0], n_file, caption=formatted_text[:1024])
-                if len(formatted_text) > 1024:
-                    await bot.send_message(user[0], formatted_text[1024:])
-            elif n_type == 'document':
-                try:
-                    await bot.send_document(user[0], n_file, caption=formatted_text[:1024], parse_mode="Markdown")
-                except Exception:
-                    await bot.send_document(user[0], n_file, caption=formatted_text[:1024])
-                if len(formatted_text) > 1024:
-                    await bot.send_message(user[0], formatted_text[1024:])
-            else:
-                try:
-                    await bot.send_message(user[0], formatted_text, parse_mode="Markdown")
-                except Exception:
-                    await bot.send_message(user[0], formatted_text)
-            count += 1
-            await asyncio.sleep(0.04)
-        except: pass
-        
-    await c.message.answer(f"✅ Notice Successfully Sent to {count} users!")
-    await state.clear()
+    if not rows:
+        return await message.answer("✅ **কোনো পেন্ডিং ডিপোজিট রিকোয়েস্ট নেই!**\nসব ক্লিয়ার।")
+
+    await message.answer(f"📋 **মোট {len(rows)}টি পেন্ডিং ডিপোজিট পাওয়া গেছে:**")
+
+    for r in rows:
+        req_id, uid, uname, amt, mthd, sndr, dt, ts = r
+        m_label = "💎 Binance USDT" if str(mthd).lower() == "binance" else f"💳 {mthd or 'Manual'}"
+        time_str = dt or "Today"
+        kb = InlineKeyboardBuilder()
+        kb.row(
+            types.InlineKeyboardButton(text=f"✅ Add {amt}৳", callback_data=f"pay_ok_{req_id}_{amt}"),
+            types.InlineKeyboardButton(text="❌ Reject", callback_data=f"pay_no_{req_id}")
+        )
+        txt = (
+            f"🔔 **পেন্ডিং ডিপোজিট** 🔔\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 ইউজার: {uname or 'Unknown'} (`{uid}`)\n"
+            f"💰 পরিমাণ: **{amt}৳**\n"
+            f"💳 মেথড: **{m_label}**\n"
+            f"📱 প্রেরক/তথ্য: `{sndr or '-'}`\n"
+            f"🆔 Req ID: `{req_id}`\n"
+            f"📅 তারিখ: {time_str}\n"
+            f"━━━━━━━━━━━━━━━━━━━━"
+        )
+        await message.answer(txt, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
 @dp.message(Command("setprice"))
 async def admin_set_price(message: types.Message, command: CommandObject, state: FSMContext):
@@ -3596,7 +3748,7 @@ async def process_buy(m: types.Message, state: FSMContext):
                 return await m.answer(f"❌ স্টক নেই! আছে: {len(items)}টি")
 
             # [BUYLIMIT_HOOK] 10 pcs / 10 min (FB 1000xx only)
-            _bl_ok, _bl_used, _bl_left, _bl_allowed = _bl_allow(m.from_user.id, qty, cat)
+            _bl_ok, _bl_used, _bl_left, _bl_allowed = _bl_allow(m.from_user.id, qty, cat, conn=conn)
             if not _bl_ok:
                 conn.rollback()
                 try:
@@ -3611,7 +3763,7 @@ async def process_buy(m: types.Message, state: FSMContext):
             conn.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (total, m.from_user.id))
             # [BUYLIMIT_HOOK] commit
             try:
-                _bl_u, _bl_l = _bl_commit(m.from_user.id, qty, cat)
+                _bl_u, _bl_l = _bl_commit(m.from_user.id, qty, cat, conn=conn)
                 if _bl_l:
                     await m.answer(_bl_ok_text(_bl_u, _bl_l), parse_mode="Markdown")
             except Exception as _e:
@@ -6543,19 +6695,24 @@ def _bl_init(cur):
         window_start INTEGER NOT NULL,
         count INTEGER NOT NULL DEFAULT 0)""")
 
-def _bl_state(uid):
+def _bl_state(uid, conn=None):
     """(used_in_window, seconds_left) — window expired হলে (0, 0)"""
     import time as _t
     now = int(_t.time())
-    conn = _bl_conn()
+    own = False
+    if conn is None:
+        conn = _bl_conn()
+        own = True
     try:
         cur = conn.cursor()
         _bl_init(cur)
         row = cur.execute("SELECT window_start, count FROM buy_limit WHERE user_id=?", (uid,)).fetchone()
-        conn.commit()
+        if own:
+            conn.commit()
     finally:
-        try: conn.close()
-        except Exception: pass
+        if own:
+            try: conn.close()
+            except Exception: pass
     if not row:
         return 0, 0
     ws, cnt = int(row[0] or 0), int(row[1] or 0)
@@ -6567,7 +6724,7 @@ def _bl_fmt_left(secs):
     secs = max(0, int(secs))
     return f"{secs // 60} মিনিট {secs % 60} সেকেন্ড"
 
-def _bl_allow(uid, qty=1, cat=None):
+def _bl_allow(uid, qty=1, cat=None, conn=None):
     """(ok, used, left_secs, allowed) — per-pcs cumulative counting.
     • qty <= বাকি pcs  -> ok=True, allowed=qty
     • qty > বাকি pcs   -> ok=False, allowed=বাকি pcs (0 হলে পুরো block)
@@ -6577,13 +6734,13 @@ def _bl_allow(uid, qty=1, cat=None):
     except Exception: qty = 1
     if not _bl_limited(cat):
         return True, 0, 0, qty
-    used, left = _bl_state(uid)
+    used, left = _bl_state(uid, conn=conn)
     remain = max(0, _bl_max() - used)
     if qty <= remain:
         return True, used, left, qty
     return False, used, left, remain
 
-def _bl_commit(uid, qty=1, cat=None):
+def _bl_commit(uid, qty=1, cat=None, conn=None):
     """কেনার পরে count বাড়ায় (যত pcs কিনেছে ততই); ফেরত দেয় (used, left_secs)"""
     if not _bl_limited(cat):
         return 0, 0
@@ -6591,7 +6748,10 @@ def _bl_commit(uid, qty=1, cat=None):
     now = int(_t.time())
     try: qty = max(1, int(qty))
     except Exception: qty = 1
-    conn = _bl_conn()
+    own = False
+    if conn is None:
+        conn = _bl_conn()
+        own = True
     try:
         cur = conn.cursor()
         _bl_init(cur)
@@ -6605,10 +6765,12 @@ def _bl_commit(uid, qty=1, cat=None):
                 "INSERT INTO buy_limit (user_id, window_start, count) VALUES (?,?,?) "
                 "ON CONFLICT(user_id) DO UPDATE SET window_start=excluded.window_start, count=excluded.count",
                 (uid, ws, cnt))
-        conn.commit()
+        if own:
+            conn.commit()
     finally:
-        try: conn.close()
-        except Exception: pass
+        if own:
+            try: conn.close()
+            except Exception: pass
     return cnt, max(0, _bl_window() - (now - ws))
 
 def _bl_block_text(used, left, want=None, allowed=0):

@@ -403,6 +403,14 @@
 
       <!-- Quick Action Badges -->
       <div class="flex items-center gap-2 sm:gap-3">
+        <% if (typeof pendingManualDepositsCount !== 'undefined' && pendingManualDepositsCount > 0) { %>
+          <a href="/deposits?status=pending" class="px-3 py-1 text-xs font-bold rounded-lg bg-amber-500 hover:bg-amber-600 text-white border border-amber-600 transition flex items-center gap-1.5 shadow-sm animate-pulse" title="Pending Deposits">
+            <span>💳 <%= pendingManualDepositsCount %> Pending</span>
+            <% if (typeof pendingBinanceCount !== 'undefined' && pendingBinanceCount > 0) { %>
+              <span class="bg-amber-800 text-[10px] px-1.5 py-0.5 rounded font-extrabold">💎 <%= pendingBinanceCount %> Binance</span>
+            <% } %>
+          </a>
+        <% } %>
         <a href="/orders" class="px-3 py-1 text-xs font-bold rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 transition flex items-center gap-1.5 shadow-xs">
           <span>📥 Orders (25/P)</span>
         </a>

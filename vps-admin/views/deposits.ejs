@@ -249,6 +249,38 @@
   <button class="bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-600 hover:to-sky-700 text-white font-bold text-xs px-5 py-2 rounded-xl transition shadow-xs">Filter</button>
 </form>
 
+<% 
+  const pendingBinanceList = deposits.filter(d => d.status === 'pending' && (String(d.method||'').toLowerCase() === 'binance' || (d.sender_num && d.sender_num.includes('Binance'))));
+  const totalPendingList = deposits.filter(d => d.status === 'pending');
+%>
+<% if (pendingBinanceList.length > 0 || totalPendingList.length > 0) { %>
+  <div class="mb-4 p-4 rounded-xl <%= pendingBinanceList.length > 0 ? 'bg-amber-50 border-2 border-amber-300' : 'bg-sky-50 border border-sky-200' %> flex flex-wrap items-center justify-between gap-3 shadow-xs">
+    <div class="flex items-center gap-3">
+      <span class="text-2xl <%= pendingBinanceList.length > 0 ? 'animate-bounce' : '' %>">
+        <%= pendingBinanceList.length > 0 ? '💎' : '💳' %>
+      </span>
+      <div>
+        <div class="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+          <span>পেন্ডিং ডিপোজিট রিকোয়েস্ট: <b><%= totalPendingList.length %>টি</b></span>
+          <% if (pendingBinanceList.length > 0) { %>
+            <span class="bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full font-black animate-pulse">
+              💎 Binance: <%= pendingBinanceList.length %>টি
+            </span>
+          <% } %>
+        </div>
+        <div class="text-xs text-slate-600 mt-0.5">
+          ইউজার পেমেন্ট স্ক্রিনশট সাবমিট করেছে। নিচের তালিকা থেকে তথ্য চেক করে সরাসরি <b>Approve</b> অথবা <b>Reject</b> করুন।
+        </div>
+      </div>
+    </div>
+    <% if (status !== 'pending') { %>
+      <a href="/deposits?status=pending" class="px-3.5 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition shadow-xs">
+        পেন্ডিং ফিল্টার দেখুন →
+      </a>
+    <% } %>
+  </div>
+<% } %>
+
 <div class="commercial-card bg-white border border-sky-200 rounded-2xl overflow-hidden shadow-xs mb-6">
   <div class="overflow-x-auto">
   <table class="w-full text-sm">
@@ -262,12 +294,15 @@
         <th class="py-3 px-4">Status</th>
         <th class="py-3 px-4">Admin</th>
         <th class="py-3 px-4">Date</th>
+        <th class="py-3 px-4 text-right">Action</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-sky-100">
-      <% if (!deposits.length) { %><tr><td colspan="8" class="text-center text-slate-400 py-8 font-medium">No deposits found.</td></tr><% } %>
-      <% deposits.forEach(function(d){ %>
-        <tr class="hover:bg-sky-50/50 transition-colors">
+      <% if (!deposits.length) { %><tr><td colspan="9" class="text-center text-slate-400 py-8 font-medium">No deposits found.</td></tr><% } %>
+      <% deposits.forEach(function(d){ 
+           const isBinance = String(d.method || '').toLowerCase() === 'binance';
+      %>
+        <tr class="hover:bg-sky-50/50 transition-colors <%= d.status === 'pending' ? (isBinance ? 'bg-amber-50/40' : 'bg-sky-50/30') : '' %>">
           <td class="font-mono text-xs text-slate-500"><%= (d.req_id||'').slice(0,12) %></td>
           <td>
             <a href="/users/<%= d.user_id %>" class="text-sky-600 hover:text-sky-800 hover:underline font-bold">
@@ -278,20 +313,42 @@
           </td>
           <td class="text-xs">
             <div class="font-mono text-slate-700 font-semibold"><%= d.sender_num || '-' %></div>
-            <% if (d.method) { %><div class="text-[10px] text-slate-400 uppercase font-mono font-medium"><%= d.method %></div><% } %>
+            <% if (isBinance) { %>
+              <div class="mt-0.5"><span class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300">💎 BINANCE</span></div>
+            <% } else if (d.method) { %>
+              <div class="text-[10px] text-slate-400 uppercase font-mono font-medium"><%= d.method %></div>
+            <% } %>
           </td>
           <td class="font-mono text-xs text-slate-600 font-semibold"><%= (d.transaction_id||'-').slice(0,16) %></td>
           <td class="font-bold text-slate-900"><%= d.amount %>৳</td>
           <td>
             <span class="px-2.5 py-1 rounded-full text-xs font-bold border
               <%= d.status==='approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                  d.status==='pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                  d.status==='pending' ? 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse' :
                   'bg-rose-50 text-rose-700 border-rose-200' %>">
               <%= d.status %>
             </span>
           </td>
           <td class="text-slate-600 text-xs font-medium"><%= d.admin_name || '-' %></td>
           <td class="text-slate-500 text-xs font-mono"><%= d.date || '-' %></td>
+          <td class="text-right whitespace-nowrap">
+            <% if (d.status === 'pending') { %>
+              <div class="flex items-center justify-end gap-1.5">
+                <form method="post" action="/deposits/approve/<%= d.req_id %>" onsubmit="return confirm('Approve <%= d.amount %>৳ for <%= d._tg_username || d.user_id %>?');" class="inline">
+                  <button type="submit" class="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition flex items-center gap-1">
+                    <span>✓</span> Approve
+                  </button>
+                </form>
+                <form method="post" action="/deposits/reject/<%= d.req_id %>" onsubmit="return confirm('Reject deposit <%= d.req_id %>?');" class="inline">
+                  <button type="submit" class="px-2 py-1 text-xs font-semibold rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition">
+                    ✕ Reject
+                  </button>
+                </form>
+              </div>
+            <% } else { %>
+              <span class="text-slate-300 text-xs">-</span>
+            <% } %>
+          </td>
         </tr>
       <% }) %>
     </tbody>

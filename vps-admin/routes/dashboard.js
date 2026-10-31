@@ -22,6 +22,10 @@ router.get('/', (req, res) => {
     "SELECT COUNT(*) AS c FROM payment_logs WHERE status='pending'"
   ).get().c;
 
+  const pendingBinance = db.prepare(
+    "SELECT COUNT(*) AS c FROM payment_logs WHERE status='pending' AND method='binance'"
+  ).get().c;
+
   const stockByCategory = db.prepare(
     'SELECT category, COUNT(*) AS c FROM stock GROUP BY category ORDER BY c DESC'
   ).all();
@@ -41,7 +45,7 @@ router.get('/', (req, res) => {
 
   res.render('dashboard', {
     totalUsers, bannedUsers, totalBalance,
-    todayDeposits, totalApproved, pendingPayments,
+    todayDeposits, totalApproved, pendingPayments, pendingBinance,
     stockByCategory, totalStock,
     pendingReplaces, recentSales, totalOrders,
     botStatus: botStatus ? botStatus.value : 'unknown',

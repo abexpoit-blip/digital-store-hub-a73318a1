@@ -42,6 +42,15 @@ app.use((req, res, next) => {
     }).toUpperCase();
     return str + ' (BDT)';
   };
+  try {
+    const pRow = db.prepare("SELECT COUNT(*) AS c FROM payment_logs WHERE status='pending' AND (method IN ('binance', 'manual', 'bkash', 'nagad') OR method IS NULL OR method='')").get();
+    res.locals.pendingManualDepositsCount = pRow ? pRow.c : 0;
+    const bRow = db.prepare("SELECT COUNT(*) AS c FROM payment_logs WHERE status='pending' AND method='binance'").get();
+    res.locals.pendingBinanceCount = bRow ? bRow.c : 0;
+  } catch (e) {
+    res.locals.pendingManualDepositsCount = 0;
+    res.locals.pendingBinanceCount = 0;
+  }
   next();
 });
 

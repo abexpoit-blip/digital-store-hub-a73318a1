@@ -37,6 +37,21 @@ db.exec(`
   try { db.exec(`ALTER TABLE uid_history ADD COLUMN ${c}`); } catch (_) {}
 });
 try { db.exec('ALTER TABLE users ADD COLUMN ban_reason TEXT'); } catch (_) {}
+try { db.exec('ALTER TABLE users ADD COLUMN bot_blocked INTEGER DEFAULT 0'); } catch (_) {}
+
+// High-performance query indexes
+[
+  'CREATE INDEX IF NOT EXISTS idx_stock_cat ON stock(category)',
+  'CREATE INDEX IF NOT EXISTS idx_sales_user ON sales(user_id)',
+  'CREATE INDEX IF NOT EXISTS idx_sales_cat ON sales(category)',
+  'CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(date)',
+  'CREATE INDEX IF NOT EXISTS idx_pl_status ON payment_logs(status)',
+  'CREATE INDEX IF NOT EXISTS idx_pl_method ON payment_logs(method)',
+  'CREATE INDEX IF NOT EXISTS idx_replace_status ON replace_requests(status)',
+  'CREATE INDEX IF NOT EXISTS idx_replace_user ON replace_requests(user_id)'
+].forEach(idx => {
+  try { db.exec(idx); } catch (_) {}
+});
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS seller_uid_collector (

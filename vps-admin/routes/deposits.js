@@ -1,5 +1,6 @@
 const express = require('express');
-const { db } = require('../db');
+const { db, logAudit } = require('../db');
+const BOT_TOKEN = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
 const router = express.Router();
 
 // Auto-backfill positive manual_credits into payment_logs if missing
@@ -187,6 +188,73 @@ router.post('/toggle-manual', (req, res) => {
   const nextVal = isOff ? 'on' : 'off';
   db.prepare("INSERT OR REPLACE INTO config (key, value) VALUES ('manual_payment_enabled', ?)").run(nextVal);
   res.redirect('/deposits?msg=' + encodeURIComponent(`Manual Payment ${nextVal === 'on' ? 'চালু (ON)' : 'বন্ধ (OFF)'} করা হয়েছে!`));
+});
+
+router.post('/approve/:req_id', (req, res) => {
+  const reqId = req.params.req_id;
+  const adminName = (req.session && req.session.admin) || 'Web Admin';
+  const dep = db.prepare("SELECT * FROM payment_logs WHERE req_id = ?").get(reqId);
+  if (!dep) {
+    return res.redirect('/deposits?msg=' + encodeURIComponent('❌ Request পাওয়া যায়নি!'));
+  }
+  if (dep.status !== 'pending') {
+    return res.redirect('/deposits?msg=' + encodeURIComponent(`⚠️ এই রিকোয়েস্ট ইতিমধ্যে ${dep.status} করা হয়েছে!`));
+  }
+
+  const amt = Number(dep.amount || 0);
+  const userId = dep.user_id;
+
+  const tx = db.transaction(() => {
+    db.prepare("UPDATE payment_logs SET status = 'approved', admin_name = ? WHERE req_id = ?").run(adminName, reqId);
+    if (userId && amt > 0) {
+      db.prepare("UPDATE users SET balance = balance + ? WHERE user_id = ?").run(amt, userId);
+    }
+    if (typeof logAudit === 'function') {
+      logAudit(adminName, 'deposit_approve', `req_id=${reqId} user=${userId} amount=${amt} method=${dep.method}`);
+    }
+  });
+  tx();
+
+  // Send telegram notification to user asynchronously
+  if (BOT_TOKEN && userId) {
+    const isBinance = String(dep.method || '').toLowerCase() === 'binance';
+    const tgMsg = `✅ **আপনার ডিপোজিট অনুমোদিত হয়েছে!**\n━━━━━━━━━━━━━━━━━━━━\n💰 যোগ করা পরিমাণ: **+${amt}৳**\n💳 মেথড: ${isBinance ? 'Binance USDT' : (dep.method || 'Manual')}\n🆔 Req ID: \`${reqId}\`\n━━━━━━━━━━━━━━━━━━━━\nধন্যবাদ আমাদের সাথে থাকার জন্য!`;
+    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: userId, text: tgMsg, parse_mode: 'Markdown' })
+    }).catch(err => console.warn('[deposits] notify user error:', err.message));
+  }
+
+  res.redirect('/deposits?msg=' + encodeURIComponent(`✅ Req ID ${reqId} (${amt}৳) সফলভাবে Approve করা হয়েছে!`));
+});
+
+router.post('/reject/:req_id', (req, res) => {
+  const reqId = req.params.req_id;
+  const adminName = (req.session && req.session.admin) || 'Web Admin';
+  const dep = db.prepare("SELECT * FROM payment_logs WHERE req_id = ?").get(reqId);
+  if (!dep) {
+    return res.redirect('/deposits?msg=' + encodeURIComponent('❌ Request পাওয়া যায়নি!'));
+  }
+  if (dep.status !== 'pending') {
+    return res.redirect('/deposits?msg=' + encodeURIComponent(`⚠️ এই রিকোয়েস্ট ইতিমধ্যে ${dep.status} করা হয়েছে!`));
+  }
+
+  db.prepare("UPDATE payment_logs SET status = 'rejected', admin_name = ? WHERE req_id = ?").run(adminName, reqId);
+  if (typeof logAudit === 'function') {
+    logAudit(adminName, 'deposit_reject', `req_id=${reqId} user=${dep.user_id} amount=${dep.amount} method=${dep.method}`);
+  }
+
+  if (BOT_TOKEN && dep.user_id) {
+    const tgMsg = `❌ **আপনার ডিপোজিট রিকোয়েস্ট বাতিল করা হয়েছে।**\n━━━━━━━━━━━━━━━━━━━━\n💰 পরিমাণ: **${dep.amount}৳**\n🆔 Req ID: \`${reqId}\`\n━━━━━━━━━━━━━━━━━━━━\nপ্রয়োজনে সাপোর্টে যোগাযোগ করুন।`;
+    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: dep.user_id, text: tgMsg, parse_mode: 'Markdown' })
+    }).catch(err => console.warn('[deposits] reject notify error:', err.message));
+  }
+
+  res.redirect('/deposits?msg=' + encodeURIComponent(`❌ Req ID ${reqId} সফলভাবে Reject করা হয়েছে!`));
 });
 
 module.exports = router;
