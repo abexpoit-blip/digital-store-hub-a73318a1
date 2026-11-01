@@ -4,7 +4,8 @@ const router = express.Router();
 
 router.get('/', (req, res) => {
   const totalUsers = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
-  const bannedUsers = db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_banned = 1').get().c;
+  const bannedUsers = db.prepare('SELECT COUNT(*) AS c FROM users WHERE COALESCE(is_banned,0) = 1').get().c;
+  const suspendedUsers = db.prepare('SELECT COUNT(*) AS c FROM users WHERE COALESCE(is_suspended,0) = 1').get().c;
   const totalBalance = db.prepare('SELECT COALESCE(SUM(balance),0) AS s FROM users').get().s;
 
   // Today's deposits (approved). Using `date` text column (DD-MM-YYYY or similar). Fallback to timestamp.
@@ -44,7 +45,7 @@ router.get('/', (req, res) => {
   const botStatus = db.prepare("SELECT value FROM config WHERE key='bot_status'").get();
 
   res.render('dashboard', {
-    totalUsers, bannedUsers, totalBalance,
+    totalUsers, bannedUsers, suspendedUsers, totalBalance,
     todayDeposits, totalApproved, pendingPayments, pendingBinance,
     stockByCategory, totalStock,
     pendingReplaces, recentSales, totalOrders,

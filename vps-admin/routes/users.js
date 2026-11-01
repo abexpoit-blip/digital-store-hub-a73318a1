@@ -22,15 +22,17 @@ router.get('/', (req, res) => {
     params.push(`%${q.toLowerCase()}%`, `%${q}%`);
   }
   if (filter === 'banned') sql += ' AND COALESCE(is_banned,0) = 1';
-  else if (filter === 'active') sql += ' AND COALESCE(is_banned,0) = 0';
+  else if (filter === 'suspended') sql += ' AND COALESCE(is_suspended,0) = 1';
+  else if (filter === 'active') sql += ' AND COALESCE(is_banned,0) = 0 AND COALESCE(is_suspended,0) = 0';
   sql += ' ORDER BY balance DESC LIMIT 300';
 
   const users = db.prepare(sql).all(...params);
   const counts = {
     all: db.prepare('SELECT COUNT(*) AS c FROM users').get().c,
     banned: db.prepare('SELECT COUNT(*) AS c FROM users WHERE COALESCE(is_banned,0)=1').get().c,
+    suspended: db.prepare('SELECT COUNT(*) AS c FROM users WHERE COALESCE(is_suspended,0)=1').get().c,
   };
-  counts.active = counts.all - counts.banned;
+  counts.active = counts.all - counts.banned - counts.suspended;
 
   res.render('users', { users, q, filter, counts, msg: req.query.msg || null });
 });
@@ -193,6 +195,24 @@ router.post('/:id/ban', (req, res) => {
     db.prepare('UPDATE users SET is_banned = 0, ban_reason = NULL WHERE user_id = ?').run(userId);
     logAudit('admin', 'unban_user', `user=${userId}`);
     res.redirect(`/users/${userId}?msg=` + encodeURIComponent('User unbanned ✅'));
+  }
+});
+
+router.post('/:id/suspend', (req, res) => {
+  const userId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(userId)) return res.redirect('/users?msg=Invalid+user');
+  const suspended = req.body.suspended === '1' ? 1 : 0;
+  const suspendReason = (req.body.suspend_reason || '').trim();
+
+  if (suspended) {
+    const reason = suspendReason || 'Silent suspend by admin';
+    db.prepare("UPDATE users SET is_suspended = 1, suspend_reason = ?, suspended_at = strftime('%s','now') WHERE user_id = ?").run(reason, userId);
+    logAudit('admin', 'suspend_user', `user=${userId} reason="${reason}"`);
+    res.redirect(`/users/${userId}?msg=` + encodeURIComponent('User silently suspended ⏸️ (Will see fake Error 502)'));
+  } else {
+    db.prepare('UPDATE users SET is_suspended = 0, suspend_reason = NULL, suspended_at = NULL WHERE user_id = ?').run(userId);
+    logAudit('admin', 'unsuspend_user', `user=${userId}`);
+    res.redirect(`/users/${userId}?msg=` + encodeURIComponent('User unsuspended ▶️'));
   }
 });
 

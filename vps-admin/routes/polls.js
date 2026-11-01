@@ -115,7 +115,7 @@ router.get('/:id/send', async (req, res) => {
   if (poll.status === 'closed') return res.redirect('/polls/' + id + '?msg=' + encodeURIComponent('❌ Poll closed'));
 
   const options = JSON.parse(poll.options_json);
-  const users = db.prepare('SELECT user_id FROM users WHERE COALESCE(is_banned,0)=0').all();
+  const users = db.prepare('SELECT user_id FROM users WHERE COALESCE(is_banned,0)=0 AND COALESCE(is_suspended,0)=0').all();
 
   const insertMap = db.prepare(`
     INSERT OR IGNORE INTO poll_sent_map (tg_poll_id, poll_id, user_id, chat_message_id, sent_at)

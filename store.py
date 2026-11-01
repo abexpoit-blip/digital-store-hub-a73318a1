@@ -418,6 +418,12 @@ def init_db():
         except: pass
     try: cursor.execute("ALTER TABLE users ADD COLUMN bot_blocked INTEGER DEFAULT 0")
     except: pass
+    try: cursor.execute("ALTER TABLE users ADD COLUMN is_suspended INTEGER DEFAULT 0")
+    except: pass
+    try: cursor.execute("ALTER TABLE users ADD COLUMN suspend_reason TEXT")
+    except: pass
+    try: cursor.execute("ALTER TABLE users ADD COLUMN suspended_at INTEGER")
+    except: pass
 
     # High-performance query indexes
     for _idx in [
@@ -429,6 +435,7 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_pl_method ON payment_logs(method)",
         "CREATE INDEX IF NOT EXISTS idx_replace_status ON replace_requests(status)",
         "CREATE INDEX IF NOT EXISTS idx_replace_user ON replace_requests(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_users_suspended ON users(is_suspended)",
     ]:
         try: cursor.execute(_idx)
         except: pass
@@ -641,6 +648,7 @@ class ShopStates(StatesGroup):
     waiting_for_admin_replace = State()
     waiting_for_notice_content = State()
     waiting_for_ban_reason = State()
+    waiting_for_suspend_reason = State()
 
 # --- UPDATE USER DATA ---
 def get_user_data(user_id, username=None, first_name="Unknown"):
@@ -1285,14 +1293,48 @@ class BanEnforcementMiddleware(_DfmtBaseMiddleware):
         if is_admin(uid):
             return await handler(event, data)
 
-        # Check ban status
+        # Check ban & silent suspend status
         try:
             conn = _dbc()
-            row = conn.execute("SELECT is_banned, ban_reason FROM users WHERE user_id = ?", (uid,)).fetchone()
+            row = conn.execute("SELECT is_banned, ban_reason, COALESCE(is_suspended, 0) FROM users WHERE user_id = ?", (uid,)).fetchone()
             conn.close()
         except Exception:
             row = None
 
+        # 1. SILENT SUSPEND (Shadowban with realistic technical error)
+        if row and len(row) > 2 and row[2] == 1:
+            state = data.get("state")
+            if state:
+                try:
+                    await state.clear()
+                except Exception:
+                    pass
+
+            if isinstance(event, types.CallbackQuery):
+                try:
+                    await event.answer(
+                        "⚠️ সাময়িক সার্ভার জটিলতা! অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন। (Error: 502)",
+                        show_alert=True
+                    )
+                except Exception:
+                    pass
+                return None
+
+            if isinstance(event, types.Message):
+                try:
+                    fake_err = (
+                        "⚠️ **সার্ভার সংযোগ বিচ্ছিন্ন!**\n"
+                        "━━━━━━━━━━━━━━━━━━━━\n"
+                        "সিস্টেম আপগ্রেড অথবা যান্ত্রিক ত্রুটির কারণে সেবাটি সাময়িকভাবে বিঘ্নিত হচ্ছে।\n\n"
+                        "অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।\n"
+                        "`[System Code: 502 Bad Gateway / Sync Timeout]`"
+                    )
+                    await event.answer(fake_err, parse_mode="Markdown")
+                except Exception:
+                    pass
+                return None
+
+        # 2. OVERT BAN
         if row and row[0] == 1:
             reason = (row[1] or "").strip() or "নীতিমালা লঙ্ঘন / সন্দেহজনক কার্যকলাপের কারণে ব্যান করা হয়েছে।"
 
@@ -1469,7 +1511,7 @@ async def _fast_broadcast_worker(target_bot: Bot, admin_id: int, n_type: str, n_
     import time
     start_time = time.time()
     conn = _dbc()
-    users = conn.execute("SELECT user_id FROM users WHERE COALESCE(is_banned, 0)=0 AND COALESCE(bot_blocked, 0)=0").fetchall()
+    users = conn.execute("SELECT user_id FROM users WHERE COALESCE(is_banned, 0)=0 AND COALESCE(is_suspended, 0)=0 AND COALESCE(bot_blocked, 0)=0").fetchall()
     conn.close()
 
     total = len(users)
@@ -1855,7 +1897,7 @@ async def admin_check_bal(message: types.Message, command: CommandObject, state:
         return await message.answer(f"❌ ইউজার পাওয়া যায়নি: '{target}'")
 
     uid, uname, bal = user_rec
-    res = conn.execute("SELECT balance, username, is_banned FROM users WHERE user_id=?", (uid,)).fetchone()
+    res = conn.execute("SELECT balance, username, is_banned, COALESCE(is_suspended, 0), suspend_reason FROM users WHERE user_id=?", (uid,)).fetchone()
 
     # FETCH LAST 5 DEPOSITS
     last_deps = conn.execute("SELECT amount, date, timestamp, method FROM payment_logs WHERE user_id=? AND status='approved' ORDER BY timestamp DESC LIMIT 5", (uid,)).fetchall()
@@ -1885,7 +1927,13 @@ async def admin_check_bal(message: types.Message, command: CommandObject, state:
     else:
         current_bal = res[0]
         display_name = res[1] or uname or "User"
-        banned_str = " 🚫 [BANNED]" if res[2] else ""
+        status_badges = []
+        if res[2]:
+            status_badges.append("🚫 [BANNED]")
+        if len(res) > 3 and res[3]:
+            susp_note = f" (নোট: {res[4]})" if len(res) > 4 and res[4] else ""
+            status_badges.append(f"⏸️ [SILENT SUSPENDED{susp_note}]")
+        banned_str = (" " + " ".join(status_badges)) if status_badges else " ✅ [Active]"
 
     from datetime import datetime as _dt, timedelta as _td
 
@@ -1929,6 +1977,12 @@ async def admin_check_bal(message: types.Message, command: CommandObject, state:
             msg_lines.append(f"• +{d[0]}৳{method_str} — 📅 {dt_str}")
     else:
         msg_lines.append("• কোনো অনুমোদিত ডিপোজিট পাওয়া যায়নি।")
+
+    msg_lines.append("━━━━━━━━━━━━━━━━━━━━")
+    msg_lines.append("⚡ **কুইক অ্যাকশন:**")
+    msg_lines.append(f"• সাসপেন্ড: `/suspend {uid} [নোট]`")
+    msg_lines.append(f"• আন-সাসপেন্ড: `/unsuspend {uid}`")
+    msg_lines.append(f"• ব্যান: `/ban {uid} [কারণ]` | আনব্যান: `/unban {uid}`")
 
     await message.answer("\n".join(msg_lines), parse_mode="Markdown")
 
@@ -2022,6 +2076,102 @@ async def admin_unban(message: types.Message, command: CommandObject, state: FSM
         conn.execute("UPDATE users SET is_banned = 0, ban_reason = NULL WHERE user_id = ?", (uid,))
         conn.commit(); conn.close()
         await message.answer(f"✅ **ইউজার `{target}` (`{uid}`) কে আনব্যান করা হয়েছে!**\nইউজার পুনরায় বট ব্যবহার করতে পারবে।", parse_mode="Markdown")
+    else:
+        await message.answer("❌ User not found.")
+
+@dp.message(Command("suspend"))
+async def admin_suspend(message: types.Message, command: CommandObject, state: FSMContext):
+    await state.clear()
+    if not is_admin(message.from_user.id): return
+    if not command.args:
+        return await message.answer(
+            "❌ **ব্যবহার:** `/suspend @user [কারণ/নোট]` অথবা `/suspend 12345678 [কারণ/নোট]`\n\n"
+            "💡 **সাইলেন্ট সাসপেন্ড (Silent Suspend) কী?**\n"
+            "• ইউজার কোনো নোটিশ/ব্যান মেসেজ পাবে না।\n"
+            "• বটের যেকোনো কমান্ড বা বাটনে ক্লিক করলে সাময়িক কারিগরি এরর (`Error 502 Bad Gateway`) দেখাবে।\n"
+            "• ইউজার ভাববে বটের সার্ভার ডাউন বা নষ্ট, ফলে কোনো ঝামেলা করতে পারবে না।\n"
+            "• কমপ্লেইন বক্স সহ বটের কোনো ফিচার ব্যবহার করতে পারবে না।",
+            parse_mode="Markdown"
+        )
+
+    parts = command.args.strip().split(maxsplit=1)
+    target = parts[0]
+    reason = parts[1].strip() if len(parts) > 1 else None
+
+    uid = get_id_by_username(target)
+    if not uid:
+        return await message.answer(f"❌ User `{target}` not found in database.", parse_mode="Markdown")
+
+    if reason:
+        conn = _dbc()
+        conn.execute("INSERT OR IGNORE INTO users (user_id, username, balance, is_banned) VALUES (?, 'Unknown', 0, 0)", (uid,))
+        conn.execute("UPDATE users SET is_suspended = 1, suspend_reason = ?, suspended_at = strftime('%s','now') WHERE user_id = ?", (reason, uid))
+        conn.commit(); conn.close()
+        await message.answer(
+            f"⏸️ **ইউজার `{target}` (`{uid}`) কে সফলভাবে সাইলেন্ট সাসপেন্ড করা হয়েছে!**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📝 **অ্যাডমিন নোট (গোপন):** {reason}\n\n"
+            f"🤫 ইউজার কোনো নোটিশ পাবে না। যেকোনো কমান্ড বা বাটন চাপলে সার্ভার এরর (Error 502) দেখতে পাবে। কমপ্লেইন বক্সও ব্লক থাকবে।",
+            parse_mode="Markdown"
+        )
+    else:
+        await state.update_data(suspend_uid=uid, suspend_target=target)
+        await state.set_state(ShopStates.waiting_for_suspend_reason)
+        await message.answer(
+            f"✍️ **ইউজার `{target}` (`{uid}`) কে সাসপেন্ড করার কারণ/নোট লিখুন:**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"_(এই নোটটি ইউজার দেখতে পাবে না, শুধুমাত্র অ্যাডমিন রেকর্ডের জন্য)_\n\n"
+            f"_(বাতিল করতে চাইলে /cancel লিখুন)_",
+            parse_mode="Markdown"
+        )
+
+@dp.message(ShopStates.waiting_for_suspend_reason)
+async def process_suspend_reason(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id): return
+    if message.text and message.text.strip().startswith("/cancel"):
+        await state.clear()
+        return await message.answer("❌ সাসপেন্ড প্রক্রিয়া বাতিল করা হয়েছে।")
+
+    reason = (message.text or "").strip()
+    if not reason:
+        return await message.answer("⚠️ অনুগ্রহ করে সাসপেন্ডের কারণ/নোট লিখুন (অথবা /cancel):")
+
+    data = await state.get_data()
+    uid = data.get("suspend_uid")
+    target = data.get("suspend_target") or str(uid)
+    await state.clear()
+
+    if not uid:
+        return await message.answer("❌ সেশন মেয়াদোত্তীর্ণ। পুনরায় `/suspend` দিন।")
+
+    conn = _dbc()
+    conn.execute("INSERT OR IGNORE INTO users (user_id, username, balance, is_banned) VALUES (?, 'Unknown', 0, 0)", (uid,))
+    conn.execute("UPDATE users SET is_suspended = 1, suspend_reason = ?, suspended_at = strftime('%s','now') WHERE user_id = ?", (reason, uid))
+    conn.commit(); conn.close()
+
+    await message.answer(
+        f"⏸️ **ইউজার `{target}` (`{uid}`) কে সফলভাবে সাইলেন্ট সাসপেন্ড করা হয়েছে!**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📝 **অ্যাডমিন নোট (গোপন):** {reason}\n\n"
+        f"🤫 ইউজার কোনো নোটিশ পাবে না। যেকোনো কমান্ড বা বাটন চাপলে সার্ভার এরর (Error 502) দেখতে পাবে। কমপ্লেইন বক্সও ব্লক থাকবে।",
+        parse_mode="Markdown"
+    )
+
+@dp.message(Command("unsuspend"))
+async def admin_unsuspend(message: types.Message, command: CommandObject, state: FSMContext):
+    await state.clear()
+    if not is_admin(message.from_user.id): return
+    if not command.args: return await message.answer("❌ ব্যবহার: `/unsuspend @user` অথবা `/unsuspend 12345678`")
+
+    target = command.args.strip()
+    uid = get_id_by_username(target)
+
+    if uid:
+        conn = _dbc()
+        conn.execute("INSERT OR IGNORE INTO users (user_id, username, balance, is_banned) VALUES (?, 'Unknown', 0, 0)", (uid,))
+        conn.execute("UPDATE users SET is_suspended = 0, suspend_reason = NULL, suspended_at = NULL WHERE user_id = ?", (uid,))
+        conn.commit(); conn.close()
+        await message.answer(f"▶️ **ইউজার `{target}` (`{uid}`) কে আন-সাসপেন্ড করা হয়েছে!**\nইউজার স্বাভাবিকভাবে পুনরায় বট ব্যবহার করতে পারবে।", parse_mode="Markdown")
     else:
         await message.answer("❌ User not found.")
 

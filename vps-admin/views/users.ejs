@@ -11,6 +11,10 @@
      class="px-3 py-1.5 rounded <%= filter==='active'?'bg-emerald-600 text-white':'bg-slate-800 text-slate-300 hover:bg-slate-700' %>">
      ✅ Active <span class="opacity-70">(<%= counts.active %>)</span>
   </a>
+  <a href="/users?filter=suspended<%= q?'&q='+encodeURIComponent(q):'' %>"
+     class="px-3 py-1.5 rounded <%= filter==='suspended'?'bg-amber-600 text-white':'bg-slate-800 text-slate-300 hover:bg-slate-700' %>">
+     ⏸️ Suspended <span class="opacity-70">(<%= counts.suspended %>)</span>
+  </a>
   <a href="/users?filter=banned<%= q?'&q='+encodeURIComponent(q):'' %>"
      class="px-3 py-1.5 rounded <%= filter==='banned'?'bg-rose-600 text-white':'bg-slate-800 text-slate-300 hover:bg-slate-700' %>">
      🚫 Banned <span class="opacity-70">(<%= counts.banned %>)</span>
@@ -44,6 +48,15 @@
                 <% if (u.ban_reason) { %>
                   <span class="text-[10px] text-rose-400/90 max-w-[160px] truncate" title="<%= u.ban_reason %>">
                     <%= u.ban_reason %>
+                  </span>
+                <% } %>
+              </div>
+            <% } else if (u.is_suspended) { %>
+              <div class="flex flex-col items-start gap-0.5">
+                <span class="bg-amber-700/40 text-amber-300 px-2 py-0.5 rounded text-xs font-semibold">⏸️ SUSPENDED (Silent)</span>
+                <% if (u.suspend_reason) { %>
+                  <span class="text-[10px] text-amber-400/90 max-w-[160px] truncate" title="<%= u.suspend_reason %>">
+                    <%= u.suspend_reason %>
                   </span>
                 <% } %>
               </div>

@@ -157,7 +157,7 @@ async function runAsyncBroadcast({ recipients, text, file, imageUrl, adminName }
 }
 
 router.get('/', (req, res) => {
-  const totalUsers = db.prepare('SELECT COUNT(*) AS c FROM users WHERE COALESCE(is_banned,0)=0 AND COALESCE(bot_blocked,0)=0').get().c;
+  const totalUsers = db.prepare('SELECT COUNT(*) AS c FROM users WHERE COALESCE(is_banned,0)=0 AND COALESCE(is_suspended,0)=0 AND COALESCE(bot_blocked,0)=0').get().c;
   res.render('notice', {
     msg: req.query.msg || null,
     totalUsers,
@@ -181,7 +181,7 @@ router.post('/send', upload.single('photo'), async (req, res) => {
   const adminName = (req.session && req.session.admin) || 'Web Admin';
 
   if (target === 'all') {
-    const recipients = db.prepare('SELECT user_id FROM users WHERE COALESCE(is_banned,0)=0 AND COALESCE(bot_blocked,0)=0').all().map(r => r.user_id);
+    const recipients = db.prepare('SELECT user_id FROM users WHERE COALESCE(is_banned,0)=0 AND COALESCE(is_suspended,0)=0 AND COALESCE(bot_blocked,0)=0').all().map(r => r.user_id);
     
     // Non-blocking high speed background broadcast
     runAsyncBroadcast({ recipients, text, file, imageUrl, adminName }).catch(err => {
