@@ -138,9 +138,12 @@ def get_replace_window_seconds(qty: int, category: str = "") -> int:
       2-5 pcs : 20 minutes (1200s)
       6-10 pcs: 30 minutes (1800s)
       11+ pcs : 2 hours (7200s)
-    fb1000_used: 2 hours (7200s)
+    fb1000_used:
+      1 pc    : 20 minutes (1200s)
+      2+ pcs  : 2 hours (7200s)
     Others:
-      1-10 pcs  : 2 hours (7200s)
+      1 pc      : 20 minutes (1200s)
+      2-10 pcs  : 2 hours (7200s)
       11-30 pcs : 6 hours (21600s)
       31-50 pcs : 8 hours (28800s)
       51+ pcs   : 12 hours (43200s)
@@ -163,6 +166,10 @@ def get_replace_window_seconds(qty: int, category: str = "") -> int:
             return 30 * 60
         else:
             return 2 * 3600
+
+    # 1 pc ID gets 20 minutes replace window across all standard/used categories
+    if q == 1:
+        return 20 * 60
 
     if "used" in cat_str or cat_str == "fb1000_used":
         return 2 * 3600
@@ -5507,7 +5514,8 @@ async def show_terms_policy(event: types.Message | types.CallbackQuery):
         "━━━━━━━━━━━━━━━━━━━━\n"
         "আমাদের স্টোর থেকে কেনাকাটার পূর্বে ও পরে নিচের নীতিমালাগুলো বাধ্যতামূলকভাবে মেনে চলতে হবে:\n\n"
         "⏱️ **ডায়নামিক রিপ্লেস সময়সীমা (Replacement Tiers):**\n"
-        "▫️ **১ – ১০ পিস আইডি:** ক্রয়ের পর **২ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ **১ পিস আইডি:** ক্রয়ের পর **২০ মিনিট** গ্যারান্টি\n"
+        "▫️ **২ – ১০ পিস আইডি:** ক্রয়ের পর **২ ঘণ্টা** গ্যারান্টি\n"
         "▫️ **১১ – ৩০ পিস আইডি:** ক্রয়ের পর **৬ ঘণ্টা** গ্যারান্টি\n"
         "▫️ **৩১ – ৫০ পিস আইডি:** ক্রয়ের পর **৮ ঘণ্টা** গ্যারান্টি\n"
         "▫️ **৫১+ পিস আইডি:** ক্রয়ের পর সর্বোচ্চ **১২ ঘণ্টা** গ্যারান্টি\n\n"
@@ -5625,8 +5633,9 @@ async def support_replace_start(c: types.CallbackQuery, state: FSMContext):
         "কোন অর্ডারের নষ্ট আইডি আপনি রিপ্লেস করতে চান তা নিচে থেকে সিলেক্ট করুন:\n\n"
         "⏱️ **আমাদের অটোমেটিক রিপ্লেস গ্যারান্টি:**\n"
         "▫️ Temp ID 2FA: **১০ মি. / ২০ মি. / ৩০ মি. / ২ ঘণ্টা** (পরিমাণ অনুযায়ী)\n"
-        "▫️ 1000xxx PC clon{{Content Used}}: **২ ঘণ্টা** ফিক্সড গ্যারান্টি\n"
-        "▫️ ১ – ১০ পিস (অন্যান্য): **২ ঘণ্টা** গ্যারান্টি\n"
+        "▫️ 1000xxx PC clon{{Content Used}}: **২০ মি. (১ পিস) / ২ ঘণ্টা** ফিক্সড গ্যারান্টি\n"
+        "▫️ ১ পিস (অন্যান্য): **২০ মিনিট** গ্যারান্টি\n"
+        "▫️ ২ – ১০ পিস (অন্যান্য): **২ ঘণ্টা** গ্যারান্টি\n"
         "▫️ ১১ – ৩০ পিস: **৬ ঘণ্টা** গ্যারান্টি\n"
         "▫️ ৩১ – ৫০ পিস: **৮ ঘণ্টা** গ্যারান্টি\n"
         "▫️ ৫১+ পিস: সর্বোচ্চ **১২ ঘণ্টা** গ্যারান্টি\n"
