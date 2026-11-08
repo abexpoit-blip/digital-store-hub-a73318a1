@@ -1,91 +1,156 @@
 const express = require('express');
 const multer = require('multer');
+const { execFile } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const dns = require('dns');
+try { dns.setDefaultResultOrder('ipv4first'); } catch (_) {}
 const { db, logAudit } = require('../db');
 const router = express.Router();
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 const BOT_TOKEN = process.env.BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
 
-// Telegram text notify
-async function notifyUser(userId, text) {
-  if (!BOT_TOKEN || !userId) return;
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: userId, text, parse_mode: 'Markdown' }),
-    });
-    const d = await res.json().catch(() => ({}));
-    if (!d.ok) {
-      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: userId, text }),
-      });
-    }
-  } catch (e) {
-    console.error('[replace] notify failed:', e.message);
-  }
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
-// Telegram photo send (screenshot/image)
-async function sendPhotoToUser(userId, buffer, filename, caption = '') {
-  if (!BOT_TOKEN || !userId || !buffer) return false;
-  try {
-    const formData = new FormData();
-    formData.append('chat_id', String(userId));
-    if (caption) {
-      formData.append('caption', caption);
-      formData.append('parse_mode', 'Markdown');
+// Telegram text notify using curl IPv4 with fallback
+async function notifyUser(userId, text, parseMode = 'HTML') {
+  if (!BOT_TOKEN || !userId || !text) return false;
+  return new Promise((resolve) => {
+    const args = [
+      '--ipv4', '--http1.1', '--no-keepalive',
+      '--silent', '--show-error',
+      '--connect-timeout', '10', '--max-time', '20',
+      '--data', `chat_id=${encodeURIComponent(String(userId))}`,
+      '--data', `text=${encodeURIComponent(text)}`,
+    ];
+    if (parseMode) {
+      args.push('--data', `parse_mode=${encodeURIComponent(parseMode)}`);
     }
-    formData.append('photo', new Blob([buffer]), filename || 'screenshot.jpg');
+    args.push(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`);
 
-    let res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-      method: 'POST',
-      body: formData,
-    });
-    let data = await res.json().catch(() => ({}));
-    if (!data.ok) {
-      // Fallback without parse_mode if markdown parse error
-      const fallbackForm = new FormData();
-      fallbackForm.append('chat_id', String(userId));
-      if (caption) fallbackForm.append('caption', caption);
-      fallbackForm.append('photo', new Blob([buffer]), filename || 'screenshot.jpg');
-      res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-        method: 'POST',
-        body: fallbackForm,
-      });
-      data = await res.json().catch(() => ({}));
-      if (!data.ok) {
-        return await sendDocumentToUser(userId, buffer, filename, caption);
+    execFile('curl', args, (err, stdout) => {
+      let ok = false;
+      try {
+        const d = JSON.parse(stdout || '{}');
+        ok = !!d.ok;
+      } catch (_) {}
+
+      if (ok) return resolve(true);
+
+      // If parse error with HTML, retry as plain text
+      if (parseMode) {
+        const plainArgs = [
+          '--ipv4', '--http1.1', '--no-keepalive',
+          '--silent', '--show-error',
+          '--connect-timeout', '10', '--max-time', '20',
+          '--data', `chat_id=${encodeURIComponent(String(userId))}`,
+          '--data', `text=${encodeURIComponent(text)}`,
+          `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`
+        ];
+        execFile('curl', plainArgs, (err2, stdout2) => {
+          try {
+            const d2 = JSON.parse(stdout2 || '{}');
+            resolve(!!d2.ok);
+          } catch (_) {
+            resolve(false);
+          }
+        });
+      } else {
+        fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: userId, text }),
+        }).then(r => r.json()).then(d => resolve(!!d.ok)).catch(() => resolve(false));
       }
-    }
-    return data && data.ok;
-  } catch (e) {
-    console.error('[replace] sendPhoto failed:', e.message);
-    return await sendDocumentToUser(userId, buffer, filename, caption);
-  }
+    });
+  });
 }
 
-// Telegram document send (file replacement)
-async function sendDocumentToUser(userId, buffer, filename, caption = '') {
+// Telegram photo send (screenshot/image) using curl IPv4
+async function sendPhotoToUser(userId, buffer, filename, caption = '', parseMode = 'HTML') {
   if (!BOT_TOKEN || !userId || !buffer) return false;
+  const safeName = (filename || 'screenshot.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const tmpFile = path.join(os.tmpdir(), `nx-photo-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${safeName}`);
   try {
-    const formData = new FormData();
-    formData.append('chat_id', String(userId));
-    formData.append('caption', caption);
-    formData.append('document', new Blob([buffer]), filename || 'replacement.txt');
-
-    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, {
-      method: 'POST',
-      body: formData,
-    });
-    const data = await res.json().catch(() => ({}));
-    return data && data.ok;
+    fs.writeFileSync(tmpFile, buffer);
   } catch (e) {
-    console.error('[replace] sendDocument failed:', e.message);
+    console.error('[replace] temp write error:', e.message);
     return false;
   }
+
+  return new Promise((resolve) => {
+    const args = [
+      '--ipv4', '--http1.1', '--no-keepalive',
+      '--silent', '--show-error',
+      '--connect-timeout', '10', '--max-time', '35',
+      '-F', `chat_id=${String(userId)}`,
+      '-F', `photo=@${tmpFile};filename=${safeName}`
+    ];
+    if (caption) {
+      args.push('-F', `caption=${caption}`);
+      if (parseMode) args.push('-F', `parse_mode=${parseMode}`);
+    }
+    args.push(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`);
+
+    execFile('curl', args, (err, stdout) => {
+      try { fs.unlinkSync(tmpFile); } catch (_) {}
+      let ok = false;
+      try {
+        const d = JSON.parse(stdout || '{}');
+        ok = !!d.ok;
+      } catch (_) {}
+
+      if (ok) return resolve(true);
+
+      // If photo send failed, fallback to sendDocument
+      sendDocumentToUser(userId, buffer, filename, caption, parseMode).then(resolve);
+    });
+  });
+}
+
+// Telegram document send (file replacement) using curl IPv4
+async function sendDocumentToUser(userId, buffer, filename, caption = '', parseMode = 'HTML') {
+  if (!BOT_TOKEN || !userId || !buffer) return false;
+  const safeName = (filename || 'replacement.txt').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const tmpFile = path.join(os.tmpdir(), `nx-doc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${safeName}`);
+  try {
+    fs.writeFileSync(tmpFile, buffer);
+  } catch (e) {
+    console.error('[replace] temp doc write error:', e.message);
+    return false;
+  }
+
+  return new Promise((resolve) => {
+    const args = [
+      '--ipv4', '--http1.1', '--no-keepalive',
+      '--silent', '--show-error',
+      '--connect-timeout', '10', '--max-time', '35',
+      '-F', `chat_id=${String(userId)}`,
+      '-F', `document=@${tmpFile};filename=${safeName}`
+    ];
+    if (caption) {
+      args.push('-F', `caption=${caption}`);
+      if (parseMode) args.push('-F', `parse_mode=${parseMode}`);
+    }
+    args.push(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`);
+
+    execFile('curl', args, (err, stdout) => {
+      try { fs.unlinkSync(tmpFile); } catch (_) {}
+      let ok = false;
+      try {
+        const d = JSON.parse(stdout || '{}');
+        ok = !!d.ok;
+      } catch (_) {}
+      resolve(ok);
+    });
+  });
 }
 
 function extractUidsFromText(text) {
@@ -516,26 +581,26 @@ router.post('/:id/resolve', upload.single('replace_file'), async (req, res) => {
   // 1. If file uploaded, send document to user in Telegram
   if (file) {
     const caption =
-      `✅ *আপনার রিপ্লেসমেন্ট ফাইল প্রদান করা হয়েছে!*\n` +
+      `<b>✅ আপনার রিপ্লেসমেন্ট ফাইল প্রদান করা হয়েছে!</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `🎫 Request ID: #${row.id}\n` +
-      (replaceText ? `📝 Note:\n${replaceText}\n\n` : '') +
+      (replaceText ? `📝 Note:\n${escapeHtml(replaceText)}\n\n` : '') +
       `ফাইলটি ডাউনলোড করে আপনার রিপ্লেস অ্যাকাউন্ট সংগ্রহ করুন। ধন্যবাদ 🙏`;
 
-    await sendDocumentToUser(row.user_id, file.buffer, file.originalname, caption);
+    await sendDocumentToUser(row.user_id, file.buffer, file.originalname, caption, 'HTML');
   }
 
   // 2. If only text provided (no file), send text message
   if (!file && replaceText) {
     const userMsg =
-      `✅ *আপনার রিপ্লেসমেন্ট প্রদান করা হয়েছে!*\n` +
+      `<b>✅ আপনার রিপ্লেসমেন্ট প্রদান করা হয়েছে!</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `🎫 Request ID: #${row.id}\n\n` +
-      `\`\`\`text\n${replaceText}\n\`\`\`\n` +
+      `<pre>${escapeHtml(replaceText)}</pre>\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
-      `💡 *(কপি করতে বক্সের উপর ট্যাপ করুন)*`;
+      `💡 <i>(কপি করতে বক্সের উপর ট্যাপ করুন)</i>`;
 
-    await notifyUser(row.user_id, userMsg);
+    await notifyUser(row.user_id, userMsg, 'HTML');
   }
 
   // 3. Update database record
@@ -577,7 +642,14 @@ router.post('/:id/resolve', upload.single('replace_file'), async (req, res) => {
 
   logAudit('admin', 'replace_resolved', `id=${id} user=${row.user_id} file=${file ? file.originalname : 'none'}`);
 
-  res.redirect('/replace?status=replaced&msg=' + encodeURIComponent(`✅ Replacement sent to User ${row.user_id} #${id}`));
+  const retStatus = req.body.return_status || req.query.status || 'pending';
+  const retCat = req.body.return_cat || req.query.cat || '';
+  const retQ = req.body.return_q || req.query.q || '';
+  let redir = `/replace?status=${encodeURIComponent(retStatus)}`;
+  if (retCat && retCat !== 'all') redir += `&cat=${encodeURIComponent(retCat)}`;
+  if (retQ) redir += `&q=${encodeURIComponent(retQ)}`;
+  redir += `&msg=${encodeURIComponent(`✅ Replacement sent to User ${row.user_id} #${id}`)}`;
+  res.redirect(redir);
 });
 
 // POST Reply to User with Message & Screenshot/File
@@ -603,25 +675,25 @@ router.post('/:id/reply', upload.single('reply_file'), async (req, res) => {
     const isImage = (file.mimetype && file.mimetype.startsWith('image/')) ||
                     /\.(jpg|jpeg|png|webp|gif)$/i.test(file.originalname);
     
-    let caption = `📩 *Admin Message (Replace #${row.id})*\n━━━━━━━━━━━━━━━━━━━━\n`;
+    let caption = `<b>📩 Admin Message (Replace #${row.id})</b>\n━━━━━━━━━━━━━━━━━━━━\n`;
     if (replyMessage) {
-      caption += `${replyMessage}\n\n`;
+      caption += `${escapeHtml(replyMessage)}\n\n`;
     }
     caption += `ধন্যবাদ 🙏`;
 
     if (isImage) {
-      userDelivered = await sendPhotoToUser(row.user_id, file.buffer, file.originalname, caption);
+      userDelivered = await sendPhotoToUser(row.user_id, file.buffer, file.originalname, caption, 'HTML');
     } else {
-      userDelivered = await sendDocumentToUser(row.user_id, file.buffer, file.originalname, caption);
+      userDelivered = await sendDocumentToUser(row.user_id, file.buffer, file.originalname, caption, 'HTML');
     }
   } else if (replyMessage) {
     // 2. Pure text message
     const msg =
-      `📩 *Admin Message (Replace #${row.id})*\n` +
+      `<b>📩 Admin Message (Replace #${row.id})</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
-      `${replyMessage}\n\n` +
+      `${escapeHtml(replyMessage)}\n\n` +
       `ধন্যবাদ 🙏`;
-    await notifyUser(row.user_id, msg);
+    await notifyUser(row.user_id, msg, 'HTML');
     userDelivered = true;
   }
 
@@ -665,7 +737,14 @@ router.post('/:id/reply', upload.single('reply_file'), async (req, res) => {
 
   logAudit('admin', 'replace_replied', `id=${id} user=${row.user_id} file=${file ? file.originalname : 'none'}`);
 
-  res.redirect('/replace?status=replaced&msg=' + encodeURIComponent(`✅ ইউজার ${row.user_id} কে রিপ্লাই ও স্ক্রিনশট পাঠানো হয়েছে!`));
+  const retStatus = req.body.return_status || req.query.status || 'pending';
+  const retCat = req.body.return_cat || req.query.cat || '';
+  const retQ = req.body.return_q || req.query.q || '';
+  let redir = `/replace?status=${encodeURIComponent(retStatus)}`;
+  if (retCat && retCat !== 'all') redir += `&cat=${encodeURIComponent(retCat)}`;
+  if (retQ) redir += `&q=${encodeURIComponent(retQ)}`;
+  redir += `&msg=${encodeURIComponent(`✅ ইউজার ${row.user_id} কে রিপ্লাই ও স্ক্রিনশট পাঠানো হয়েছে!`)}`;
+  res.redirect(redir);
 });
 
 // POST Collect
@@ -677,12 +756,17 @@ router.post('/:id/collect', async (req, res) => {
   logAudit('admin', 'replace_collected', `id=${id}`);
   if (row && row.user_id) {
     const msg =
-      `✅ *Replace Request Accepted*\n\n` +
+      `<b>✅ Replace Request Accepted</b>\n\n` +
       `Request ID: #${row.id}\n` +
       `আপনার রিপ্লেস রিকোয়েস্টটি অ্যাডমিন গ্রহণ করেছেন। খুব শীঘ্রই আপনার সাথে যোগাযোগ করে সমাধান দেওয়া হবে।`;
-    notifyUser(row.user_id, msg);
+    notifyUser(row.user_id, msg, 'HTML');
   }
-  res.redirect('/replace?msg=' + encodeURIComponent('✅ Marked collected & user notified'));
+  const retStatus = req.body.return_status || req.query.status || 'pending';
+  const retCat = req.body.return_cat || req.query.cat || '';
+  let redir = `/replace?status=${encodeURIComponent(retStatus)}`;
+  if (retCat && retCat !== 'all') redir += `&cat=${encodeURIComponent(retCat)}`;
+  redir += `&msg=${encodeURIComponent('✅ Marked collected & user notified')}`;
+  res.redirect(redir);
 });
 
 // POST Reject — mark rejected + auto-notify user
@@ -716,17 +800,22 @@ router.post('/:id/reject', async (req, res) => {
     }
   } catch (_) {}
 
-  const reasonText = rejectReason ? `\n\n📌 *কারণ:* ${rejectReason}` : '';
+  const reasonText = rejectReason ? `\n\n📌 <b>কারণ:</b> ${escapeHtml(rejectReason)}` : '';
   const msg =
-    `❌ *Replace Request Rejected*\n\n` +
-    `Category: \`${row.category || '-'}\`\n` +
+    `<b>❌ Replace Request Rejected</b>\n\n` +
+    `Category: <code>${escapeHtml(row.category || '-')}</code>\n` +
     `Request ID: #${row.id}${reasonText}\n\n` +
-    `⚠️ *নিয়মাবলী:*\n` +
+    `⚠️ <b>নিয়মাবলী:</b>\n` +
     `• আইডি কেনার নির্ধারিত সময়ের মধ্যে সমস্যা হলে রিপ্লেস দেওয়া হয়।\n` +
     `• আপনার রিকোয়েস্টটি নিয়ম অনুযায়ী গ্রহণযোগ্য নয় বিধায় বাতিল করা হয়েছে।`;
-  notifyUser(row.user_id, msg);
+  notifyUser(row.user_id, msg, 'HTML');
 
-  res.redirect('/replace?msg=' + encodeURIComponent('🚫 Rejected & user notified'));
+  const retStatus = req.body.return_status || req.query.status || 'pending';
+  const retCat = req.body.return_cat || req.query.cat || '';
+  let redir = `/replace?status=${encodeURIComponent(retStatus)}`;
+  if (retCat && retCat !== 'all') redir += `&cat=${encodeURIComponent(retCat)}`;
+  redir += `&msg=${encodeURIComponent('🚫 Rejected & user notified')}`;
+  res.redirect(redir);
 });
 
 // POST Delete

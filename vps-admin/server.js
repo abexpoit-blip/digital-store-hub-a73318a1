@@ -1,4 +1,6 @@
 process.env.TZ = 'Asia/Dhaka';
+const dns = require('dns');
+try { dns.setDefaultResultOrder('ipv4first'); } catch (_) {}
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');

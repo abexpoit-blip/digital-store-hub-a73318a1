@@ -540,7 +540,11 @@
   <input type="hidden" name="cat" value="<%= cat %>"/>
   <input type="hidden" name="q" id="searchQVal" value="<%= q %>"/>
 </form>
-<form id="singleActionForm" method="post" class="hidden"></form>
+<form id="singleActionForm" method="post" class="hidden">
+  <input type="hidden" name="return_status" value="<%= status %>">
+  <input type="hidden" name="return_cat" value="<%= cat %>">
+  <input type="hidden" name="return_q" value="<%= q %>">
+</form>
 <form id="clearAllForm" method="post" action="/replace/bulk/clear-all" class="hidden">
   <input type="hidden" name="status" id="clearAllStatus" value="<%= status %>"/>
 </form>
@@ -560,7 +564,10 @@
       <button onclick="closeResolveModal()" class="text-slate-400 hover:text-slate-700 text-lg p-1">✕</button>
     </div>
 
-    <form id="resolveForm" method="post" enctype="multipart/form-data" class="p-6 space-y-4">
+    <form id="resolveForm" method="post" enctype="multipart/form-data" class="p-6 space-y-4" onsubmit="handleResolveSubmit(this)">
+      <input type="hidden" name="return_status" value="<%= status %>">
+      <input type="hidden" name="return_cat" value="<%= cat %>">
+      <input type="hidden" name="return_q" value="<%= q %>">
       <!-- Option 1: Live Stock Auto-Fetch -->
       <div class="p-4 bg-emerald-50/70 border border-emerald-200 rounded-2xl">
         <div class="flex items-center justify-between">
@@ -616,8 +623,8 @@
         <button type="button" onclick="closeResolveModal()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100">
           Cancel
         </button>
-        <button type="submit" class="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs shadow-md shadow-emerald-600/25 flex items-center gap-2">
-          <span>🚀</span> Send Replacement to User
+        <button type="submit" id="btnResolveSubmit" class="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs shadow-md shadow-emerald-600/25 flex items-center gap-2">
+          <span id="btnResolveIcon">🚀</span> <span id="btnResolveText">Send Replacement to User</span>
         </button>
       </div>
     </form>
@@ -653,7 +660,9 @@
   <div class="w-full max-w-md bg-white border border-sky-200 rounded-3xl shadow-2xl p-6">
     <h3 class="text-base font-bold text-slate-900 mb-2">🚫 Reject Replace Request</h3>
     <p class="text-xs text-slate-500 mb-4">User কে বাতিল করার কারণসহ নোটিফিকেশন মেসেজ পাঠানো হবে।</p>
-    <form id="rejectForm" method="post" class="space-y-4">
+    <form id="rejectForm" method="post" class="space-y-4" onsubmit="var b=this.querySelector('button[type=submit]'); if(b){b.disabled=true; b.innerText='⏳ Rejecting...';}">
+      <input type="hidden" name="return_status" value="<%= status %>">
+      <input type="hidden" name="return_cat" value="<%= cat %>">
       <div>
         <label class="block text-xs font-bold text-slate-700 mb-1">Reason (ঐচ্ছিক):</label>
         <input name="reject_reason" placeholder="যেমন: 2 ঘণ্টার টাইম লিমিট পার হয়েছে"
@@ -683,7 +692,10 @@
       <button type="button" onclick="closeReplyModal()" class="text-slate-400 hover:text-slate-700 text-base p-1">✕</button>
     </div>
 
-    <form id="replyForm" method="post" enctype="multipart/form-data" class="space-y-4">
+    <form id="replyForm" method="post" enctype="multipart/form-data" class="space-y-4" onsubmit="return handleReplySubmit(event, this)">
+      <input type="hidden" name="return_status" value="<%= status %>">
+      <input type="hidden" name="return_cat" value="<%= cat %>">
+      <input type="hidden" name="return_q" value="<%= q %>">
       <div>
         <label class="block text-xs font-bold text-slate-700 mb-1">
           💬 Message (বার্তা):
@@ -696,17 +708,21 @@
         <label class="block text-xs font-bold text-slate-700 mb-1">
           🖼️ Screenshot / File Attachment (ঐচ্ছিক):
         </label>
-        <input type="file" name="reply_file" accept="image/*,.txt,.pdf,.xlsx,.csv,.zip"
+        <input type="file" id="replyFileInput" name="reply_file" accept="image/*,.txt,.pdf,.xlsx,.csv,.zip"
+               onchange="handleReplyFileSelect(this)"
                class="w-full text-xs text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200 file:cursor-pointer border border-dashed border-sky-200 rounded-xl p-3 bg-slate-50"/>
         <p class="text-[11px] text-slate-500 mt-1">📸 স্ক্রিনশট বা ফাইল সিলেক্ট করলে এটি ইউজারের টেলিগ্রামে সরাসরি চলে যাবে।</p>
+        <div id="replyImageBadge" class="hidden text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl p-2 mt-2 flex items-center gap-2">
+          <span>⚡</span> <span id="replyImageBadgeText"></span>
+        </div>
       </div>
 
       <div class="flex justify-end gap-2 pt-2 border-t border-slate-100">
         <button type="button" onclick="closeReplyModal()" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100">
           Cancel
         </button>
-        <button type="submit" class="bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl text-xs shadow-md shadow-sky-600/20 flex items-center gap-1.5">
-          <span>🚀</span> Send Reply & Screenshot
+        <button type="submit" id="btnReplySubmit" class="bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl text-xs shadow-md shadow-sky-600/20 flex items-center gap-1.5">
+          <span id="btnReplyIcon">🚀</span> <span id="btnReplyText">Send Reply & Screenshot</span>
         </button>
       </div>
     </form>
@@ -714,6 +730,107 @@
 </div>
 
 <script>
+
+  // Client-side instant image optimization & submission handler
+  var _compressedReplyFile = null;
+
+  function handleResolveSubmit(form) {
+    var btn = document.getElementById('btnResolveSubmit');
+    if (btn) {
+      btn.disabled = true;
+      document.getElementById('btnResolveIcon').textContent = '⏳';
+      document.getElementById('btnResolveText').textContent = 'Sending... Please wait';
+    }
+  }
+
+  function handleReplyFileSelect(input) {
+    var badge = document.getElementById('replyImageBadge');
+    var badgeText = document.getElementById('replyImageBadgeText');
+    _compressedReplyFile = null;
+    if (!input.files || !input.files[0]) {
+      if (badge) badge.classList.add('hidden');
+      return;
+    }
+    var file = input.files[0];
+    var origKb = Math.round(file.size / 1024);
+
+    if (!file.type.startsWith('image/')) {
+      if (badge) {
+        badge.classList.remove('hidden');
+        badgeText.textContent = '📄 ফাইল সিলেক্ট করা হয়েছে (' + origKb + ' KB)';
+      }
+      return;
+    }
+
+    if (badge) {
+      badge.classList.remove('hidden');
+      badgeText.textContent = '⚡ ইমেজ প্রসেসিং ও সাইজ অপটিমাইজ করা হচ্ছে (' + origKb + ' KB)...';
+    }
+
+    // Compress client-side via Canvas (max 1600px width/height, 0.82 JPEG quality)
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var img = new Image();
+      img.onload = function() {
+        var maxDim = 1600;
+        var width = img.width;
+        var height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        var canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(function(blob) {
+          if (blob && blob.size < file.size) {
+            _compressedReplyFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+              type: 'image/jpeg',
+              lastModified: Date.now()
+            });
+            var newKb = Math.round(_compressedReplyFile.size / 1024);
+            if (badge) {
+              badgeText.innerHTML = '⚡ <b>অপটিমাইজড সাইজ:</b> ' + origKb + ' KB → <b>' + newKb + ' KB</b> (সুপারফাস্ট আপলোড রেডি 🚀)';
+            }
+          } else {
+            _compressedReplyFile = file;
+            if (badge) {
+              badgeText.textContent = '⚡ ইমেজ রেডি (' + origKb + ' KB)';
+            }
+          }
+        }, 'image/jpeg', 0.82);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleReplySubmit(event, form) {
+    var btn = document.getElementById('btnReplySubmit');
+    if (btn) {
+      btn.disabled = true;
+      document.getElementById('btnReplyIcon').textContent = '⏳';
+      document.getElementById('btnReplyText').textContent = 'Sending... Please wait';
+    }
+
+    // If we have a compressed image file, update the FileList in the input
+    if (_compressedReplyFile && window.DataTransfer) {
+      try {
+        var dt = new DataTransfer();
+        dt.items.add(_compressedReplyFile);
+        document.getElementById('replyFileInput').files = dt.files;
+      } catch (_) {}
+    }
+    return true;
+  }
+
   function toggleSelectAll(master) {
     var boxes = document.querySelectorAll('.row-checkbox');
     boxes.forEach(function(b){ b.checked = master.checked; });
