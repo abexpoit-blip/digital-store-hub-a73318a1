@@ -712,20 +712,20 @@ def get_main_reply_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
             [
-                KeyboardButton(text="👤 Profile", style="success"),
-                KeyboardButton(text="🛡️ Buy VPN", style="primary")
+                KeyboardButton(text="👤 Profile"),
+                KeyboardButton(text="🛡️ Buy VPN")
             ],
             [
-                KeyboardButton(text="🛒 Buy ID", style="success"),
-                KeyboardButton(text="💼 Buy BM", style="primary")
+                KeyboardButton(text="🛒 Buy ID"),
+                KeyboardButton(text="💼 Buy BM")
             ],
             [
-                KeyboardButton(text="💳 Deposit", style="success"),
-                KeyboardButton(text="🎧 Support", style="danger")
+                KeyboardButton(text="💳 Deposit"),
+                KeyboardButton(text="🎧 Support")
             ],
             [
-                KeyboardButton(text="🔄 Replace", style="danger"),
-                KeyboardButton(text="📜 Terms", style="primary")
+                KeyboardButton(text="🔄 Replace"),
+                KeyboardButton(text="📜 Terms")
             ]
         ],
         resize_keyboard=True,
@@ -756,16 +756,16 @@ async def show_dashboard_ui(user_id, first_name, bot_instance, chat_id, username
     )
 
     kb = InlineKeyboardBuilder()
-    kb.row(types.InlineKeyboardButton(text="🛒 আইডি কিনুন", callback_data="catalog", style="success"),
-           types.InlineKeyboardButton(text="💼 BM কিনুন", callback_data="bm_catalog", style="primary"))
+    kb.row(types.InlineKeyboardButton(text="🛒 আইডি কিনুন", callback_data="catalog"),
+           types.InlineKeyboardButton(text="💼 BM কিনুন", callback_data="bm_catalog"))
 
-    kb.row(types.InlineKeyboardButton(text="💳 ব্যালেন্স অ্যাড", callback_data="deposit", style="success"),
-           types.InlineKeyboardButton(text="👤 প্রোফাইল", callback_data="profile", style="primary"))
+    kb.row(types.InlineKeyboardButton(text="💳 ব্যালেন্স অ্যাড", callback_data="deposit"),
+           types.InlineKeyboardButton(text="👤 প্রোফাইল", callback_data="profile"))
 
-    kb.row(types.InlineKeyboardButton(text="🌐 VPN Services", callback_data="vpn_catalog", style="primary"),
-           types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy", style="primary"))
+    kb.row(types.InlineKeyboardButton(text="🌐 VPN Services", callback_data="vpn_catalog"),
+           types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
 
-    kb.row(types.InlineKeyboardButton(text="📞 সাপোর্ট ও হেল্প", callback_data="support_menu", style="danger"),
+    kb.row(types.InlineKeyboardButton(text="📞 সাপোর্ট ও হেল্প", callback_data="support_menu"),
            types.InlineKeyboardButton(text="📢 কমিউনিটি গ্রুপ", url=GROUP_LINK))
 
     await bot_instance.send_message(chat_id, dashboard, reply_markup=kb.as_markup())
@@ -3653,8 +3653,8 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
         total_orders = order_stat[0] if order_stat else 0
         total_spent = order_stat[1] if order_stat else 0
         kb = InlineKeyboardBuilder()
-        kb.row(types.InlineKeyboardButton(text="📦 আমার অর্ডারসমূহ (Order History)", callback_data="my_orders", style="primary"))
-        kb.row(types.InlineKeyboardButton(text="📜 ব্যালেন্স হিস্ট্রি (Balance Log)", callback_data="my_balance_history", style="success"))
+        kb.row(types.InlineKeyboardButton(text="📦 আমার অর্ডারসমূহ (Order History)", callback_data="my_orders"))
+        kb.row(types.InlineKeyboardButton(text="📜 ব্যালেন্স হিস্ট্রি (Balance Log)", callback_data="my_balance_history"))
         kb.row(types.InlineKeyboardButton(text="🔙 ব্যাক", callback_data="back_home"))
         p_text = (
             f"👤 **ইউজার প্রোফাইল**\n"
@@ -3677,7 +3677,7 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
         row_buttons = []
         for vpn_id, vpn_name in brands:
             emoji = VPN_EMOJIS.get(vpn_id, "⚛️")
-            row_buttons.append(types.InlineKeyboardButton(text=f"{emoji} {vpn_name}", callback_data=f"vpn_sel_{vpn_id}", style="primary"))
+            row_buttons.append(types.InlineKeyboardButton(text=f"{emoji} {vpn_name}", callback_data=f"vpn_sel_{vpn_id}"))
             if len(row_buttons) == 2:
                 kb.row(*row_buttons)
                 row_buttons = []
@@ -3703,11 +3703,11 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
         pt_2fa = get_price('tempid_2fa')
         conn.close()
         kb = InlineKeyboardBuilder()
-        kb.row(types.InlineKeyboardButton(text=f"🆔 FB 1000 Fresh ({f1}) ➜ {p1}৳", callback_data="buy_fb1000", style="success"))
-        kb.row(types.InlineKeyboardButton(text=f"🎬 1000xxx PC clon{{Content Used}} ({f_used}) ➜ {p_used}৳", callback_data="used_terms", style="primary"))
-        kb.row(types.InlineKeyboardButton(text=f"🆔 FB 61 ({f6}) ➜ {p6}৳", callback_data="buy_fb61", style="primary"))
-        kb.row(types.InlineKeyboardButton(text=f"🆔 Temp ID ({t_id}) ➜ {pt}৳", callback_data="buy_tempid", style="primary"))
-        kb.row(types.InlineKeyboardButton(text=f"🔐 Temp ID 2FA ({t_2fa}) ➜ {pt_2fa}৳", callback_data="buy_tempid_2fa", style="primary"))
+        kb.row(types.InlineKeyboardButton(text=f"🆔 FB 1000 Fresh ({f1}) ➜ {p1}৳", callback_data="buy_fb1000"))
+        kb.row(types.InlineKeyboardButton(text=f"🎬 1000xxx PC clon{{Content Used}} ({f_used}) ➜ {p_used}৳", callback_data="used_terms"))
+        kb.row(types.InlineKeyboardButton(text=f"🆔 FB 61 ({f6}) ➜ {p6}৳", callback_data="buy_fb61"))
+        kb.row(types.InlineKeyboardButton(text=f"🆔 Temp ID ({t_id}) ➜ {pt}৳", callback_data="buy_tempid"))
+        kb.row(types.InlineKeyboardButton(text=f"🔐 Temp ID 2FA ({t_2fa}) ➜ {pt_2fa}৳", callback_data="buy_tempid_2fa"))
         kb.row(types.InlineKeyboardButton(text="🔙 ফিরে যান", callback_data="back_home"))
         await m.answer("📥 **আইডি ক্যাটাগরি মেনু**", reply_markup=kb.as_markup())
 
@@ -3721,8 +3721,8 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
         pfb = get_price('bmfb')
         conn.close()
         kb = InlineKeyboardBuilder()
-        kb.row(types.InlineKeyboardButton(text=f"📸 Instagram BM ({ig}) ➜ {pig}৳", callback_data="buy_bmig", style="success"))
-        kb.row(types.InlineKeyboardButton(text=f"📘 Facebook BM ({fb}) ➜ {pfb}৳", callback_data="buy_bmfb", style="primary"))
+        kb.row(types.InlineKeyboardButton(text=f"📸 Instagram BM ({ig}) ➜ {pig}৳", callback_data="buy_bmig"))
+        kb.row(types.InlineKeyboardButton(text=f"📘 Facebook BM ({fb}) ➜ {pfb}৳", callback_data="buy_bmfb"))
         kb.row(types.InlineKeyboardButton(text="🔙 ফিরে যান", callback_data="back_home"))
         await m.answer("💼 **BM ক্যাটাগরি মেনু**", reply_markup=kb.as_markup())
 
@@ -3730,9 +3730,9 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
         if not is_service_enabled("deposit_service_enabled") and not is_admin(m.from_user.id):
             return await m.answer("💰 **ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।", parse_mode="Markdown")
         kb = InlineKeyboardBuilder()
-        kb.row(types.InlineKeyboardButton(text="💗 বিকাশ ডিপোজিট (Min 200৳)", callback_data="dep_sec_bkash", style="danger"))
-        kb.row(types.InlineKeyboardButton(text="🟧 নগদ ডিপোজিট (Min 10৳)", callback_data="dep_sec_nagad", style="warning"))
-        kb.row(types.InlineKeyboardButton(text="💎 Binance USDT ($1 = 125৳)", callback_data="dep_binance", style="primary"))
+        kb.row(types.InlineKeyboardButton(text="💗 বিকাশ ডিপোজিট (Min 200৳)", callback_data="dep_sec_bkash"))
+        kb.row(types.InlineKeyboardButton(text="🟧 নগদ ডিপোজিট (Min 10৳)", callback_data="dep_sec_nagad"))
+        kb.row(types.InlineKeyboardButton(text="💎 Binance USDT ($1 = 125৳)", callback_data="dep_binance"))
         
         await m.answer(
             "🌟 *ডিপোজিট মাধ্যম বেছে নিন* 🌟\n\n"
@@ -3754,9 +3754,9 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
 
     elif text in ["🎧 Support", "📞 সাপোর্ট", "📞 সাপোর্ট ও হেল্প"]:
         kb = InlineKeyboardBuilder()
-        kb.row(types.InlineKeyboardButton(text="🔄 Replace PC Clone ID", callback_data="sup_replace", style="danger"))
-        kb.row(types.InlineKeyboardButton(text="📝 Complain", callback_data="sup_complain", style="primary"))
-        kb.row(types.InlineKeyboardButton(text="📜 শর্তাবলী ও পলিসি (Terms)", callback_data="terms_policy", style="primary"))
+        kb.row(types.InlineKeyboardButton(text="🔄 Replace PC Clone ID", callback_data="sup_replace"))
+        kb.row(types.InlineKeyboardButton(text="📝 Complain", callback_data="sup_complain"))
+        kb.row(types.InlineKeyboardButton(text="📜 শর্তাবলী ও পলিসি (Terms)", callback_data="terms_policy"))
         kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="back_home"))
         msg = (
             f"📞 **সাপোর্ট ও হেল্প সেন্টার • {BOT_VERSION}**\n"
@@ -3777,7 +3777,7 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
         conn.close()
         if not user_sales:
             kb = InlineKeyboardBuilder()
-            kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy", style="primary"))
+            kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
             kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
             no_order_msg = (
                 "🚫 **কোনো সক্রিয় অর্ডার পাওয়া যায়নি!**\n"
@@ -3792,8 +3792,8 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
             s_id, s_cat, s_qty, s_tot, s_date, s_time = sale
             lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx Used","tempid":"Temp ID","tempid_2fa":"Temp ID 2FA","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(s_cat, s_cat.upper())
             btn_text = f"📦 #{s_id} | {lbl} ({s_qty} pcs)"
-            kb.row(types.InlineKeyboardButton(text=btn_text, callback_data=f"rep_ord_{s_id}", style="primary"))
-        kb.row(types.InlineKeyboardButton(text="📜 শর্তাবলী ও নিয়ম (Terms)", callback_data="terms_policy", style="primary"))
+            kb.row(types.InlineKeyboardButton(text=btn_text, callback_data=f"rep_ord_{s_id}"))
+        kb.row(types.InlineKeyboardButton(text="📜 শর্তাবলী ও নিয়ম (Terms)", callback_data="terms_policy"))
         kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
         await m.answer("🔄 **যে অর্ডারের আইডি রিপ্লেস করতে চান তা নির্বাচন করুন:**", reply_markup=kb.as_markup(), parse_mode="Markdown")
 
