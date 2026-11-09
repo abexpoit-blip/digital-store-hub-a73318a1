@@ -2539,6 +2539,29 @@ async def admin_stats_weekly(message: types.Message, state: FSMContext):
 VPN_API_DEFAULT_URL = "https://vpndigitalshop.xyz/api/v1"
 VPN_API_DEFAULT_KEY = os.getenv("VPN_API_KEY", "")
 
+def normalize_vpn_brand_id(name: str) -> str:
+    cleaned = re.sub(r'[^a-z0-9]', '', str(name).lower().replace('vpn', ''))
+    if 'nord' in cleaned: return 'nord'
+    if 'surfshark' in cleaned: return 'surfshark'
+    if 'express' in cleaned: return 'express'
+    if 'proton' in cleaned: return 'proton'
+    if 'hma' in cleaned: return 'hma'
+    if 'ipvanish' in cleaned or 'ip' in cleaned: return 'ipvanish'
+    if 'hotspot' in cleaned: return 'hotspotshield'
+    if 'cyberghost' in cleaned: return 'cyberghost'
+    if 'bitdefender' in cleaned: return 'bitdefender'
+    if 'turbo' in cleaned: return 'turbo'
+    if 'pure' in cleaned: return 'pure'
+    if 'avast' in cleaned: return 'avast'
+    if 'avg' in cleaned: return 'avg'
+    if 'potato' in cleaned: return 'potato'
+    if 'panda' in cleaned: return 'panda'
+    if 'vypr' in cleaned: return 'vypr'
+    if 'pia' in cleaned: return 'pia'
+    if 'octohide' in cleaned: return 'octohide'
+    return cleaned[:20] or 'vpn'
+
+
 def _sync_vpn_api_call(action: str, **kwargs):
     conn = _dbc()
     try:
@@ -2570,8 +2593,12 @@ def _sync_vpn_api_call(action: str, **kwargs):
             req = urllib.request.Request(req_url, headers=headers, method="GET")
         elif action in ("order", "buy"):
             pid = kwargs.get("product_id") or kwargs.get("service") or kwargs.get("service_code") or ""
-            req_url = f"{base}/buy?key={urllib.parse.quote_plus(key)}&product_id={urllib.parse.quote_plus(str(pid))}"
-            req = urllib.request.Request(req_url, headers=headers, method="GET")
+            qty = kwargs.get("quantity") or kwargs.get("qty") or 1
+            body_data = urllib.parse.urlencode({"product_id": pid, "qty": qty}).encode("utf-8")
+            post_headers = dict(headers)
+            post_headers["Content-Type"] = "application/x-www-form-urlencoded"
+            req_url = f"{base}/buy?key={urllib.parse.quote_plus(key)}"
+            req = urllib.request.Request(req_url, data=body_data, headers=post_headers, method="POST")
         elif action == "status":
             oid = kwargs.get("order") or kwargs.get("order_id") or ""
             req_url = f"{base}/status?key={urllib.parse.quote_plus(key)}&order_id={urllib.parse.quote_plus(str(oid))}"
@@ -2629,6 +2656,8 @@ def extract_vpn_account_data(resp):
     if not isinstance(resp, dict):
         return None
     candidates = [
+        resp.get("delivered_data"),
+        resp.get("delivered_keys"),
         resp.get("data"),
         resp.get("details"),
         resp.get("account"),
@@ -2643,6 +2672,9 @@ def extract_vpn_account_data(resp):
     order_obj = resp.get("order")
     if isinstance(order_obj, dict):
         candidates.extend([
+            order_obj.get("delivered_data"),
+            order_obj.get("delivered_keys"),
+            order_obj.get("keys"),
             order_obj.get("details"),
             order_obj.get("data"),
             order_obj.get("account"),
@@ -2676,10 +2708,10 @@ def extract_api_order_id(resp):
         return ""
     val = resp.get("order")
     if isinstance(val, dict):
-        return str(val.get("order") or val.get("order_id") or val.get("id") or "")
+        return str(val.get("order_code") or val.get("order") or val.get("order_id") or val.get("id") or "")
     if val:
         return str(val)
-    return str(resp.get("order_id") or resp.get("id") or resp.get("buy_id") or "")
+    return str(resp.get("order_code") or resp.get("order_id") or resp.get("id") or resp.get("buy_id") or "")
 
 async def vpn_api_sync_catalog():
     res = await vpn_api_call("services")
