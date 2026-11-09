@@ -536,8 +536,8 @@ def init_db():
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_tempid', '15')")
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('price_tempid_2fa', '18')")
     # VPN Provider API Defaults
-    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_url', 'https://easyxearn.site/api.php')")
-    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_key', 'TTECH_0dd4e0099d624b574026fc182a22466016104bb5dd4bf601')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_url', 'https://vpndigitalshop.xyz/api/v1')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_key', ?)", (os.getenv('VPN_API_KEY', ''),))
     cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vpnapi_auto_order', '1')")
     cursor.execute("INSERT OR IGNORE INTO vpn_brands (vpn_id, vpn_name) VALUES ('potato', 'Potato VPN')")
     cursor.execute("INSERT OR IGNORE INTO vpn_packages (vpn_id, pkg_id, price) VALUES ('potato', '7d', 30)")
@@ -2536,8 +2536,8 @@ async def admin_stats_weekly(message: types.Message, state: FSMContext):
         await message.answer(f"❌ Error computing weekly stats: {e}")
 
 # --- VPN PROVIDER API CLIENT & AUTOMATION HELPERS ---
-VPN_API_DEFAULT_URL = "https://easyxearn.site/api.php"
-VPN_API_DEFAULT_KEY = "TTECH_0dd4e0099d624b574026fc182a22466016104bb5dd4bf601"
+VPN_API_DEFAULT_URL = "https://vpndigitalshop.xyz/api/v1"
+VPN_API_DEFAULT_KEY = os.getenv("VPN_API_KEY", "")
 
 def _sync_vpn_api_call(action: str, **kwargs):
     conn = _dbc()
@@ -2552,18 +2552,58 @@ def _sync_vpn_api_call(action: str, **kwargs):
     finally:
         conn.close()
 
-    data = {"action": action, "key": key}
-    data.update(kwargs)
-    encoded = urllib.parse.urlencode(data).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=encoded,
-        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasictrickStore/2.0"},
-    )
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasictrickStore/2.0",
+        "Accept": "application/json",
+        "x-api-key": key,
+    }
+
+    is_rest_v1 = ("/api/v1" in url) or ("vpndigitalshop" in url)
+
+    if is_rest_v1:
+        base = url.rstrip("/")
+        if action == "balance":
+            req_url = f"{base}/balance?key={urllib.parse.quote_plus(key)}"
+            req = urllib.request.Request(req_url, headers=headers, method="GET")
+        elif action in ("services", "products"):
+            req_url = f"{base}/products?key={urllib.parse.quote_plus(key)}"
+            req = urllib.request.Request(req_url, headers=headers, method="GET")
+        elif action in ("order", "buy"):
+            pid = kwargs.get("product_id") or kwargs.get("service") or kwargs.get("service_code") or ""
+            req_url = f"{base}/buy?key={urllib.parse.quote_plus(key)}&product_id={urllib.parse.quote_plus(str(pid))}"
+            req = urllib.request.Request(req_url, headers=headers, method="GET")
+        elif action == "status":
+            oid = kwargs.get("order") or kwargs.get("order_id") or ""
+            req_url = f"{base}/status?key={urllib.parse.quote_plus(key)}&order_id={urllib.parse.quote_plus(str(oid))}"
+            req = urllib.request.Request(req_url, headers=headers, method="GET")
+        else:
+            req_url = f"{base}/{action}?key={urllib.parse.quote_plus(key)}"
+            req = urllib.request.Request(req_url, headers=headers, method="GET")
+    else:
+        data = {"action": action, "key": key}
+        data.update(kwargs)
+        encoded = urllib.parse.urlencode(data).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=encoded,
+            headers=headers,
+            method="POST",
+        )
+
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read().decode("utf-8")
-            return json.loads(raw)
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                if action == "balance" and "balance" in data and "status" not in data:
+                    data["status"] = "success"
+                if action in ("services", "products"):
+                    if isinstance(data.get("products"), list) and "services" not in data:
+                        data["services"] = data["products"]
+                        data["status"] = "success"
+            elif isinstance(data, list) and action in ("services", "products"):
+                data = {"status": "success", "services": data}
+            return data
     except urllib.error.HTTPError as e:
         try:
             err_raw = e.read().decode("utf-8")
@@ -2580,10 +2620,10 @@ async def vpn_api_get_balance():
     return await vpn_api_call("balance")
 
 async def vpn_api_place_order(service_code: str, quantity: int = 1):
-    return await vpn_api_call("order", service=service_code, quantity=quantity)
+    return await vpn_api_call("order", service=service_code, product_id=service_code, quantity=quantity)
 
 async def vpn_api_get_order_status(api_order_id: str):
-    return await vpn_api_call("status", order=api_order_id)
+    return await vpn_api_call("status", order=api_order_id, order_id=api_order_id)
 
 def extract_vpn_account_data(resp):
     if not isinstance(resp, dict):
@@ -2596,6 +2636,9 @@ def extract_vpn_account_data(resp):
         resp.get("code"),
         resp.get("text"),
         resp.get("response"),
+        resp.get("product"),
+        resp.get("item"),
+        resp.get("result"),
     ]
     order_obj = resp.get("order")
     if isinstance(order_obj, dict):
@@ -2636,31 +2679,41 @@ def extract_api_order_id(resp):
         return str(val.get("order") or val.get("order_id") or val.get("id") or "")
     if val:
         return str(val)
-    return str(resp.get("order_id") or resp.get("id") or "")
+    return str(resp.get("order_id") or resp.get("id") or resp.get("buy_id") or "")
 
 async def vpn_api_sync_catalog():
     res = await vpn_api_call("services")
-    if res.get("status") != "success" or not isinstance(res.get("services"), list):
-        return 0, res.get("message", "Invalid services response")
+    services = None
+    if isinstance(res, dict):
+        services = res.get("services") or res.get("products") or res.get("data")
+    elif isinstance(res, list):
+        services = res
 
-    services = res["services"]
+    if not isinstance(services, list):
+        err_msg = res.get("error") or res.get("message") or "Invalid services/products response"
+        return 0, str(err_msg)
+
     now_ts = int(datetime.now().timestamp())
     conn = _dbc()
     seen = []
     try:
         for s in services:
-            code = str(s.get("service", "")).strip()
+            code = str(s.get("product_id") or s.get("id") or s.get("service") or "").strip()
             if not code: continue
             seen.append(code)
-            name = str(s.get("name", code)).strip()
-            cat = str(s.get("category", "")).strip()
+            name = str(s.get("name") or s.get("product_name") or code).strip()
+            cat = str(s.get("category") or s.get("type") or "").strip()
             stype = str(s.get("type", "vpn")).strip()
-            rate = float(s.get("rate", 0))
-            orig_rate = float(s.get("original_rate", rate))
-            disc = float(s.get("discount_percent", 0))
-            min_q = int(s.get("min", 1) or 1)
-            max_q = int(s.get("max", 1) or 1)
-            avail = 1 if s.get("available") else 0
+            rate = float(s.get("price") or s.get("rate") or 0)
+            orig_rate = float(s.get("original_rate") or s.get("original_price") or rate)
+            disc = float(s.get("discount_percent") or 0)
+            min_q = int(s.get("min_qty") or s.get("min") or 1)
+            max_q = int(s.get("max_qty") or s.get("max") or 1)
+            is_avail = s.get("available")
+            if is_avail is None:
+                stock_val = s.get("stock")
+                is_avail = (stock_val is None or stock_val > 0)
+            avail = 1 if is_avail else 0
             raw_str = json.dumps(s)
 
             # parse duration

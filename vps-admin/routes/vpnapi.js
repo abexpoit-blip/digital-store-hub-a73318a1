@@ -8,8 +8,8 @@ const { URL } = require('url');
 const { db, logAudit } = require('../db');
 const router = express.Router();
 
-const DEFAULT_API_URL = 'https://easyxearn.site/api.php';
-const DEFAULT_API_KEY = 'TTECH_0dd4e0099d624b574026fc182a22466016104bb5dd4bf601';
+const DEFAULT_API_URL = 'https://vpndigitalshop.xyz/api/v1';
+const DEFAULT_API_KEY = process.env.VPN_API_KEY || '';
 
 // ---------- schema ----------
 try {
@@ -61,26 +61,55 @@ function apiCall(action, extra = {}) {
     let u;
     try { u = new URL(url); } catch (_) { return reject(new Error('API URL ভুল')); }
 
-    const params = new URLSearchParams({ action, key, ...extra });
-    const body = params.toString();
+    const isRestV1 = url.includes('/api/v1') || url.includes('vpndigitalshop');
+    let requestPath = u.pathname + (u.search || '');
+    let method = 'POST';
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BasictrickStore/2.0',
+      'Accept': 'application/json',
+      'x-api-key': key,
+    };
+    let body = null;
+
+    if (isRestV1) {
+      method = 'GET';
+      const cleanBase = (u.pathname || '').replace(/\/+$/, '');
+      if (action === 'balance') {
+        requestPath = `${cleanBase}/balance?key=${encodeURIComponent(key)}`;
+      } else if (action === 'services' || action === 'products') {
+        requestPath = `${cleanBase}/products?key=${encodeURIComponent(key)}`;
+      } else if (action === 'order' || action === 'buy') {
+        const pid = extra.product_id || extra.service || extra.service_code || '';
+        requestPath = `${cleanBase}/buy?key=${encodeURIComponent(key)}&product_id=${encodeURIComponent(pid)}`;
+      } else {
+        requestPath = `${cleanBase}/${action}?key=${encodeURIComponent(key)}`;
+      }
+    } else {
+      method = 'POST';
+      const params = new URLSearchParams({ action, key, ...extra });
+      body = params.toString();
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      headers['Content-Length'] = Buffer.byteLength(body);
+    }
+
     const req = https.request({
       hostname: u.hostname,
       port: u.port || 443,
-      path: u.pathname + (u.search || ''),
-      method: 'POST',
+      path: requestPath,
+      method: method,
       timeout: 30000,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Content-Length': Buffer.byteLength(body),
-      },
+      headers: headers,
     }, (res) => {
       let raw = '';
       res.on('data', (d) => { raw += d; if (raw.length > 2_000_000) req.destroy(); });
       res.on('end', () => {
         try {
           const parsed = JSON.parse(raw);
-          if (res.statusCode >= 400 && parsed && parsed.status === 'error') {
-            return reject(new Error(parsed.message || `HTTP ${res.statusCode}`));
+          if (res.statusCode >= 400 && parsed && (parsed.status === 'error' || parsed.error)) {
+            return reject(new Error(parsed.error || parsed.message || `HTTP ${res.statusCode}`));
+          }
+          if (parsed && parsed.status === 'error' && parsed.error) {
+            return reject(new Error(parsed.error));
           }
           resolve(parsed);
         } catch (_) {
@@ -90,7 +119,7 @@ function apiCall(action, extra = {}) {
     });
     req.on('timeout', () => { req.destroy(new Error('Provider timeout (30s)')); });
     req.on('error', reject);
-    req.write(body);
+    if (body) req.write(body);
     req.end();
   });
 }
@@ -143,8 +172,11 @@ router.get('/', async (req, res, next) => {
     if (key) {
       try {
         const r = await apiCall('balance');
-        if (r && r.status === 'success') balance = `${r.balance} ${r.currency || ''}`.trim();
-        else balanceErr = (r && r.message) || 'Unknown error';
+        if (r && (r.status === 'success' || r.balance !== undefined)) {
+          balance = `${r.balance ?? (r.data && r.data.balance) ?? 0} ${r.currency || 'BDT'}`.trim();
+        } else {
+          balanceErr = (r && (r.error || r.message)) || 'Unknown error';
+        }
       } catch (e) { balanceErr = e.message; }
     }
 
@@ -187,8 +219,9 @@ router.post('/toggle-auto', (req, res) => {
 router.post('/sync', async (req, res) => {
   try {
     const r = await apiCall('services');
-    if (!r || r.status !== 'success' || !Array.isArray(r.services)) {
-      return res.redirect('/vpnapi?msg=' + encodeURIComponent('❌ Sync fail: ' + ((r && r.message) || 'invalid response')));
+    const list = (r && (r.services || r.products || r.data)) || (Array.isArray(r) ? r : null);
+    if (!list || !Array.isArray(list)) {
+      return res.redirect('/vpnapi?msg=' + encodeURIComponent('❌ Sync fail: ' + ((r && (r.error || r.message)) || 'invalid response')));
     }
     const now = Math.floor(Date.now() / 1000);
     const seen = [];
@@ -205,26 +238,30 @@ router.post('/sync', async (req, res) => {
         available=excluded.available, raw=excluded.raw, updated_at=excluded.updated_at
     `);
 
-    const tx = db.transaction((list) => {
-      for (const s of list) {
-        const dur = parseDuration(`${s.category || ''} ${s.name || ''}`);
-        const code = String(s.service || '').trim();
+    const tx = db.transaction((items) => {
+      for (const s of items) {
+        const code = String(s.product_id || s.id || s.service || '').trim();
         if (!code) continue;
         seen.push(code);
+        const name = s.name || s.product_name || code;
+        const dur = parseDuration(`${s.category || ''} ${name}`);
+        const rate = Number(s.price || s.rate || 0);
+        const isAvail = s.available !== undefined ? (s.available !== false && s.available !== 0) : (s.stock === undefined || s.stock > 0);
+
         up.run({
           service: code,
-          name: s.name || code,
-          category: s.category || '',
-          type: s.type || '',
+          name: name,
+          category: s.category || s.type || '',
+          type: s.type || 'vpn',
           days: dur.days,
           pkg_id: dur.pkg_id,
-          vpn_id: slugBrand(s.name),
-          rate: Number(s.rate) || 0,
-          original_rate: Number(s.original_rate) || 0,
-          discount_percent: Number(s.discount_percent) || 0,
-          min_qty: parseInt(s.min, 10) || 1,
-          max_qty: parseInt(s.max, 10) || 1,
-          available: (s.available === false || s.available === 0) ? 0 : 1,
+          vpn_id: slugBrand(name),
+          rate: rate,
+          original_rate: Number(s.original_rate || s.original_price || rate),
+          discount_percent: Number(s.discount_percent || 0),
+          min_qty: parseInt(s.min_qty || s.min, 10) || 1,
+          max_qty: parseInt(s.max_qty || s.max, 10) || 1,
+          available: isAvail ? 1 : 0,
           raw: JSON.stringify(s),
           updated_at: now,
         });
@@ -236,7 +273,7 @@ router.post('/sync', async (req, res) => {
           .run(now, ...seen);
       }
     });
-    tx(r.services);
+    tx(list);
 
     cfgSet('vpnapi_last_sync', now);
     logAudit('admin', 'vpnapi_sync', `${seen.length} services synced`);
