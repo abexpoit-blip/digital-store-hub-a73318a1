@@ -3729,38 +3729,25 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
     elif text in ["💳 Deposit", "💳 ডিপোজিট", "💳 ব্যালেন্স অ্যাড"]:
         if not is_service_enabled("deposit_service_enabled") and not is_admin(m.from_user.id):
             return await m.answer("💰 **ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।", parse_mode="Markdown")
-        is_manual = is_service_enabled("manual_payment_enabled")
         kb = InlineKeyboardBuilder()
-        kb.row(types.InlineKeyboardButton(text="⚡ Auto Payment (bKash / Nagad)", callback_data="dep_auto", style="success"))
-        if is_manual:
-            kb.row(types.InlineKeyboardButton(text="📝 Manual Payment (bKash / Nagad)", callback_data="dep_manual", style="primary"))
-        kb.row(types.InlineKeyboardButton(text="💎 Binance USDT", callback_data="dep_binance", style="primary"))
+        kb.row(types.InlineKeyboardButton(text="💗 বিকাশ ডিপোজিট (Min 200৳)", callback_data="dep_sec_bkash", style="danger"))
+        kb.row(types.InlineKeyboardButton(text="🟧 নগদ ডিপোজিট (Min 10৳)", callback_data="dep_sec_nagad", style="warning"))
+        kb.row(types.InlineKeyboardButton(text="💎 Binance USDT ($1 = 125৳)", callback_data="dep_binance", style="primary"))
         
-        manual_desc = ""
-        if is_manual:
-            manual_desc = (
-                "\n\n📝 *Manual Payment* — সরাসরি bKash / Nagad\n"
-                f"   ▸ bKash: `{BKASH_NUMBER}`\n"
-                f"   ▸ Nagad: `{NAGAD_NUMBER}`\n"
-                "   ▸ Send Money করে স্ক্রিনশট পাঠাবেন\n"
-                "   ▸ অ্যাডমিন চেক করে ব্যালেন্স যোগ করবে\n"
-                "   ▸ মিনিমাম ১০৳"
-            )
         await m.answer(
-            "🌟 *ডিপোজিট পদ্ধতি বাছাই করুন* 🌟\n\n"
+            "🌟 *ডিপোজিট মাধ্যম বেছে নিন* 🌟\n\n"
             "━━━━━━━━━━━━━━━━━━━━━\n"
-            "⚡ *Auto Payment* — সবচেয়ে দ্রুত ও সহজ\n"
-            "   ▸ bKash / Nagad সাপোর্ট\n"
-            "   ▸ এক ক্লিকে ইন-অ্যাপ পপআপ পেমেন্ট\n"
-            "   ▸ ১০-৩০ সেকেন্ডে ব্যালেন্স যোগ\n"
-            "   ▸ মিনিমাম ১০৳"
-            f"{manual_desc}\n\n"
-            "💎 *Binance USDT* — ডলারে পেমেন্ট\n"
+            "💗 *bKash (বিকাশ ডিপোজিট)*\n"
+            "   ▸ ⚡ অটো পেমেন্ট ও 📝 ম্যানুয়াল Send Money\n"
+            "   ▸ ⚠️ সর্বনিম্ন ডিপোজিট: **২০০৳** (Min 200৳)\n\n"
+            "🟧 *Nagad (নগদ ডিপোজিট)*\n"
+            "   ▸ ⚡ অটো পেমেন্ট ও 📝 ম্যানুয়াল Send Money\n"
+            "   ▸ 💰 সর্বনিম্ন ডিপোজিট: **১০৳** (Min 10৳)\n\n"
+            "💎 *Binance USDT* — ক্রিপ্টো ডিপোজিট\n"
             "   ▸ Rate: *$1 = 125৳* (fixed)\n"
-            "   ▸ Screenshot পাঠাবেন\n"
-            "   ▸ Admin ম্যানুয়ালি অ্যাপ্রুভ করবে\n"
-            "   ▸ মিনিমাম 1$\n"
-            "━━━━━━━━━━━━━━━━━━━━━",
+            "   ▸ সর্বনিম্ন: *$1*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "👇 *যে মাধ্যমে ডিপোজিট করতে চান নিচের বাটনে চাপ দিন:*",
             reply_markup=kb.as_markup(),
             parse_mode="Markdown"
         )
@@ -3951,10 +3938,9 @@ async def process_buy(m: types.Message, state: FSMContext):
         if bal < total:
             _need = max(0, total - bal)
             _kb = InlineKeyboardBuilder()
-            _kb.row(types.InlineKeyboardButton(text="⚡ Auto Deposit (bKash/Nagad)", callback_data="dep_auto"))
-            if is_service_enabled("manual_payment_enabled"):
-                _kb.row(types.InlineKeyboardButton(text="📝 Manual Deposit (bKash/Nagad)", callback_data="dep_manual"))
-            _kb.row(types.InlineKeyboardButton(text="🪙 Binance", callback_data="dep_binance"))
+            _kb.row(types.InlineKeyboardButton(text="💗 বিকাশ ডিপোজিট (Min 200৳)", callback_data="dep_sec_bkash"))
+            _kb.row(types.InlineKeyboardButton(text="🟧 নগদ ডিপোজিট (Min 10৳)", callback_data="dep_sec_nagad"))
+            _kb.row(types.InlineKeyboardButton(text="💎 Binance USDT", callback_data="dep_binance"))
             await state.clear()
             await m.answer(
                 f"❌ **অপর্যাপ্ত ব্যালেন্স!**\n"
@@ -4102,83 +4088,173 @@ async def dep_start(c: types.CallbackQuery, state: FSMContext):
             "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
             parse_mode="Markdown"
         )
-    is_manual = is_service_enabled("manual_payment_enabled")
     kb = InlineKeyboardBuilder()
-    kb.row(types.InlineKeyboardButton(text="⚡ Auto Payment (bKash / Nagad)", callback_data="dep_auto"))
-    if is_manual:
-        kb.row(types.InlineKeyboardButton(text="📝 Manual Payment (bKash / Nagad)", callback_data="dep_manual"))
-    kb.row(types.InlineKeyboardButton(text="💎 Binance USDT", callback_data="dep_binance"))
+    kb.row(types.InlineKeyboardButton(text="💗 বিকাশ ডিপোজিট (Min 200৳)", callback_data="dep_sec_bkash"))
+    kb.row(types.InlineKeyboardButton(text="🟧 নগদ ডিপোজিট (Min 10৳)", callback_data="dep_sec_nagad"))
+    kb.row(types.InlineKeyboardButton(text="💎 Binance USDT ($1 = 125৳)", callback_data="dep_binance"))
     
-    manual_desc = ""
-    if is_manual:
-        manual_desc = (
-            "\n\n📝 *Manual Payment* — সরাসরি bKash / Nagad\n"
-            f"   ▸ bKash: `{BKASH_NUMBER}`\n"
-            f"   ▸ Nagad: `{NAGAD_NUMBER}`\n"
-            "   ▸ Send Money করে স্ক্রিনশট পাঠাবেন\n"
-            "   ▸ অ্যাডমিন চেক করে ব্যালেন্স যোগ করবে\n"
-            "   ▸ মিনিমাম ১০৳"
-        )
     await c.message.answer(
-        "🌟 *ডিপোজিট পদ্ধতি বাছাই করুন* 🌟\n\n"
+        "🌟 *ডিপোজিট মাধ্যম বেছে নিন* 🌟\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
-        "⚡ *Auto Payment* — সবচেয়ে দ্রুত ও সহজ\n"
-        "   ▸ bKash / Nagad সাপোর্ট\n"
-        "   ▸ এক ক্লিকে পেমেন্ট পেজ\n"
-        "   ▸ ১০-৩০ সেকেন্ডে ব্যালেন্স যোগ\n"
-        "   ▸ মিনিমাম ১০৳"
-        f"{manual_desc}\n\n"
-        "💎 *Binance USDT* — ডলারে পেমেন্ট\n"
+        "💗 *bKash (বিকাশ ডিপোজিট)*\n"
+        "   ▸ ⚡ অটো পেমেন্ট ও 📝 ম্যানুয়াল Send Money\n"
+        "   ▸ ⚠️ সর্বনিম্ন ডিপোজিট: **২০০৳** (Min 200৳)\n\n"
+        "🟧 *Nagad (নগদ ডিপোজিট)*\n"
+        "   ▸ ⚡ অটো পেমেন্ট ও 📝 ম্যানুয়াল Send Money\n"
+        "   ▸ 💰 সর্বনিম্ন ডিপোজিট: **১০৳** (Min 10৳)\n\n"
+        "💎 *Binance USDT* — ক্রিপ্টো ডিপোজিট\n"
         "   ▸ Rate: *$1 = 125৳* (fixed)\n"
-        "   ▸ Screenshot পাঠাবেন\n"
-        "   ▸ Admin ম্যানুয়ালি অ্যাপ্রুভ করবে\n"
-        "   ▸ মিনিমাম 1$\n"
-        "━━━━━━━━━━━━━━━━━━━━━",
+        "   ▸ সর্বনিম্ন: *$1*\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "👇 *যে মাধ্যমে ডিপোজিট করতে চান নিচের বাটনে চাপ দিন:*",
         reply_markup=kb.as_markup(),
         parse_mode="Markdown"
     )
+
+@dp.callback_query(F.data == "dep_sec_bkash")
+async def dep_sec_bkash(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    if not is_service_enabled("deposit_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer(
+            "💰 **ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
+            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
+            parse_mode="Markdown"
+        )
+    is_manual = is_service_enabled("manual_payment_enabled")
+    kb = InlineKeyboardBuilder()
+    kb.row(types.InlineKeyboardButton(text="⚡ bKash Auto Payment (Min 200৳)", callback_data="dep_auto_bkash"))
+    if is_manual:
+        kb.row(types.InlineKeyboardButton(text="📝 bKash Manual Send Money (Min 200৳)", callback_data="dep_man_bkash"))
+    kb.row(types.InlineKeyboardButton(text="🔙 ফিরে যান (Back)", callback_data="deposit"))
+
+    manual_info = ""
+    if is_manual:
+        manual_info = (
+            f"\n\n📝 *Manual Send Money:*\n"
+            f"   ▸ বিকাশ পার্সোনাল নম্বর: `{BKASH_NUMBER}`\n"
+            f"   ▸ Send Money করে স্ক্রিনশট পাঠাবেন।"
+        )
+
+    await c.message.answer(
+        "💗 *bKash (বিকাশ) ডিপোজিট সেকশন* 💗\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "⚠️ **সতর্কতা ও নিয়মাবলী:**\n"
+        "• বিকাশে সর্বনিম্ন ডিপোজিট **২০০ টাকা** (Min: 200৳)।\n"
+        "• বিকাশ গেটওয়ে পলিসি অনুযায়ী ২০০৳ এর নিচে বিকাশ পেমেন্ট হয় না।\n"
+        "• আপনি যদি ১০৳ থেকে ১৯০৳ ডিপোজিট করতে চান, তবে নগদ (Nagad) সেকশন ব্যবহার করুন।\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "⚡ *Auto Payment (অটো পেমেন্ট):*\n"
+        "   ▸ এক ক্লিকে পেমেন্ট ও ১০-৩০ সেকেন্ডে ব্যালেন্স অটো যোগ!"
+        f"{manual_info}\n\n"
+        "👇 *নিচের অপশন বেছে নিন:*",
+        reply_markup=kb.as_markup(),
+        parse_mode="Markdown"
+    )
+
+@dp.callback_query(F.data == "dep_sec_nagad")
+async def dep_sec_nagad(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    if not is_service_enabled("deposit_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer(
+            "💰 **ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
+            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
+            parse_mode="Markdown"
+        )
+    is_manual = is_service_enabled("manual_payment_enabled")
+    kb = InlineKeyboardBuilder()
+    kb.row(types.InlineKeyboardButton(text="⚡ Nagad Auto Payment (Min 10৳)", callback_data="dep_auto_nagad"))
+    if is_manual:
+        kb.row(types.InlineKeyboardButton(text="📝 Nagad Manual Send Money (Min 10৳)", callback_data="dep_man_nagad"))
+    kb.row(types.InlineKeyboardButton(text="🔙 ফিরে যান (Back)", callback_data="deposit"))
+
+    manual_info = ""
+    if is_manual:
+        manual_info = (
+            f"\n\n📝 *Manual Send Money:*\n"
+            f"   ▸ নগদ পার্সোনাল নম্বর: `{NAGAD_NUMBER}`\n"
+            f"   ▸ শুধু নগদ অ্যাপ/USSD থেকে Send Money করবেন।"
+        )
+
+    await c.message.answer(
+        "🟧 *Nagad (নগদ) ডিপোজিট সেকশন* 🟧\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "🚨 **সতর্কতা — এটি শুধুমাত্র নগদ নম্বর:**\n"
+        "❌ ভুলেও বিকাশ (bKash) থেকে এই নম্বরে টাকা পাঠাবেন না!\n"
+        "💰 সর্বনিম্ন ডিপোজিট মাত্র **১০ টাকা** (Min: 10৳)।\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "⚡ *Auto Payment (অটো পেমেন্ট):*\n"
+        "   ▸ সরাসরি নগদ গেটওয়ে দিয়ে ১০-৩০ সেকেন্ডে ইনস্ট্যান্ট ব্যালেন্স যোগ!"
+        f"{manual_info}\n\n"
+        "👇 *নিচের অপশন বেছে নিন:*",
+        reply_markup=kb.as_markup(),
+        parse_mode="Markdown"
+    )
+
+@dp.callback_query(F.data == "dep_auto_bkash")
+async def dep_auto_bkash_start(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    if not is_service_enabled("deposit_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer("💰 ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।")
+    await c.message.answer(
+        "⚡ *bKash Auto Payment*\n\n"
+        "⚠️ **সতর্কতা:** বিকাশে সর্বনিম্ন ডিপোজিট **২০০ টাকা** (Min: 200৳)।\n"
+        "বিকাশ গেটওয়ে ২০০ টাকার নিচের ট্রানজেকশন সাপোর্ট করে না।\n\n"
+        "💰 কত টাকা ডিপোজিট করবেন?\n"
+        "শুধু সংখ্যা লিখুন (যেমন: `200` বা `500`):",
+        parse_mode="Markdown"
+    )
+    await state.update_data(deposit_method="auto_bkash")
+    await state.set_state(ShopStates.waiting_for_deposit_amount)
+
+@dp.callback_query(F.data == "dep_auto_nagad")
+async def dep_auto_nagad_start(c: types.CallbackQuery, state: FSMContext):
+    await c.answer()
+    if not is_service_enabled("deposit_service_enabled") and not is_admin(c.from_user.id):
+        return await c.message.answer("💰 ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।")
+    await c.message.answer(
+        "⚡ *Nagad Auto Payment*\n\n"
+        "💰 কত টাকা ডিপোজিট করবেন?\n"
+        "শুধু সংখ্যা লিখুন (যেমন: `50` বা `100`)\n\n"
+        "ℹ️ সর্বনিম্ন ডিপোজিট **১০ টাকা**।",
+        parse_mode="Markdown"
+    )
+    await state.update_data(deposit_method="auto_nagad")
+    await state.set_state(ShopStates.waiting_for_deposit_amount)
 
 @dp.callback_query(F.data == "dep_auto")
 async def dep_auto_start(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
     if not is_service_enabled("deposit_service_enabled") and not is_admin(c.from_user.id):
-        return await c.message.answer(
-            "💰 **ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
-            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
-            parse_mode="Markdown"
-        )
+        return await c.message.answer("💰 ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।")
+    kb = InlineKeyboardBuilder()
+    kb.row(types.InlineKeyboardButton(text="💗 bKash Auto (Min 200৳)", callback_data="dep_auto_bkash"))
+    kb.row(types.InlineKeyboardButton(text="🟧 Nagad Auto (Min 10৳)", callback_data="dep_auto_nagad"))
+    kb.row(types.InlineKeyboardButton(text="🔙 ফিরে যান (Back)", callback_data="deposit"))
     await c.message.answer(
-        "⚡ *Auto Payment*\n\n"
-        "💰 কত টাকা ডিপোজিট করবেন? \n"
-        "শুধু সংখ্যা লিখুন (যেমন: `100`)\n\n"
-        "ℹ️ মিনিমাম ১০৳ — Submit করলেই পেমেন্ট লিংক পাবেন।",
+        "⚡ *Auto Payment মাধ্যম বেছে নিন:*\n\n"
+        "💗 **bKash Auto:** সর্বনিম্ন ২০০৳ (Min 200৳)\n"
+        "🟧 **Nagad Auto:** সর্বনিম্ন ১০৳ (Min 10৳)\n\n"
+        "কোন মাধ্যমে অটো ডিপোজিট করতে চান?",
+        reply_markup=kb.as_markup(),
         parse_mode="Markdown"
     )
-    await state.update_data(deposit_method="auto")
-    await state.set_state(ShopStates.waiting_for_deposit_amount)
 
 @dp.callback_query(F.data == "dep_manual")
 async def dep_manual_start(c: types.CallbackQuery, state: FSMContext):
     await c.answer()
     if not is_service_enabled("deposit_service_enabled") and not is_admin(c.from_user.id):
-        return await c.message.answer(
-            "💰 **ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n"
-            "⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।",
-            parse_mode="Markdown"
-        )
+        return await c.message.answer("💰 ডিপোজিট সার্ভিস সাময়িকভাবে বন্ধ আছে।")
     if not is_service_enabled("manual_payment_enabled") and not is_admin(c.from_user.id):
-        return await c.message.answer(
-            "⚠️ **ম্যানুয়াল পেমেন্ট সার্ভিস বর্তমানে বন্ধ রয়েছে।**\n"
-            "অনুগ্রহ করে ⚡ Auto Payment অথবা 💎 Binance ব্যবহার করুন।",
-            parse_mode="Markdown"
-        )
+        return await c.message.answer("⚠️ ম্যানুয়াল পেমেন্ট সার্ভিস বর্তমানে বন্ধ রয়েছে।")
     kb = InlineKeyboardBuilder()
-    kb.row(types.InlineKeyboardButton(text="💗 bKash (ম্যানুয়াল)", callback_data="dep_man_bkash"))
-    kb.row(types.InlineKeyboardButton(text="🟧 Nagad (ম্যানুয়াল)", callback_data="dep_man_nagad"))
+    kb.row(types.InlineKeyboardButton(text="💗 bKash Manual (Min 200৳)", callback_data="dep_man_bkash"))
+    kb.row(types.InlineKeyboardButton(text="🟧 Nagad Manual (Min 10৳)", callback_data="dep_man_nagad"))
     kb.row(types.InlineKeyboardButton(text="🔙 ফিরে যান (Back)", callback_data="deposit"))
     await c.message.answer(
         "📝 *ম্যানুয়াল ডিপোজিট মাধ্যম বেছে নিন:*\n\n"
-        "আপনি কোন মাধ্যমে Send Money করতে চান? নিচে থেকে সিলেক্ট করুন:",
+        "💗 **bKash:** পার্সোনাল Send Money (সর্বনিম্ন ২০০৳)\n"
+        "🟧 **Nagad:** পার্সোনাল Send Money (সর্বনিম্ন ১০৳)\n\n"
+        "কোন মাধ্যমে টাকা পাঠাবেন?",
         reply_markup=kb.as_markup(),
         parse_mode="Markdown"
     )
@@ -4192,23 +4268,36 @@ async def dep_man_choice(c: types.CallbackQuery, state: FSMContext):
         return await c.message.answer("⚠️ ম্যানুয়াল পেমেন্ট সার্ভিস বর্তমানে বন্ধ রয়েছে।")
 
     is_bkash = (c.data == "dep_man_bkash")
-    method_name = "bKash" if is_bkash else "Nagad"
-    num = BKASH_NUMBER if is_bkash else NAGAD_NUMBER
     dep_m = "manual_bkash" if is_bkash else "manual_nagad"
-    icon = "💗" if is_bkash else "🟧"
 
-    await c.message.answer(
-        f"{icon} *{method_name} ম্যানুয়াল ডিপোজিট*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📱 *{method_name} (Personal / Send Money):* `{num}`\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"⚠️ *নির্দেশনা:*\n"
-        f"1️⃣ উপরের নম্বরে {method_name} থেকে **Send Money** করুন।\n"
-        f"2️⃣ মিনিমাম ডিপোজিট **১০৳**।\n"
-        f"3️⃣ টাকা পাঠানো সম্পন্ন হলে নিচে **টাকার পরিমাণ** লিখুন।\n\n"
-        f"💰 **কত টাকা পাঠিয়েছেন?** (শুধু সংখ্যা লিখুন, যেমন: `150`)",
-        parse_mode="Markdown"
-    )
+    if is_bkash:
+        await c.message.answer(
+            "💗 *bKash ম্যানুয়াল ডিপোজিট (Send Money)*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📱 *bKash Personal Number:* `{BKASH_NUMBER}`\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "⚠️ **জরুরি সতর্কবার্তা:**\n"
+            "1️⃣ এটি শুধুমাত্র বিকাশ নম্বর! ভুলেও নগদ থেকে পাঠাবেন না।\n"
+            "2️⃣ **বিকাশে সর্বনিম্ন ডিপোজিট ২০০৳** (Min: 200৳)।\n"
+            f"3️⃣ bKash App থেকে `{BKASH_NUMBER}` নম্বরে **Send Money** করুন।\n"
+            "4️⃣ টাকা পাঠানো শেষ হলে নিচে কত টাকা পাঠিয়েছেন তা লিখুন।\n\n"
+            "💰 **কত টাকা পাঠিয়েছেন?** (২০০ বা তার বেশি লিখুন, যেমন: `200` বা `500`):",
+            parse_mode="Markdown"
+        )
+    else:
+        await c.message.answer(
+            "🟧 *Nagad ম্যানুয়াল ডিপোজিট (Send Money)*\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📱 *Nagad Personal Number:* `{NAGAD_NUMBER}`\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "🚨 **সাবধান — শুধুমাত্র নগদ (Nagad) নম্বর!**\n"
+            "❌ ভুলেও বিকাশ (bKash) থেকে এই নম্বরে টাকা পাঠাবেন না!\n"
+            "1️⃣ শুধুমাত্র Nagad App বা USSD থেকে Send Money করবেন।\n"
+            "2️⃣ নগদে সর্বনিম্ন ডিপোজিট **১০৳** (Min: 10৳)।\n"
+            "3️⃣ টাকা পাঠানো শেষ হলে নিচে কত টাকা পাঠিয়েছেন তা লিখুন।\n\n"
+            "💰 **কত টাকা পাঠিয়েছেন?** (যেমন: `50` বা `100`):",
+            parse_mode="Markdown"
+        )
     await state.update_data(deposit_method=dep_m)
     await state.set_state(ShopStates.waiting_for_deposit_amount)
 
@@ -4243,10 +4332,25 @@ async def dep_amt(m: types.Message, state: FSMContext):
     _method = _data.get("deposit_method", "auto")
 
     # ============ AUTO (ZiniPay) ============
-    if _method == "auto":
-        if not val_str.isdigit() or int(val_str) < 10:
-            return await m.answer("⚠️ মিনিমাম *১০ টাকা*। শুধু সংখ্যা লিখুন (যেমন: `100`)", parse_mode="Markdown")
+    if _method in ("auto", "auto_bkash", "auto_nagad"):
+        if not val_str.isdigit():
+            return await m.answer("⚠️ শুধু সংখ্যায় লিখুন (যেমন: `200`)", parse_mode="Markdown")
         amt = int(val_str)
+
+        # bKash minimum 200 Tk check
+        if _method == "auto_bkash" and amt < 200:
+            return await m.answer(
+                f"⚠️ **বিকাশে সর্বনিম্ন ডিপোজিট ২০০ টাকা!**\n\n"
+                f"আপনার ইনপুট: **{amt}৳**\n"
+                f"📌 বিকাশ গেটওয়ে নীতি অনুযায়ী ২০০ টাকার নিচের পেমেন্ট গ্রহণ করা হয় না।\n\n"
+                f"👉 অনুগ্রহ করে **২০০ বা তার বেশি** টাকা লিখুন (যেমন: `200`, `300`, `500`)\n"
+                f"💡 *টিপস:* আপনি যদি ১০৳ থেকে ১৯০৳ ডিপোজিট করতে চান, তবে নগদ (Nagad) সেকশন বেছে নিন।",
+                parse_mode="Markdown"
+            )
+
+        if amt < 10:
+            return await m.answer("⚠️ সর্বনিম্ন ডিপোজিট **১০ টাকা**। শুধু সংখ্যা লিখুন (যেমন: `100`)", parse_mode="Markdown")
+
         username = f"@{m.from_user.username}" if m.from_user.username else m.from_user.first_name
         wait_msg = await m.answer("⏳ পেমেন্ট লিংক তৈরি হচ্ছে...")
         payment_url = await create_zinipay_invoice(m.from_user.id, username, amt)
@@ -4256,14 +4360,17 @@ async def dep_amt(m: types.Message, state: FSMContext):
             await m.answer("❌ পেমেন্ট gateway এ সমস্যা। একটু পরে আবার চেষ্টা করুন অথবা 💎 Binance ব্যবহার করুন।")
             await state.clear()
             return
+
         kb = InlineKeyboardBuilder()
         kb.row(types.InlineKeyboardButton(text=f"⚡ পেমেন্ট করুন (In-App) — {amt}৳", web_app=WebAppInfo(url=payment_url)))
         kb.row(types.InlineKeyboardButton(text="🌐 ব্রাউজারে ওপেন করুন", url=payment_url))
+
+        method_lbl = "💗 bKash (Auto Deposit)" if _method == "auto_bkash" else ("🟧 Nagad (Auto Deposit)" if _method == "auto_nagad" else "bKash / Nagad (Auto Deposit)")
         await m.answer(
             f"✨ *পেমেন্ট লিংক প্রস্তুত* ✨\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"💰 Amount: *{amt}৳*\n"
-            f"⚡ Method: bKash / Nagad (Auto Deposit)\n"
+            f"⚡ Method: {method_lbl}\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n\n"
             f"📱 নিচের *'পেমেন্ট করুন (In-App)'* বাটনে চাপ দিলে সরাসরি টেলিগ্রামের ভেতরে পেমেন্ট পপআপ স্ক্রিন ওপেন হবে।\n\n"
             f"✅ পেমেন্ট সফল হলে *১০-৩০ সেকেন্ডে* ব্যালেন্স অটো যোগ হবে।\n"
@@ -4277,9 +4384,23 @@ async def dep_amt(m: types.Message, state: FSMContext):
 
     # ============ MANUAL (bKash / Nagad) ============
     if _method.startswith("manual"):
-        if not val_str.isdigit() or int(val_str) < 10:
-            return await m.answer("⚠️ মিনিমাম *১০ টাকা*। শুধু সংখ্যায় লিখুন (যেমন: `150`)", parse_mode="Markdown")
+        if not val_str.isdigit():
+            return await m.answer("⚠️ শুধু সংখ্যায় লিখুন (যেমন: `200`)", parse_mode="Markdown")
         amt = int(val_str)
+
+        # bKash manual minimum 200 Tk check
+        if "bkash" in _method and amt < 200:
+            return await m.answer(
+                f"⚠️ **বিকাশে সর্বনিম্ন ডিপোজিট ২০০ টাকা!**\n\n"
+                f"আপনার ইনপুট: **{amt}৳**\n"
+                f"👉 অনুগ্রহ করে **২০০ বা তার বেশি** টাকা লিখুন (যেমন: `200`, `300`, `500`)\n"
+                f"💡 *টিপস:* আপনি যদি ১০৳ থেকে ১৯০৳ পাঠাতে চান, তবে নগদ (Nagad) সেকশন থেকে পাঠান।",
+                parse_mode="Markdown"
+            )
+
+        if amt < 10:
+            return await m.answer("⚠️ মিনিমাম **১০ টাকা**। শুধু সংখ্যায় লিখুন (যেমন: `150`)", parse_mode="Markdown")
+
         await state.update_data(amount_text=str(amt))
         m_label = "bKash" if "bkash" in _method else ("Nagad" if "nagad" in _method else "bKash/Nagad")
         await m.answer(
@@ -4596,10 +4717,9 @@ async def vpn_confirm_order(c: types.CallbackQuery, state: FSMContext):
     if bal < price:
         _need = max(0, price - bal)
         _kb = InlineKeyboardBuilder()
-        _kb.row(types.InlineKeyboardButton(text="⚡ Auto Deposit (bKash/Nagad)", callback_data="dep_auto"))
-        if is_service_enabled("manual_payment_enabled"):
-            _kb.row(types.InlineKeyboardButton(text="📝 Manual Deposit (bKash/Nagad)", callback_data="dep_manual"))
-        _kb.row(types.InlineKeyboardButton(text="🪙 Binance", callback_data="dep_binance"))
+        _kb.row(types.InlineKeyboardButton(text="💗 বিকাশ ডিপোজিট (Min 200৳)", callback_data="dep_sec_bkash"))
+        _kb.row(types.InlineKeyboardButton(text="🟧 নগদ ডিপোজিট (Min 10৳)", callback_data="dep_sec_nagad"))
+        _kb.row(types.InlineKeyboardButton(text="💎 Binance USDT", callback_data="dep_binance"))
         await state.clear()
         await c.message.answer(
             f"❌ **অপর্যাপ্ত ব্যালেন্স!**\n"
