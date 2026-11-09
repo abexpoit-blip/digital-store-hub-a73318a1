@@ -26,7 +26,7 @@ import urllib.request
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command, CommandObject
+from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -3629,14 +3629,14 @@ async def cmd_start(message: types.Message, state: FSMContext):
         pass
     await show_dashboard_ui(message.from_user.id, message.from_user.first_name, bot, message.chat.id, message.from_user.username)
 
-@dp.message(F.text.in_([
+@dp.message(StateFilter("*"), F.text.in_([
     "👤 Profile", "👤 প্রোফাইল",
     "🛡️ Buy VPN", "🌐 VPN Services",
     "🛒 Buy ID", "🛒 আইডি কিনুন",
     "💼 Buy BM", "💼 BM কিনুন",
     "💳 Deposit", "💳 ডিপোজিট", "💳 ব্যালেন্স অ্যাড",
     "🎧 Support", "📞 সাপোর্ট", "📞 সাপোর্ট ও হেল্প",
-    "🔄 Replace", "🔄 রিপ্লেস", "🔄 রিপ্লেস আইডি",
+    "🔄 Replace", "🔄 রিপ্লেস", "🔄 রিপ্লেস আইডি", "🔄 Replace ID",
     "📜 Terms", "📜 শর্তাবলী", "📜 Terms & Policy"
 ]))
 async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
@@ -3766,7 +3766,9 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
         )
         await m.answer(msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
-    elif text in ["🔄 Replace", "🔄 রিপ্লেস", "🔄 রিপ্লেস আইডি"]:
+    elif text in ["🔄 Replace", "🔄 রিপ্লেস", "🔄 Replace ID", "🔄 রিপ্লেস আইডি"]:
+        if not is_service_enabled("replace_service_enabled") and not is_admin(m.from_user.id):
+            return await m.answer("🔄 **রিপ্লেস সার্ভিস সাময়িকভাবে বন্ধ আছে।**\n⏳ অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।", parse_mode="Markdown")
         conn = _dbc()
         user_sales = conn.execute("""
             SELECT id, category, qty, total, date, time 
@@ -3774,8 +3776,8 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
             WHERE user_id=? AND category NOT LIKE 'VPN%'
             ORDER BY id DESC LIMIT 6
         """, (m.from_user.id,)).fetchall()
-        conn.close()
         if not user_sales:
+            conn.close()
             kb = InlineKeyboardBuilder()
             kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
             kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
@@ -3788,11 +3790,28 @@ async def handle_reply_keyboard_buttons(m: types.Message, state: FSMContext):
             )
             return await m.answer(no_order_msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
         kb = InlineKeyboardBuilder()
+        now_ts = int(__import__("time").time())
         for sale in user_sales:
             s_id, s_cat, s_qty, s_tot, s_date, s_time = sale
             lbl = {"fb61":"FB 61","fb1000":"FB 1000 Fresh","fb1000_used":"1000xxx Used","tempid":"Temp ID","tempid_2fa":"Temp ID 2FA","ig":"Instagram","fb":"Facebook","bmig":"BM IG","bmfb":"BM FB"}.get(s_cat, s_cat.upper())
-            btn_text = f"📦 #{s_id} | {lbl} ({s_qty} pcs)"
+            s_epoch = get_sale_epoch(s_id, s_date, s_time)
+            allowed_sec = get_replace_window_seconds(s_qty, s_cat)
+            is_expired = (now_ts - s_epoch) > allowed_sec
+            has_active_rep = False
+            if is_expired:
+                last_rep = conn.execute(
+                    "SELECT resolved_at FROM replace_requests WHERE user_id=? AND reason LIKE ? AND status='replaced' ORDER BY resolved_at DESC LIMIT 1",
+                    (m.from_user.id, f"%Order #{s_id}%")
+                ).fetchone()
+                if last_rep and last_rep[0]:
+                    r_ep = int(last_rep[0] / 1000 if last_rep[0] > 1e11 else last_rep[0])
+                    if (now_ts - r_ep) <= allowed_sec:
+                        is_expired = False
+                        has_active_rep = True
+            status_tag = "🔴 Expired" if is_expired else ("🟢 Active (রি-রিপ্লেস)" if has_active_rep else "🟢 Active")
+            btn_text = f"📦 #{s_id} • {lbl} ({s_qty} pcs) [{status_tag}]"
             kb.row(types.InlineKeyboardButton(text=btn_text, callback_data=f"rep_ord_{s_id}"))
+        conn.close()
         kb.row(types.InlineKeyboardButton(text="📜 শর্তাবলী ও নিয়ম (Terms)", callback_data="terms_policy"))
         kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
         await m.answer("🔄 **যে অর্ডারের আইডি রিপ্লেস করতে চান তা নির্বাচন করুন:**", reply_markup=kb.as_markup(), parse_mode="Markdown")
@@ -4093,7 +4112,7 @@ async def dep_start(c: types.CallbackQuery, state: FSMContext):
     kb.row(types.InlineKeyboardButton(text="🟧 নগদ ডিপোজিট (Min 10৳)", callback_data="dep_sec_nagad"))
     kb.row(types.InlineKeyboardButton(text="💎 Binance USDT ($1 = 125৳)", callback_data="dep_binance"))
     
-    await c.message.answer(
+    msg = (
         "🌟 *ডিপোজিট মাধ্যম বেছে নিন* 🌟\n\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "💗 *bKash (বিকাশ ডিপোজিট)*\n"
@@ -4106,10 +4125,12 @@ async def dep_start(c: types.CallbackQuery, state: FSMContext):
         "   ▸ Rate: *$1 = 125৳* (fixed)\n"
         "   ▸ সর্বনিম্ন: *$1*\n"
         "━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "👇 *যে মাধ্যমে ডিপোজিট করতে চান নিচের বাটনে চাপ দিন:*",
-        reply_markup=kb.as_markup(),
-        parse_mode="Markdown"
+        "👇 *যে মাধ্যমে ডিপোজিট করতে চান নিচের বাটনে চাপ দিন:*"
     )
+    try:
+        await c.message.edit_text(msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
+    except Exception:
+        await c.message.answer(msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
 @dp.callback_query(F.data == "dep_sec_bkash")
 async def dep_sec_bkash(c: types.CallbackQuery, state: FSMContext):
@@ -4135,7 +4156,7 @@ async def dep_sec_bkash(c: types.CallbackQuery, state: FSMContext):
             f"   ▸ Send Money করে স্ক্রিনশট পাঠাবেন।"
         )
 
-    await c.message.answer(
+    msg = (
         "💗 *bKash (বিকাশ) ডিপোজিট সেকশন* 💗\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "⚠️ **সতর্কতা ও নিয়মাবলী:**\n"
@@ -4146,10 +4167,12 @@ async def dep_sec_bkash(c: types.CallbackQuery, state: FSMContext):
         "⚡ *Auto Payment (অটো পেমেন্ট):*\n"
         "   ▸ এক ক্লিকে পেমেন্ট ও ১০-৩০ সেকেন্ডে ব্যালেন্স অটো যোগ!"
         f"{manual_info}\n\n"
-        "👇 *নিচের অপশন বেছে নিন:*",
-        reply_markup=kb.as_markup(),
-        parse_mode="Markdown"
+        "👇 *নিচের অপশন বেছে নিন:*"
     )
+    try:
+        await c.message.edit_text(msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
+    except Exception:
+        await c.message.answer(msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
 @dp.callback_query(F.data == "dep_sec_nagad")
 async def dep_sec_nagad(c: types.CallbackQuery, state: FSMContext):
@@ -4175,7 +4198,7 @@ async def dep_sec_nagad(c: types.CallbackQuery, state: FSMContext):
             f"   ▸ শুধু নগদ অ্যাপ/USSD থেকে Send Money করবেন।"
         )
 
-    await c.message.answer(
+    msg = (
         "🟧 *Nagad (নগদ) ডিপোজিট সেকশন* 🟧\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         "🚨 **সতর্কতা — এটি শুধুমাত্র নগদ নম্বর:**\n"
@@ -4185,10 +4208,12 @@ async def dep_sec_nagad(c: types.CallbackQuery, state: FSMContext):
         "⚡ *Auto Payment (অটো পেমেন্ট):*\n"
         "   ▸ সরাসরি নগদ গেটওয়ে দিয়ে ১০-৩০ সেকেন্ডে ইনস্ট্যান্ট ব্যালেন্স যোগ!"
         f"{manual_info}\n\n"
-        "👇 *নিচের অপশন বেছে নিন:*",
-        reply_markup=kb.as_markup(),
-        parse_mode="Markdown"
+        "👇 *নিচের অপশন বেছে নিন:*"
     )
+    try:
+        await c.message.edit_text(msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
+    except Exception:
+        await c.message.answer(msg, reply_markup=kb.as_markup(), parse_mode="Markdown")
 
 @dp.callback_query(F.data == "dep_auto_bkash")
 async def dep_auto_bkash_start(c: types.CallbackQuery, state: FSMContext):
@@ -5771,9 +5796,9 @@ async def support_replace_start(c: types.CallbackQuery, state: FSMContext):
         WHERE user_id=? AND category NOT LIKE 'VPN%'
         ORDER BY id DESC LIMIT 6
     """, (c.from_user.id,)).fetchall()
-    conn.close()
     
     if not user_sales:
+        conn.close()
         kb = InlineKeyboardBuilder()
         kb.row(types.InlineKeyboardButton(text="📜 Terms & Policy", callback_data="terms_policy"))
         kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
@@ -5814,7 +5839,8 @@ async def support_replace_start(c: types.CallbackQuery, state: FSMContext):
         status_tag = "🔴 Expired" if is_expired else ("🟢 Active (রি-রিপ্লেস)" if has_active_rep else "🟢 Active")
         btn_text = f"📦 #{s_id} • {lbl} ({s_qty} pcs) [{status_tag}]"
         kb.row(types.InlineKeyboardButton(text=btn_text, callback_data=f"rep_ord_{s_id}"))
-        
+
+    conn.close()
     kb.row(types.InlineKeyboardButton(text="📜 শর্তাবলী ও নিয়ম (Terms)", callback_data="terms_policy"))
     kb.row(types.InlineKeyboardButton(text="🔙 Back", callback_data="support_menu"))
     
