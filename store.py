@@ -2703,33 +2703,39 @@ async def vpn_api_sync_catalog():
             seen.append(code)
             name = str(s.get("name") or s.get("product_name") or code).strip()
             cat = str(s.get("category") or s.get("type") or "").strip()
-            stype = str(s.get("type", "vpn")).strip()
-            rate = float(s.get("price") or s.get("rate") or 0)
-            orig_rate = float(s.get("original_rate") or s.get("original_price") or rate)
-            disc = float(s.get("discount_percent") or 0)
+            stype = str(s.get("category_type") or s.get("type", "vpn")).strip()
+            rate = float(s.get("wholesale_price") or s.get("reseller_price") or s.get("price") or s.get("rate") or 0)
+            orig_rate = float(s.get("regular_price") or s.get("original_rate") or s.get("original_price") or rate)
+            disc = float(s.get("savings") or s.get("discount_percent") or 0)
             min_q = int(s.get("min_qty") or s.get("min") or 1)
             max_q = int(s.get("max_qty") or s.get("max") or 1)
-            is_avail = s.get("available")
-            if is_avail is None:
-                stock_val = s.get("stock")
-                is_avail = (stock_val is None or stock_val > 0)
+            stock_val = s.get("stock_available") if s.get("stock_available") is not None else s.get("stock")
+            is_avail = (stock_val is not None and int(stock_val) > 0)
             avail = 1 if is_avail else 0
             raw_str = json.dumps(s)
 
             # parse duration
             days, pkg_id = None, None
-            combined_text = f"{cat} {name}".lower()
-            m_day = re.search(r'(\d+)\s*(day|days|d)\b', combined_text)
-            if m_day:
-                days = int(m_day.group(1))
-                pkg_id = f"{days}d"
+            d_val = s.get("duration_days")
+            if d_val is not None:
+                days = int(d_val)
+                if days >= 30 and days % 30 == 0:
+                    pkg_id = f"{days // 30}m"
+                else:
+                    pkg_id = f"{days}d"
             else:
-                m_mo = re.search(r'(\d+)\s*(month|months|mo|m)\b', combined_text)
-                if m_mo:
-                    days = int(m_mo.group(1)) * 30
-                    pkg_id = f"{int(m_mo.group(1))}m"
+                combined_text = f"{cat} {name}".lower()
+                m_day = re.search(r'(\d+)\s*(day|days|d)\b', combined_text)
+                if m_day:
+                    days = int(m_day.group(1))
+                    pkg_id = f"{days}d"
+                else:
+                    m_mo = re.search(r'(\d+)\s*(month|months|mo|m)\b', combined_text)
+                    if m_mo:
+                        days = int(m_mo.group(1)) * 30
+                        pkg_id = f"{int(m_mo.group(1))}m"
 
-            v_id = re.sub(r'[^a-z0-9]', '', name.lower().replace('vpn', ''))[:20] or 'vpn'
+            v_id = normalize_vpn_brand_id(name)
 
             conn.execute("""
                 INSERT INTO vpn_api_services
@@ -2752,6 +2758,10 @@ async def vpn_api_sync_catalog():
                     default_sell_price = int(rate + 15) if rate > 0 else 30
                     conn.execute("INSERT OR IGNORE INTO vpn_packages (vpn_id, pkg_id, price) VALUES (?, ?, ?)", (v_id, pkg_id, default_sell_price))
 
+        if seen:
+            placeholders = ",".join("?" * len(seen))
+            conn.execute(f"UPDATE vpn_api_services SET available=0 WHERE service NOT IN ({placeholders})", seen)
+            conn.execute("DELETE FROM vpn_api_services WHERE service LIKE 'S%'")
         conn.commit()
         return len(seen), None
     except Exception as e:
@@ -2890,18 +2900,11 @@ async def vpn_auto_fulfill_worker():
     await asyncio.sleep(15) # initial delay on boot
     while True:
         try:
-            await asyncio.sleep(60)
+            await asyncio.sleep(20)
             now_ts = int(time.time())
             # Clean expired cooldowns
             expired_keys = [k for k, v in _VPN_FAIL_COOLDOWN.items() if v <= now_ts]
             for k in expired_keys: _VPN_FAIL_COOLDOWN.pop(k, None)
-
-            bal_res = await vpn_api_get_balance()
-            if bal_res.get("status") != "success":
-                continue
-            bal = float(bal_res.get("balance", 0))
-            if bal <= 50:
-                await check_and_warn_vpn_balance(bal)
 
             conn = _dbc()
             pending_orders = conn.execute(
@@ -2911,6 +2914,22 @@ async def vpn_auto_fulfill_worker():
                    ORDER BY rowid ASC LIMIT 10"""
             ).fetchall()
             conn.close()
+
+            if not pending_orders:
+                continue
+
+            # Prioritized stock sync: fetch latest stock the instant pending orders exist
+            try:
+                await vpn_api_sync_catalog()
+            except Exception as _e_sync:
+                print(f"[vpn_worker_sync] error: {_e_sync}")
+
+            bal_res = await vpn_api_get_balance()
+            if bal_res.get("status") != "success":
+                continue
+            bal = float(bal_res.get("balance", 0))
+            if bal <= 50:
+                await check_and_warn_vpn_balance(bal)
 
             if not pending_orders:
                 continue
@@ -2978,11 +2997,14 @@ async def vpn_auto_fulfill_worker():
 
                 # 2. Check if provider API has enough balance
                 svc_row = None
-                if p_scode:
-                    svc_row = conn.execute("SELECT service, rate, name FROM vpn_api_services WHERE service=?", (p_scode,)).fetchone()
+                if p_scode and not str(p_scode).startswith("S"):
+                    svc_row = conn.execute("SELECT service, rate, name, available FROM vpn_api_services WHERE service=?", (p_scode,)).fetchone()
                 if not svc_row:
                     svc_row = conn.execute(
-                        "SELECT service, rate, name FROM vpn_api_services WHERE (vpn_id=? OR LOWER(name) LIKE ?) AND (pkg_id=? OR days=?) LIMIT 1",
+                        """SELECT service, rate, name, available FROM vpn_api_services 
+                           WHERE (vpn_id=? OR LOWER(name) LIKE ?) AND (pkg_id=? OR days=?)
+                             AND service NOT LIKE 'S%'
+                           ORDER BY available DESC, updated_at DESC LIMIT 1""",
                         (v_id, f"%{v_id}%", pkg_id, int(m_d.group(1)) if m_d and unit == 'd' else 0)
                     ).fetchone()
 
@@ -2990,7 +3012,11 @@ async def vpn_auto_fulfill_worker():
                     conn.close()
                     continue
 
-                svc_code, svc_rate, svc_name = svc_row
+                svc_code, svc_rate, svc_name, svc_avail = svc_row
+                if not svc_avail:
+                    # Stock not yet in Mother Store; keep order pending for next stock arrival
+                    conn.close()
+                    continue
                 if bal < svc_rate:
                     conn.close()
                     await check_and_warn_vpn_balance(bal)
